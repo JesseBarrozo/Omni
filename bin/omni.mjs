@@ -7,6 +7,7 @@ import { stdin, stdout } from "node:process";
 import { ChatStore } from "../src/chat-store.mjs";
 import { OpenAIChat } from "../src/openai-chat.mjs";
 import {
+  CodexHarness,
   CodexChat,
   codexAuthStatus,
   startCodexLogin,
@@ -215,6 +216,133 @@ async function runClaudeHarness(conversation, prompt) {
   }
 }
 
+async function runCodexHarness(conversation, prompt) {
+  const project = store.project(conversation.projectId);
+  const rl = createInterface({
+    input: stdin,
+    output: stdout,
+    terminal: Boolean(stdin.isTTY),
+  });
+  const model =
+    conversation.modelId === "codex" ? undefined : conversation.modelId;
+  const adapter = new CodexHarness({
+    store,
+    cwd: project.rootPath ?? process.cwd(),
+    model,
+    requestPermission: async ({ method, params }, permissionSignal) => {
+      if (!stdin.isTTY) {
+        stdout.write(
+          `Permission Codex refusée (session non interactive): ${method}\n`,
+        );
+        return false;
+      }
+      return new Promise((resolve) => {
+        if (permissionSignal?.aborted) return resolve(false);
+        let settled = false;
+        const finish = (allowed) => {
+          if (settled) return;
+          settled = true;
+          resolve(allowed);
+        };
+        const onAbort = () => finish(false);
+        permissionSignal?.addEventListener("abort", onAbort, { once: true });
+        rl.question(
+          `Codex demande une permission (${method}): ${JSON.stringify(params)}\nAutoriser cette action pour ce tour uniquement ? [y/N] `,
+        )
+          .then((answer) => {
+            permissionSignal?.removeEventListener("abort", onAbort);
+            finish(answer.trim().toLowerCase() === "y");
+          })
+          .catch(() => finish(false));
+      });
+    },
+  });
+  const controller = new AbortController();
+  const interrupt = () => controller.abort();
+  process.on("SIGINT", interrupt);
+  rl.on("SIGINT", interrupt);
+  store.addMessage(conversation.id, "user", prompt);
+  const assistantId = store.addMessage(
+    conversation.id,
+    "assistant",
+    "",
+    "streaming",
+  );
+  let answer = "";
+  let interrupted = false;
+  let completed = false;
+  try {
+    store.setStatus(conversation.id, "running");
+    await adapter.initialize();
+    const sessionId = store
+      .listEvents(conversation.id)
+      .filter(
+        (event) =>
+          event.type === "session.started" &&
+          event.payload.harnessId === "codex",
+      )
+      .at(-1)?.payload.sessionId;
+    const session = sessionId
+      ? await adapter.resumeSession(sessionId, {
+          conversationId: conversation.id,
+          cwd: project.rootPath ?? process.cwd(),
+          model,
+        })
+      : await adapter.createSession({
+          conversationId: conversation.id,
+          cwd: project.rootPath ?? process.cwd(),
+          model,
+        });
+    for await (const event of adapter.run({
+      conversationId: conversation.id,
+      sessionId: session.id,
+      prompt,
+      signal: controller.signal,
+    })) {
+      if (event.type === "message.delta") {
+        answer += event.payload.delta;
+        store.appendMessageDelta(assistantId, event.payload.delta);
+        stdout.write(event.payload.delta);
+      } else if (event.type === "tool.started") {
+        stdout.write(`\n[Outil ${event.payload.toolName}]\n`);
+      } else if (event.type === "session.interrupted") {
+        interrupted = true;
+      } else if (event.type === "session.failed") {
+        throw new Error(event.payload.error);
+      } else if (event.type === "message.completed") {
+        completed = true;
+      }
+    }
+    if (!interrupted && !completed)
+      throw new Error("Codex a terminé sans confirmer le tour");
+    const checkpoint = await adapter.checkpoint(session.id);
+    if (checkpoint) stdout.write(`\nCheckpoint Codex: ${checkpoint.id}\n`);
+    store.setMessage(
+      assistantId,
+      answer,
+      interrupted ? "interrupted" : "completed",
+    );
+    store.setStatus(conversation.id, interrupted ? "interrupted" : "completed");
+    stdout.write(interrupted ? "\n[Exécution interrompue.]\n" : "\n");
+  } catch (error) {
+    store.setMessage(
+      assistantId,
+      answer,
+      controller.signal.aborted ? "interrupted" : "failed",
+    );
+    store.setStatus(
+      conversation.id,
+      controller.signal.aborted ? "interrupted" : "failed",
+    );
+    throw error;
+  } finally {
+    process.off("SIGINT", interrupt);
+    rl.off("SIGINT", interrupt);
+    rl.close();
+    await adapter.dispose();
+  }
+}
+
 try {
   if (command === "help") help();
   else if (command === "init") print(`Initialisé: ${dataDir}`);
@@ -304,7 +432,7 @@ try {
     await chat(conversation, model);
   } else if (command === "run") {
     const harness = option("--harness");
-    if (harness && harness !== "claude")
+    if (harness && !["claude", "codex"].includes(harness))
       throw new Error(`Harness non pris en charge: ${harness}`);
     const conversationArg = option("--conversation");
     let conversation = conversationArg
@@ -315,7 +443,9 @@ try {
         ? conversation?.modelId?.startsWith("claude")
           ? conversation.modelId
           : "claude"
-        : (conversation?.modelId ?? null);
+        : harness === "codex"
+          ? (conversation?.modelId ?? "codex")
+          : (conversation?.modelId ?? null);
     const model = option("--model", defaultModel);
     const projectArg = option("--project");
     const project = conversation
@@ -337,7 +467,7 @@ try {
       .join(" ");
     if (!model || !prompt)
       throw new Error(
-        "Usage: omni run --project ID_OR_PATH [--model MODEL] [--harness claude] PROMPT",
+        "Usage: omni run --project ID_OR_PATH [--model MODEL] [--harness claude|codex] PROMPT",
       );
     if (conversation) {
       conversation = store.setModel(conversation.id, model);
@@ -349,6 +479,7 @@ try {
       );
     }
     if (harness === "claude") await runClaudeHarness(conversation, prompt);
+    else if (harness === "codex") await runCodexHarness(conversation, prompt);
     else await chat(conversation, model, prompt);
   } else help();
 } catch (error) {
