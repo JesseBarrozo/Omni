@@ -11,7 +11,14 @@ import {
   codexAuthStatus,
   startCodexLogin,
 } from "../src/codex-chat.mjs";
+import {
+  ClaudeCodeChat,
+  ClaudeCodeHarness,
+  claudeAuthStatus,
+  startClaudeLogin,
+} from "../src/claude-code.mjs";
 import { runChatTurn } from "../src/chat-runner.mjs";
+import { redactSecrets } from "../src/core.mjs";
 
 const dataDir = process.env.OMNI_DATA_DIR || join(homedir(), ".omni");
 const store = new ChatStore(join(dataDir, "omni.sqlite"));
@@ -28,12 +35,23 @@ const option = (name, fallback = null) => {
 const hasFlag = (name) => args.includes(name);
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex\n  project create --name NAME [--path PATH]\n  models list [--provider codex]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH --model MODEL PROMPT\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude] [--conversation ID] PROMPT\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function chat(conversation, model, initialPrompt = null) {
+  const project = store.project(conversation.projectId);
   const provider =
-    model === "codex" ? new CodexChat({ store }) : new OpenAIChat();
+    model === "codex"
+      ? new CodexChat({ store, cwd: project.rootPath ?? process.cwd() })
+      : model === "claude" || model.startsWith("claude:")
+        ? new ClaudeCodeChat({
+            store,
+            cwd: project.rootPath ?? process.cwd(),
+            model: model.startsWith("claude:")
+              ? model.slice("claude:".length)
+              : undefined,
+          })
+        : new OpenAIChat();
   const rl = createInterface({
     input: stdin,
     output: stdout,
@@ -85,6 +103,118 @@ async function chat(conversation, model, initialPrompt = null) {
   }
 }
 
+async function runClaudeHarness(conversation, prompt) {
+  const project = store.project(conversation.projectId);
+  const rl = createInterface({
+    input: stdin,
+    output: stdout,
+    terminal: Boolean(stdin.isTTY),
+  });
+  const adapter = new ClaudeCodeHarness({
+    store,
+    cwd: project.rootPath ?? process.cwd(),
+    model:
+      conversation.modelId === "claude"
+        ? undefined
+        : conversation.modelId.startsWith("claude:")
+          ? conversation.modelId.slice("claude:".length)
+          : conversation.modelId,
+    requestPermission: async ({ toolName, input }, permissionSignal) => {
+      if (!stdin.isTTY) {
+        stdout.write(
+          `Permission refusée (session non interactive): ${toolName}\n`,
+        );
+        return false;
+      }
+      return new Promise((resolve) => {
+        if (permissionSignal?.aborted) return resolve(false);
+        let settled = false;
+        const finish = (allowed) => {
+          if (settled) return;
+          settled = true;
+          resolve(allowed);
+        };
+        const onAbort = () => finish(false);
+        permissionSignal?.addEventListener("abort", onAbort, { once: true });
+        rl.question(
+          `Claude demande ${toolName}: ${JSON.stringify(input)}\nAutoriser cette action une fois ? [y/N] `,
+        )
+          .then((answer) => {
+            permissionSignal?.removeEventListener("abort", onAbort);
+            finish(answer.trim().toLowerCase() === "y");
+          })
+          .catch(() => finish(false));
+      });
+    },
+  });
+  const controller = new AbortController();
+  const interrupt = () => controller.abort();
+  process.on("SIGINT", interrupt);
+  rl.on("SIGINT", interrupt);
+  store.addMessage(conversation.id, "user", prompt);
+  const assistantId = store.addMessage(
+    conversation.id,
+    "assistant",
+    "",
+    "streaming",
+  );
+  let answer = "";
+  let interrupted = false;
+  try {
+    store.setStatus(conversation.id, "running");
+    await adapter.initialize();
+    const sessionId = store
+      .listEvents(conversation.id)
+      .filter(
+        (event) =>
+          event.type === "session.started" &&
+          event.payload.harnessId === "claude-code",
+      )
+      .at(-1)?.payload.sessionId;
+    for await (const event of adapter.run({
+      conversationId: conversation.id,
+      sessionId,
+      prompt,
+      signal: controller.signal,
+    })) {
+      if (event.type === "message.delta") {
+        answer += event.payload.delta;
+        store.appendMessageDelta(assistantId, event.payload.delta);
+        stdout.write(event.payload.delta);
+      } else if (event.type === "tool.started") {
+        stdout.write(`\n[Outil ${event.payload.toolName}]\n`);
+      } else if (event.type === "session.interrupted") {
+        interrupted = true;
+      } else if (event.type === "session.failed") {
+        throw new Error(event.payload.error);
+      }
+    }
+    store.setMessage(
+      assistantId,
+      answer,
+      interrupted ? "interrupted" : "completed",
+    );
+    store.setStatus(conversation.id, interrupted ? "interrupted" : "completed");
+    stdout.write(interrupted ? "\n[Exécution interrompue.]\n" : "\n");
+  } catch (error) {
+    store.setMessage(
+      assistantId,
+      answer,
+      controller.signal.aborted ? "interrupted" : "failed",
+    );
+    store.setStatus(
+      conversation.id,
+      controller.signal.aborted ? "interrupted" : "failed",
+    );
+    throw error;
+  } finally {
+    process.off("SIGINT", interrupt);
+    rl.off("SIGINT", interrupt);
+    rl.close();
+    await adapter.dispose();
+  }
+}
+
 try {
   if (command === "help") help();
   else if (command === "init") print(`Initialisé: ${dataDir}`);
@@ -96,7 +226,7 @@ try {
           `${status.projects.length} projets · ${status.conversations} conversations · ${status.messages} messages · ${dataDir}`,
         );
   } else if (command === "auth" && args[0] === "status") {
-    const status = [codexAuthStatus()];
+    const status = [codexAuthStatus(), claudeAuthStatus()];
     hasFlag("--json")
       ? print(status)
       : status.forEach(({ provider, authenticated }) =>
@@ -109,6 +239,17 @@ try {
     if (result.status !== 0)
       throw new Error("La connexion Codex a échoué ou a été annulée");
     print("Connexion Codex terminée.");
+  } else if (
+    command === "auth" &&
+    args[0] === "login" &&
+    args[1] === "claude"
+  ) {
+    const result = startClaudeLogin();
+    if (result.error)
+      throw new Error("Impossible de lancer la connexion Claude");
+    if (result.status !== 0)
+      throw new Error("La connexion Claude a échoué ou a été annulée");
+    print("Connexion Claude terminée.");
   } else if (command === "project" && args[0] === "create") {
     const name = option("--name");
     if (!name) throw new Error("--name est requis");
@@ -119,10 +260,18 @@ try {
       ),
     );
   } else if (command === "models" && args[0] === "list") {
+    const providerName = option("--provider");
     const provider =
-      option("--provider") === "codex"
+      providerName === "codex"
         ? new CodexChat({ store })
-        : new OpenAIChat();
+        : providerName === "claude" || providerName?.startsWith("claude:")
+          ? new ClaudeCodeChat({
+              store,
+              model: providerName.startsWith("claude:")
+                ? providerName.slice("claude:".length)
+                : undefined,
+            })
+          : new OpenAIChat();
     for (const model of await provider.listModels()) print(model);
   } else if (command === "conversation" && args[0] === "export") {
     print(store.exportConversation(args[1]));
@@ -154,25 +303,56 @@ try {
     stdout.write(`Conversation ${conversation.id} · modèle ${model}\n`);
     await chat(conversation, model);
   } else if (command === "run") {
-    const model = option("--model");
+    const harness = option("--harness");
+    if (harness && harness !== "claude")
+      throw new Error(`Harness non pris en charge: ${harness}`);
+    const conversationArg = option("--conversation");
+    let conversation = conversationArg
+      ? store.recoverConversation(conversationArg)
+      : null;
+    const defaultModel =
+      harness === "claude"
+        ? conversation?.modelId?.startsWith("claude")
+          ? conversation.modelId
+          : "claude"
+        : (conversation?.modelId ?? null);
+    const model = option("--model", defaultModel);
     const projectArg = option("--project");
-    const project = store.project(projectArg ?? "");
+    const project = conversation
+      ? store.project(conversation.projectId)
+      : store.project(projectArg ?? "");
+    const consumedValueIndexes = [
+      "--model",
+      "--project",
+      "--harness",
+      "--conversation",
+    ]
+      .map((name) => args.indexOf(name) + 1)
+      .filter((index) => index > 0);
     const prompt = args
-      .filter((a) => !a.startsWith("--") && a !== model && a !== projectArg)
+      .filter(
+        (a, index) =>
+          !a.startsWith("--") && !consumedValueIndexes.includes(index),
+      )
       .join(" ");
     if (!model || !prompt)
       throw new Error(
-        "Usage: omni run --project ID_OR_PATH --model MODEL PROMPT",
+        "Usage: omni run --project ID_OR_PATH [--model MODEL] [--harness claude] PROMPT",
       );
-    const conversation = store.createConversation(
-      project.id,
-      prompt.slice(0, 80),
-      model,
-    );
-    await chat(conversation, model, prompt);
+    if (conversation) {
+      conversation = store.setModel(conversation.id, model);
+    } else {
+      conversation = store.createConversation(
+        project.id,
+        prompt.slice(0, 80),
+        model,
+      );
+    }
+    if (harness === "claude") await runClaudeHarness(conversation, prompt);
+    else await chat(conversation, model, prompt);
   } else help();
 } catch (error) {
-  let safe = error.message;
+  let safe = redactSecrets(error.message);
   if (process.env.OPENAI_API_KEY)
     safe = safe.replaceAll(process.env.OPENAI_API_KEY, "[REDACTED]");
   safe = safe

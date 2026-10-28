@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { ChatStore } from "../src/chat-store.mjs";
 import { OpenAIChat } from "../src/openai-chat.mjs";
 import { runChatTurn } from "../src/chat-runner.mjs";
+import { redactSecrets } from "../src/core.mjs";
 
 test("projects and partial/completed conversation messages survive database reopen", () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-chat-"));
@@ -353,6 +354,22 @@ test("credential patterns are redacted from prompts, events, and exports", async
   assert.match(exported, /REDACTED/);
   store.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("named credential fields and JWT access tokens are redacted", () => {
+  const jwt = [
+    "eyJhbGciOiJIUzI1NiJ9",
+    "eyJzdWIiOiIxMjM0NTYifQ",
+    "signature-token-value",
+  ].join(".");
+  const safe = redactSecrets({
+    api_key: "sensitive-value-123",
+    accessToken: jwt,
+  });
+  assert.deepEqual(safe, {
+    api_key: "[REDACTED]",
+    accessToken: "[REDACTED]",
+  });
 });
 
 test("SQLite conversation storage uses private directory and file permissions", (t) => {
