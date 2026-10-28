@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "defaultEffect": "allow",
+  "rules": [
+    {
+      "id": "protect-repository-core",
+      "effect": "require_approval",
+      "when": {
+        "paths": [
+          "src/**",
+          "bin/**"
+        ],
+        "risk": "high"
+      },
+      "reason": "High-risk changes to core javascript cli paths require approval."
+    },
+    {
+      "id": "protect-repository-config",
+      "effect": "require_approval",
+      "when": {
+        "paths": [
+          "package.json"
+        ],
+        "risk": "high"
+      },
+      "reason": "High-risk changes to repository automation and build configuration require approval."
+    },
+    {
+      "id": "block-secrets",
+      "effect": "deny",
+      "when": {
+        "paths": [
+          "**/.env*",
+          "**/*.pem",
+          "**/*.key",
+          "**/*secret*"
+        ]
+      },
+      "reason": "Secret-like files are blocked by policy."
+    }
+  ]
+}

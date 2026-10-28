@@ -1,0 +1,9 @@
+node_modules/
+.omni/
+*.db
+*.sqlite
+*.sqlite3
+.context/runtime/
+.context/plans/
+.context/cache/semantic/
+.context/**/archive/

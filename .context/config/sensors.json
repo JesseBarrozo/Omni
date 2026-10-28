@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-28T01:20:46.385Z",
+  "source": "manual",
+  "stack": {
+    "primaryLanguage": "javascript",
+    "languages": [
+      "javascript"
+    ],
+    "frameworks": ["Node.js CLI"],
+    "buildTools": [],
+    "testFrameworks": ["node:test"],
+    "packageManager": "npm"
+  },
+  "sensors": [
+    {
+      "id": "test",
+      "name": "Test",
+      "description": "Run package test script",
+      "severity": "critical",
+      "command": "npm test",
+      "script": "test"
+    },
+    {
+      "id": "syntax",
+      "name": "Node syntax check",
+      "description": "Check the current CLI and core modules parse",
+      "severity": "critical",
+      "command": "npm run check",
+      "script": "check"
+    }
+  ]
+}
