@@ -31,6 +31,7 @@ export async function runChatTurn({
     answer = await provider.stream({
       model,
       messages: history,
+      conversationId,
       signal,
       onDelta: (delta) => {
         answer += delta;

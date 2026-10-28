@@ -10,6 +10,14 @@
 
 ---
 
+## État d’implémentation vérifié — 28 octobre 2026
+
+- Le socle chat SQLite de la phase 2 est commité (`93677d7`). Le test direct OpenAI par clé API n’a pas été exécuté.
+- Le parcours Codex OAuth via l’app-server officiel a répondu en réel, streamé les deltas et repris le même thread après redémarrage de la base Omni. L’authentification reste gérée par le CLI Codex; Omni n’importe ni n’extrait son jeton. Cette intégration est en lecture seule.
+- Les connexions Claude Code et Antigravity, les outils avec écriture, le gestionnaire général de secrets, Harness Swap, Auto Orchestrator et Orca ne sont pas validés.
+
+---
+
 ## 1. Résumé exécutif
 
 Omni est une plateforme autonome d’orchestration d’agents IA. Elle fournit une conversation universelle persistante dans laquelle l’utilisateur peut choisir, remplacer ou laisser sélectionner automatiquement :

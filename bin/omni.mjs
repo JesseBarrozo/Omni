@@ -6,6 +6,11 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { ChatStore } from "../src/chat-store.mjs";
 import { OpenAIChat } from "../src/openai-chat.mjs";
+import {
+  CodexChat,
+  codexAuthStatus,
+  startCodexLogin,
+} from "../src/codex-chat.mjs";
 import { runChatTurn } from "../src/chat-runner.mjs";
 
 const dataDir = process.env.OMNI_DATA_DIR || join(homedir(), ".omni");
@@ -23,11 +28,12 @@ const option = (name, fallback = null) => {
 const hasFlag = (name) => args.includes(name);
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  project create --name NAME [--path PATH]\n  models list\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH --model MODEL PROMPT\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex\n  project create --name NAME [--path PATH]\n  models list [--provider codex]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH --model MODEL PROMPT\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function chat(conversation, model, initialPrompt = null) {
-  const provider = new OpenAIChat();
+  const provider =
+    model === "codex" ? new CodexChat({ store }) : new OpenAIChat();
   const rl = createInterface({
     input: stdin,
     output: stdout,
@@ -89,6 +95,20 @@ try {
       : print(
           `${status.projects.length} projets · ${status.conversations} conversations · ${status.messages} messages · ${dataDir}`,
         );
+  } else if (command === "auth" && args[0] === "status") {
+    const status = [codexAuthStatus()];
+    hasFlag("--json")
+      ? print(status)
+      : status.forEach(({ provider, authenticated }) =>
+          print(`${provider}: ${authenticated ? "connecté" : "non connecté"}`),
+        );
+  } else if (command === "auth" && args[0] === "login" && args[1] === "codex") {
+    const result = startCodexLogin();
+    if (result.error)
+      throw new Error("Impossible de lancer la connexion Codex");
+    if (result.status !== 0)
+      throw new Error("La connexion Codex a échoué ou a été annulée");
+    print("Connexion Codex terminée.");
   } else if (command === "project" && args[0] === "create") {
     const name = option("--name");
     if (!name) throw new Error("--name est requis");
@@ -99,7 +119,11 @@ try {
       ),
     );
   } else if (command === "models" && args[0] === "list") {
-    for (const model of await new OpenAIChat().listModels()) print(model);
+    const provider =
+      option("--provider") === "codex"
+        ? new CodexChat({ store })
+        : new OpenAIChat();
+    for (const model of await provider.listModels()) print(model);
   } else if (command === "conversation" && args[0] === "export") {
     print(store.exportConversation(args[1]));
   } else if (command === "conversation" && args[0] === "import") {
