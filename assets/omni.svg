@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-30 -30 550 550" role="img" aria-label="Omni">
+  <style>
+    .omni-nodes {
+      fill: #FFD281;
+    }
+    .omni-edges {
+      stroke: #FFD281;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+  </style>
+  <g class="omni-edges">
+    <polygon points="166.29 35 64.03 451.5 453.9 328.2 336.4 78.14 166.29 35" stroke-width="30"/>
+    <polygon points="166.29 35 35 227.54 336.4 78.14 166.29 35" stroke-width="12"/>
+    <polygon points="341.7 445.95 336.4 78.14 453.9 328.2 341.7 445.95" stroke-width="12"/>
+    <polygon points="35 227.54 64.03 451.5 341.7 445.95 35 227.54" stroke-width="12"/>
+  </g>
+  <g class="omni-nodes">
+    <circle cx="166.29" cy="35" r="35"/>
+    <circle cx="336.4" cy="78.14" r="35"/>
+    <circle cx="453.9" cy="328.2" r="35"/>
+    <circle cx="341.7" cy="445.95" r="35"/>
+    <circle cx="65.07" cy="451.5" r="35"/>
+    <circle cx="35" cy="227.54" r="35"/>
+  </g>
+</svg>
