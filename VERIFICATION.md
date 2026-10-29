@@ -238,5 +238,6 @@ Commandes/résultats de cette investigation : `agy --help` (CLI présent), `agy 
 - [x] Sélection vérifiée dans le code: OAuth ChatGPT, puis `OPENAI_API_KEY`, puis clé du trousseau. `auth status --json` ne rapporte que l'état et la source; la suppression interactive exige confirmation et le mode non interactif exige `--yes`.
 - [x] Tests locaux: gestion injectée de la clé, passage au client OpenAI officiel, absence de fuite dans le statut CLI et refus des entrées malformées/arguments. Ces tests n'envoient aucune requête réseau.
 - [x] `OMNI_LIVE_KEYRING_TESTS=1 node --test test/secret-store.test.mjs` : 3/3 tests réussis; écriture, lecture et suppression d'un secret temporaire avec un compte isolé du compte API par défaut.
+- [x] Parcours CLI réel avec une valeur temporaire non envoyée à OpenAI : `auth key set --stdin`, `auth status --json`, puis `auth key remove --yes`; valeur absente des sorties et supprimée du trousseau à la fin.
 - [ ] Aucun test d'appel modèle/catalogue ou d'authentification OpenAI API-key n'a été effectué dans cette phase. Le comportement réseau avec une clé stockée reste à valider avec un compte de test dédié.
 - [ ] Les vérifications présentes ne prouvent pas encore la sélection runtime par un appel API réel; la clé API de l'utilisateur n'a pas été lue, remplacée ni supprimée pendant les tests.
