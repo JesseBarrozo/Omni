@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- OpenCode Harness (partially validated): official `@opencode-ai/sdk` v2 client and local CLI server, loopback binding with an ephemeral Basic password, isolated child environment, real model catalog, persisted session references, restart resume, interrupt, checkpoints, streamed event normalization, and Omni permission prompts. The installed server’s OpenAPI schema confirms its `decision` field while the SDK generates `reply`; Omni applies a schema-checked fetch bridge. Real session lifecycle and permission create/reject API tests pass without model calls. No authenticated generation, actual tool execution, or interactive model-originated permission event has been run. OpenCode remains unavailable for Auto and Harness Swap.
+
 - Harness test fixture : `MockHarnessAdapter` a été retiré de `src` et du package publié; il vit désormais sous `test-fixtures/` et un test vérifie les exports publics. Les vrais adapters restent inchangés.
 
 - Gemini Developer API : provider Google distinct d’Antigravity via le SDK officiel `@google/genai` 2.31.0 (Apache-2.0), catalogue paginé filtré sur `generateContent`, streaming, interruption, routage Auto, clé dédiée au trousseau et aucune relance HTTP automatique des générations. Validation SDK loopback; aucune clé réelle ou API distante utilisée.

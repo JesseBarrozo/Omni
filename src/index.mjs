@@ -9,3 +9,4 @@ export * from "./antigravity-cli.mjs";
 export * from "./secret-store.mjs";
 export * from "./mcp-registry.mjs";
 export * from "./harness-swap.mjs";
+export * from "./opencode-harness.mjs";

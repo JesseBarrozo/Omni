@@ -11,6 +11,7 @@ import { OpenAIAuth } from "../src/openai-auth.mjs";
 import { OpenRouterAuth, OpenRouterChat } from "../src/openrouter-chat.mjs";
 import { AnthropicApiAuth, AnthropicApiChat } from "../src/anthropic-api.mjs";
 import { GeminiApiAuth, GeminiApiChat } from "../src/gemini-api.mjs";
+import { OpenCodeHarness } from "../src/opencode-harness.mjs";
 import { McpRegistry } from "../src/mcp-registry.mjs";
 import {
   AntigravityCliChat,
@@ -126,7 +127,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter --stdin\n  auth key set anthropic --stdin\n  auth key set google --stdin\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  auth key remove openrouter|anthropic|google [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter --stdin\n  auth key set anthropic --stdin\n  auth key set google --stdin\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  auth key remove openrouter|anthropic|google [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
@@ -514,7 +515,15 @@ function createHarnessRun(harnessId, conversation, modelId) {
             requestPermission,
             mcpRegistry: mcpRegistry(),
           })
-        : null;
+        : harnessId === "opencode"
+          ? new OpenCodeHarness({
+              store,
+              executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode",
+              cwd: project.rootPath ?? process.cwd(),
+              model: modelId,
+              requestPermission,
+            })
+          : null;
   if (!adapter) {
     rl.close();
     throw new Error(`Harness Auto non pris en charge: ${harnessId}`);
@@ -577,6 +586,13 @@ async function refreshProvider(providerId) {
     authenticated =
       Boolean(process.env.GEMINI_API_KEY) || geminiApiAuth().hasApiKey();
     if (authenticated) provider = createGeminiApiChat();
+  } else if (providerId === "opencode") {
+    name = "OpenCode provider registry";
+    authenticated = true;
+    provider = new OpenCodeHarness({
+      store,
+      executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode",
+    });
   } else if (providerId === "antigravity") {
     name = "Google Antigravity CLI OAuth";
     authenticated = antigravityCliStatus().cliInstalled;
@@ -619,6 +635,8 @@ async function refreshProvider(providerId) {
       modelCount: 0,
       error: redactError(error.message),
     };
+  } finally {
+    await provider.dispose?.().catch(() => {});
   }
 }
 
@@ -633,11 +651,13 @@ function assertManualSelectionEnabled(modelId, harness = null) {
           ? "openrouter"
           : modelId.startsWith("anthropic:")
             ? "anthropic"
-            : modelId.startsWith("google:")
-              ? "google"
-              : modelId.startsWith("antigravity:")
-                ? "antigravity"
-                : "openai");
+            : modelId.startsWith("opencode:")
+              ? "opencode"
+              : modelId.startsWith("google:")
+                ? "google"
+                : modelId.startsWith("antigravity:")
+                  ? "antigravity"
+                  : "openai");
   const provider = store
     .providerRegistry()
     .find((entry) => entry.id === providerId);
@@ -683,6 +703,14 @@ async function refreshHarness(harnessId) {
     integration = "Claude Agent SDK";
     authenticated = claudeAuthStatus().authenticated;
     adapter = new ClaudeCodeHarness({ store });
+  } else if (harnessId === "opencode") {
+    providerId = "opencode";
+    integration = "OpenCode local server via official SDK v2";
+    authenticated = true;
+    adapter = new OpenCodeHarness({
+      store,
+      executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode",
+    });
   } else throw new Error(`Harness non pris en charge: ${harnessId}`);
   const capabilities = await adapter.capabilities();
   let status = authenticated ? "unavailable" : "disconnected";
@@ -1098,6 +1126,112 @@ async function runCodexHarness(conversation, prompt, preparedRun = null) {
       if (jsonRunOutput)
         emitRunEvent("session.checkpointed", { checkpointId: checkpoint.id });
       else stdout.write(`\nCheckpoint Codex: ${checkpoint.id}\n`);
+    }
+    store.setMessage(
+      assistantId,
+      answer,
+      interrupted ? "interrupted" : "completed",
+    );
+    store.setStatus(conversation.id, interrupted ? "interrupted" : "completed");
+    if (!jsonRunOutput)
+      stdout.write(interrupted ? "\n[Exécution interrompue.]\n" : "\n");
+    return interrupted ? "interrupted" : "completed";
+  } catch (error) {
+    const wasInterrupted = controller.signal.aborted;
+    store.setMessage(
+      assistantId,
+      answer,
+      wasInterrupted ? "interrupted" : "failed",
+    );
+    store.setStatus(conversation.id, wasInterrupted ? "interrupted" : "failed");
+    if (wasInterrupted) return "interrupted";
+    throw error;
+  } finally {
+    process.off("SIGINT", interrupt);
+    rl.off("SIGINT", interrupt);
+    rl.close();
+    await adapter.dispose();
+  }
+}
+
+async function runOpenCodeHarness(conversation, prompt, preparedRun = null) {
+  const project = store.project(conversation.projectId);
+  const cwd = project.rootPath ?? process.cwd();
+  const { adapter, rl } =
+    preparedRun ??
+    createHarnessRun("opencode", conversation, conversation.modelId);
+  const controller = new AbortController();
+  const interrupt = () => controller.abort();
+  process.on("SIGINT", interrupt);
+  rl.on("SIGINT", interrupt);
+  store.addMessage(conversation.id, "user", prompt);
+  const assistantId = store.addMessage(
+    conversation.id,
+    "assistant",
+    "",
+    "streaming",
+  );
+  let answer = "";
+  let interrupted = false;
+  let completed = false;
+  try {
+    store.setStatus(conversation.id, "running");
+    await adapter.initialize({ cwd });
+    const sessionRef = store
+      .listEvents(conversation.id)
+      .filter(
+        (event) =>
+          (event.type === "session.started" &&
+            event.payload.harnessId === "opencode") ||
+          (event.type === "harness.changed" &&
+            event.payload.toHarnessId === "opencode"),
+      )
+      .at(-1);
+    const sessionId =
+      sessionRef?.payload.sessionId ?? sessionRef?.payload.targetSessionId;
+    const session = sessionId
+      ? await adapter.resumeSession(sessionId, {
+          conversationId: conversation.id,
+          cwd,
+        })
+      : await adapter.createSession({
+          conversationId: conversation.id,
+          cwd,
+          model: conversation.modelId,
+        });
+    for await (const event of adapter.run({
+      conversationId: conversation.id,
+      sessionId: session.id,
+      prompt,
+      signal: controller.signal,
+    })) {
+      if (event.type === "message.delta") {
+        answer += event.payload.delta;
+        store.appendMessageDelta(assistantId, event.payload.delta);
+        if (jsonRunOutput)
+          writeRunEvent("message.delta", { delta: event.payload.delta });
+        else stdout.write(event.payload.delta);
+      } else if (event.type === "tool.started") {
+        if (jsonRunOutput)
+          writeRunEvent("tool.started", { toolName: event.payload.toolName });
+        else stdout.write(`\n[Outil ${event.payload.toolName}]\n`);
+      } else if (event.type === "tool.completed") {
+        emitRunEvent("tool.completed", { toolName: event.payload.toolName });
+      } else if (event.type === "tool.failed") {
+        emitRunEvent("tool.failed", { toolName: event.payload.toolName });
+      } else if (event.type === "session.interrupted") {
+        interrupted = true;
+      } else if (event.type === "session.completed") {
+        completed = true;
+      }
+    }
+    if (!interrupted && !completed)
+      throw new Error("OpenCode a terminé sans confirmer le tour");
+    if (!interrupted) {
+      const checkpoint = await adapter.checkpoint(session.id);
+      if (jsonRunOutput)
+        emitRunEvent("session.checkpointed", { checkpointId: checkpoint.id });
+      else stdout.write(`\nCheckpoint OpenCode: ${checkpoint.id}\n`);
     }
     store.setMessage(
       assistantId,
@@ -1662,8 +1796,11 @@ try {
           "anthropic",
           "google",
           "antigravity",
+          "opencode",
         ];
-    const results = await Promise.all(providers.map(refreshProvider));
+    const results = [];
+    for (const providerId of providers)
+      results.push(await refreshProvider(providerId));
     hasFlag("--json")
       ? print(results)
       : results.forEach((result) =>
@@ -1691,8 +1828,12 @@ try {
         );
   } else if (command === "harnesses" && args[0] === "refresh") {
     const requested = option("--harness");
-    const harnesses = requested ? [requested] : ["codex", "claude-code"];
-    const results = await Promise.all(harnesses.map(refreshHarness));
+    const harnesses = requested
+      ? [requested]
+      : ["codex", "claude-code", "opencode"];
+    const results = [];
+    for (const harnessId of harnesses)
+      results.push(await refreshHarness(harnessId));
     hasFlag("--json")
       ? print(results)
       : results.forEach((harness) =>
@@ -1846,7 +1987,7 @@ try {
       )
     )
       throw new Error("Nom de serveur MCP requis invalide.");
-    if (harness && !["claude", "codex"].includes(harness))
+    if (harness && !["claude", "codex", "opencode"].includes(harness))
       throw new Error(`Harness non pris en charge: ${harness}`);
     if (autoMode && (harness || option("--model")))
       throw new Error("--auto choisit seul le modèle et le harness");
@@ -1861,7 +2002,9 @@ try {
           : "claude"
         : harness === "codex"
           ? (conversation?.modelId ?? "codex")
-          : (conversation?.modelId ?? null);
+          : harness === "opencode"
+            ? (conversation?.modelId ?? "opencode")
+            : (conversation?.modelId ?? null);
     let model = option("--model", defaultModel);
     const projectArg = option("--project");
     const project = conversation
@@ -1884,7 +2027,7 @@ try {
       .join(" ");
     if ((!autoMode && !model) || !prompt)
       throw new Error(
-        "Usage: omni run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--json] PROMPT",
+        "Usage: omni run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--json] PROMPT",
       );
     if (!autoMode && model?.startsWith("antigravity:"))
       throw new Error(
@@ -1910,7 +2053,13 @@ try {
     if (!autoMode) {
       assertManualSelectionEnabled(model, harness);
       if (harness)
-        assertHarnessEnabled(harness === "claude" ? "claude-code" : "codex");
+        assertHarnessEnabled(
+          harness === "claude"
+            ? "claude-code"
+            : harness === "opencode"
+              ? "opencode"
+              : "codex",
+        );
     }
     if (conversation) {
       conversation = store.setModel(conversation.id, model);
@@ -2002,6 +2151,8 @@ try {
         runStatus = await runClaudeHarness(conversation, prompt, preparedRun);
       else if (harness === "codex")
         runStatus = await runCodexHarness(conversation, prompt, preparedRun);
+      else if (harness === "opencode")
+        runStatus = await runOpenCodeHarness(conversation, prompt, preparedRun);
       else
         runStatus = await chat(
           conversation,
