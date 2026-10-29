@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Harness test fixture : `MockHarnessAdapter` a été retiré de `src` et du package publié; il vit désormais sous `test-fixtures/` et un test vérifie les exports publics. Les vrais adapters restent inchangés.
+
 - Gemini Developer API : provider Google distinct d’Antigravity via le SDK officiel `@google/genai` 2.31.0 (Apache-2.0), catalogue paginé filtré sur `generateContent`, streaming, interruption, routage Auto, clé dédiée au trousseau et aucune relance HTTP automatique des générations. Validation SDK loopback; aucune clé réelle ou API distante utilisée.
 
 - Anthropic API : ajout distinct de Claude Code, via le SDK officiel `@anthropic-ai/sdk` 1.3.0 (Apache-2.0), pagination de `models.list()`, streaming Messages API et credentials dédiés du trousseau. Le SDK a passé un parcours contrat complet contre un serveur HTTP local; aucune clé réelle ni requête live utilisée.

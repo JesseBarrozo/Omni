@@ -1,5 +1,13 @@
 # Vérification et tests à refaire
 
+## Isolation des faux harnesses
+
+- [x] `MockHarnessAdapter` déplacé de `src/adapters.mjs` vers `test-fixtures/mock-harness-adapter.mjs`; le code de production n’expose que `assertHarnessAdapter`.
+- [x] `test/package-surface.test.mjs` importe les exports publics `omni-core` et `omni-core/adapters` et vérifie l’absence de `MockHarnessAdapter`.
+- [x] Recherche `rg -n "MockHarnessAdapter" src bin` : aucune référence de production.
+- [x] Validation : `npm test` (109 tests, 84 réussis, 0 échec, 25 opt-in ignorés), `npm run lint`, `npm run format:check`, `npm run check`, `npm run build`, `git diff --check` réussis.
+- Ce changement n’ajoute aucune capacité harness; il évite d’exposer une réponse simulée dans la surface production. Aucun parcours modèle/harness réel n’a été relancé pour cette phase.
+
 ## Provider Gemini Developer API
 
 - [x] Provider Google direct distinct d’Antigravity via le SDK officiel `@google/genai` 2.31.0 (Apache-2.0), catalogue paginé, filtrage des modèles compatibles `generateContent`, streaming avec `AbortSignal` et Auto chat.
