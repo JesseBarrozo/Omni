@@ -1,5 +1,14 @@
 # Vérification et tests à refaire
 
+## Provider Gemini Developer API
+
+- [x] Provider Google direct distinct d’Antigravity via le SDK officiel `@google/genai` 2.31.0 (Apache-2.0), catalogue paginé, filtrage des modèles compatibles `generateContent`, streaming avec `AbortSignal` et Auto chat.
+- [x] Clé dédiée `Omni Gemini API Key`, variable `GEMINI_API_KEY`, erreurs expurgées et SDK configuré avec une tentative totale pour éviter de rejouer une génération.
+- [x] Tests du vrai SDK contre un serveur HTTP loopback : pagination, modèle génération vs embedding, auth, payload multi-tour, deltas, interruption après premier delta et absence de relance.
+- [x] CLI sans clé : `providers refresh --provider google --json` retourne `disconnected` sans contacter Google.
+- [x] Validation globale : `npm test` (108 tests, 83 réussis, 0 échec, 25 opt-in ignorés), lint, format:check, check, build, diff-check et `npm audit --omit=dev` (0 vulnérabilité) réussis.
+- [ ] Pas de clé ni d’appel live Google utilisé; catalogue réel, configuration de facturation et réponse modèle restent non validés.
+
 ## Provider API Anthropic
 
 - [x] Implémentation séparée de Claude Code : SDK officiel `@anthropic-ai/sdk` 1.3.0, catalogue paginé et flux Messages API, reprise via l’historique SQLite.

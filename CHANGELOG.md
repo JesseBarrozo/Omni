@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Gemini Developer API : provider Google distinct d’Antigravity via le SDK officiel `@google/genai` 2.31.0 (Apache-2.0), catalogue paginé filtré sur `generateContent`, streaming, interruption, routage Auto, clé dédiée au trousseau et aucune relance HTTP automatique des générations. Validation SDK loopback; aucune clé réelle ou API distante utilisée.
+
 - Anthropic API : ajout distinct de Claude Code, via le SDK officiel `@anthropic-ai/sdk` 1.3.0 (Apache-2.0), pagination de `models.list()`, streaming Messages API et credentials dédiés du trousseau. Le SDK a passé un parcours contrat complet contre un serveur HTTP local; aucune clé réelle ni requête live utilisée.
 
 - OpenRouter : nouveau provider via le SDK officiel `openai` et l’endpoint OpenAI-compatible Chat Completions documenté par OpenRouter. Le catalogue et le chat streamé sont intégrés aux commandes `providers refresh`, `models list`, `chat` et `resume`; clé dédiée au trousseau système ou variable `OPENROUTER_API_KEY`, erreurs expurgées. Test SDK HTTP local réussi; aucun appel live ni test de clé OpenRouter effectué.

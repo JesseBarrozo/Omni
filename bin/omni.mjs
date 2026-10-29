@@ -10,6 +10,7 @@ import { OpenAIChat } from "../src/openai-chat.mjs";
 import { OpenAIAuth } from "../src/openai-auth.mjs";
 import { OpenRouterAuth, OpenRouterChat } from "../src/openrouter-chat.mjs";
 import { AnthropicApiAuth, AnthropicApiChat } from "../src/anthropic-api.mjs";
+import { GeminiApiAuth, GeminiApiChat } from "../src/gemini-api.mjs";
 import { McpRegistry } from "../src/mcp-registry.mjs";
 import {
   AntigravityCliChat,
@@ -37,6 +38,7 @@ const store = new ChatStore(join(dataDir, "omni.sqlite"));
 const openAIAuth = () => new OpenAIAuth({ dataDir });
 const openRouterAuth = () => new OpenRouterAuth();
 const anthropicApiAuth = () => new AnthropicApiAuth();
+const geminiApiAuth = () => new GeminiApiAuth();
 const mcpRegistry = () => new McpRegistry({ store });
 const redactError = (value) => {
   let safe = redactSecrets(value);
@@ -52,6 +54,11 @@ const redactError = (value) => {
   } catch {}
   try {
     const key = process.env.ANTHROPIC_API_KEY ?? anthropicApiAuth().getApiKey();
+    if (key && typeof safe === "string")
+      safe = safe.replaceAll(key, "[REDACTED]");
+  } catch {}
+  try {
+    const key = process.env.GEMINI_API_KEY ?? geminiApiAuth().getApiKey();
     if (key && typeof safe === "string")
       safe = safe.replaceAll(key, "[REDACTED]");
   } catch {}
@@ -71,6 +78,10 @@ const createOpenRouterChat = () =>
 const createAnthropicApiChat = () =>
   new AnthropicApiChat({
     apiKey: process.env.ANTHROPIC_API_KEY ?? anthropicApiAuth().getApiKey(),
+  });
+const createGeminiApiChat = () =>
+  new GeminiApiChat({
+    apiKey: process.env.GEMINI_API_KEY ?? geminiApiAuth().getApiKey(),
   });
 async function readApiKeyFromStdin() {
   if (stdin.isTTY)
@@ -115,7 +126,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter --stdin\n  auth key set anthropic --stdin\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  auth key remove openrouter|anthropic [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter --stdin\n  auth key set anthropic --stdin\n  auth key set google --stdin\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  auth key remove openrouter|anthropic|google [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
@@ -360,6 +371,32 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
   } else
     checkedProviders.push({ providerId: "anthropic", authenticated: false });
 
+  if (process.env.GEMINI_API_KEY || geminiApiAuth().hasApiKey()) {
+    try {
+      const models = await createGeminiApiChat().listModels();
+      if (models.length)
+        addProvider(
+          "google",
+          models,
+          "google-chat",
+          "Gemini chat",
+          "google-chat",
+        );
+      checkedProviders.push({
+        providerId: "google",
+        authenticated: true,
+        modelCount: models.length,
+      });
+    } catch (error) {
+      checkedProviders.push({
+        providerId: "google",
+        authenticated: true,
+        available: false,
+        error: redactError(error.message),
+      });
+    }
+  } else checkedProviders.push({ providerId: "google", authenticated: false });
+
   const previousResults = {};
   for (const event of store.routingResults(200)) {
     const { candidateKey, outcome, latencyMs } = event.payload;
@@ -499,6 +536,7 @@ function createAutoChatProvider(candidate, conversation) {
   if (candidate.providerId === "openai") return createOpenAIChat();
   if (candidate.providerId === "openrouter") return createOpenRouterChat();
   if (candidate.providerId === "anthropic") return createAnthropicApiChat();
+  if (candidate.providerId === "google") return createGeminiApiChat();
   throw new Error(
     `Fournisseur de chat Auto non pris en charge: ${candidate.providerId}`,
   );
@@ -534,6 +572,11 @@ async function refreshProvider(providerId) {
     authenticated =
       Boolean(process.env.ANTHROPIC_API_KEY) || anthropicApiAuth().hasApiKey();
     if (authenticated) provider = createAnthropicApiChat();
+  } else if (providerId === "google") {
+    name = "Gemini Developer API";
+    authenticated =
+      Boolean(process.env.GEMINI_API_KEY) || geminiApiAuth().hasApiKey();
+    if (authenticated) provider = createGeminiApiChat();
   } else if (providerId === "antigravity") {
     name = "Google Antigravity CLI OAuth";
     authenticated = antigravityCliStatus().cliInstalled;
@@ -590,9 +633,11 @@ function assertManualSelectionEnabled(modelId, harness = null) {
           ? "openrouter"
           : modelId.startsWith("anthropic:")
             ? "anthropic"
-            : modelId.startsWith("antigravity:")
-              ? "antigravity"
-              : "openai");
+            : modelId.startsWith("google:")
+              ? "google"
+              : modelId.startsWith("antigravity:")
+                ? "antigravity"
+                : "openai");
   const provider = store
     .providerRegistry()
     .find((entry) => entry.id === providerId);
@@ -826,7 +871,9 @@ async function chat(
               ? createOpenRouterChat()
               : model.startsWith("anthropic:")
                 ? createAnthropicApiChat()
-                : createOpenAIChat());
+                : model.startsWith("google:")
+                  ? createGeminiApiChat()
+                  : createOpenAIChat());
   const rl = createInterface({
     input: stdin,
     output: jsonRunOutput ? process.stderr : stdout,
@@ -1130,6 +1177,16 @@ try {
             ? "keyring-api-key"
             : null,
       },
+      {
+        provider: "google-gemini",
+        authenticated:
+          Boolean(process.env.GEMINI_API_KEY) || geminiApiAuth().hasApiKey(),
+        source: process.env.GEMINI_API_KEY
+          ? "api-key"
+          : geminiApiAuth().hasApiKey()
+            ? "keyring-api-key"
+            : null,
+      },
       antigravityCliStatus(),
     ];
     hasFlag("--json")
@@ -1147,6 +1204,29 @@ try {
     await openAIAuth().login();
     print(
       "Connexion ChatGPT OpenAI vérifiée et enregistrée dans le trousseau système.",
+    );
+  } else if (
+    command === "auth" &&
+    args[0] === "key" &&
+    args[1] === "set" &&
+    args[2] === "google"
+  ) {
+    if (!hasFlag("--stdin"))
+      throw new Error("Fournissez la clé uniquement avec --stdin.");
+    geminiApiAuth().setApiKey(await readApiKeyFromStdin());
+    print("Clé Gemini enregistrée dans le trousseau système.");
+  } else if (
+    command === "auth" &&
+    args[0] === "key" &&
+    args[1] === "remove" &&
+    args[2] === "google"
+  ) {
+    if (!hasFlag("--yes"))
+      throw new Error("Confirmez la suppression avec --yes.");
+    print(
+      geminiApiAuth().deleteApiKey()
+        ? "Clé Gemini supprimée."
+        : "Aucune clé Gemini enregistrée.",
     );
   } else if (
     command === "auth" &&
@@ -1574,7 +1654,15 @@ try {
     const requested = option("--provider");
     const providers = requested
       ? [requested]
-      : ["codex", "claude", "openai", "openrouter", "anthropic", "antigravity"];
+      : [
+          "codex",
+          "claude",
+          "openai",
+          "openrouter",
+          "anthropic",
+          "google",
+          "antigravity",
+        ];
     const results = await Promise.all(providers.map(refreshProvider));
     hasFlag("--json")
       ? print(results)
@@ -1973,6 +2061,8 @@ try {
     safe = safe.replaceAll(process.env.OPENROUTER_API_KEY, "[REDACTED]");
   if (process.env.ANTHROPIC_API_KEY)
     safe = safe.replaceAll(process.env.ANTHROPIC_API_KEY, "[REDACTED]");
+  if (process.env.GEMINI_API_KEY)
+    safe = safe.replaceAll(process.env.GEMINI_API_KEY, "[REDACTED]");
   safe = safe
     .replace(/sk-[A-Za-z0-9_-]{12,}/g, "[REDACTED]")
     .replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]");
