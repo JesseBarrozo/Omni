@@ -99,3 +99,13 @@ OMNI_LIVE_AUTO_TESTS=1 node --test test/auto-router.test.mjs
 ```
 
 Résultats du commit Auto : `npm test` : 40 tests, 32 réussis, 0 échec, 8 intégrations conditionnelles ignorées; `npm run lint`, `npm run format:check`, `npm run check`, `npm run build` et `git diff --check` réussis. Avec `OMNI_LIVE_AUTO_TESTS=1`, le test Auto réel passe 6/6, y compris l’appel OAuth et la vérification du journal SQLite après le sous-processus CLI.
+
+## Vérification de compatibilité Orca
+
+- [x] Skill Orca CLI versionnée consultée; runtime local ouvert puis statut `ready`, Orca CLI/runtime 1.4.242.
+- [x] `orca agent-context --json`, `orca agent launch --help` et `orca terminal create --help` confirment la distinction entre agent TUI connu et commande shell dans un terminal.
+- [x] Lancement réel `orca agent launch --agent omni --worktree path:/Users/barrozo/Github/Omni-Project/Omni ...` refusé avant toute action : `invalid_argument`, `Unknown TUI agent "omni"`.
+- [x] `orca worktree current --json` confirme que le dépôt Omni n’est pas enregistré comme espace Orca; aucun espace Orca n’a été créé ni modifié pour contourner cette limite.
+- [x] Usage documenté comme commande Omni normale depuis un terminal appartenant déjà à un espace Orca; cela ne crée pas une session d’agent Orca native.
+- [ ] Session Omni native dans la liste Agent Sessions Orca : non prise en charge par l’interface exposée; il faut un contrat d’agent externe documenté ou une évolution Orca.
+- L’application Orca a été ouverte conformément au guide CLI pour satisfaire le prérequis runtime. Aucun code, réglage, enregistrement d’agent ou donnée utilisateur Orca n’a été modifié.
