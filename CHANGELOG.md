@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Suivi de reprise : ajout de `POINTS_A_VERIFIER.md` avec les scénarios réels en attente, les blocages d’intégration, les limites des budgets mesurés et les commandes locales de revalidation; correction des lignes historiques contradictoires sur les tarifs OpenCode.
+
 - Auto budget tarifaire de sortie : le registre conserve le tarif de sortie OpenCode, y compris le maximum des paliers; `OMNI_AUTO_MAX_OUTPUT_PER_MILLION` exclut les modèles dont le prix de sortie dépasse le seuil ou reste inconnu.
 
 - Budget mensuel Auto par projet : `OMNI_AUTO_MONTHLY_BUDGET_USD` bloque la sélection Auto dès que les coûts USD réellement persistés atteignent la limite du mois UTC; les montants inconnus restent non estimés et les tours actifs ne sont pas préemptés.
