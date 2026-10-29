@@ -95,6 +95,55 @@ test("AutoRouter records the next real eligible candidate as fallback", () => {
   );
 });
 
+test("AutoRouter includes enabled OpenCode models for agentic tasks without inventing MCP support", () => {
+  const registry = registryFixture();
+  registry.registerProvider({ id: "opencode", name: "OpenCode" });
+  registry.registerModel({
+    id: "provider/model-x",
+    providerId: "opencode",
+    enabled: true,
+    enabledForAuto: true,
+    available: true,
+  });
+  registry.registerHarness({
+    id: "opencode",
+    providerIds: ["opencode"],
+    capabilities: { tools: true, mcpServers: [] },
+    privacyApproved: false,
+  });
+
+  const decision = new AutoRouter(registry, {
+    preferredProviders: ["opencode"],
+    availableMcpServers: ["local-fs"],
+  }).select({ prompt: "Write a file", needsTools: true });
+  assert.equal(decision.selected.providerId, "opencode");
+  assert.equal(decision.selected.modelId, "provider/model-x");
+  assert.equal(decision.selected.harnessId, "opencode");
+
+  const mcpDecision = new AutoRouter(registry, {
+    preferredProviders: ["opencode"],
+    availableMcpServers: ["local-fs"],
+  }).evaluate({
+    prompt: "Use the local filesystem",
+    requiredMcpServers: ["local-fs"],
+  });
+  const opencodeCandidate = mcpDecision.evaluated.find(
+    (candidate) => candidate.key === "opencode/provider/model-x/opencode",
+  );
+  assert.ok(opencodeCandidate.exclusions.includes("required-mcp-unsupported"));
+
+  const privacyDecision = new AutoRouter(registry, {
+    privacyMode: true,
+  }).evaluate({ prompt: "Write a file", needsTools: true });
+  assert.ok(
+    privacyDecision.evaluated
+      .find(
+        (candidate) => candidate.key === "opencode/provider/model-x/opencode",
+      )
+      .exclusions.includes("privacy-not-approved"),
+  );
+});
+
 test("AutoRouter requires a registered MCP server and filters harness compatibility", () => {
   const router = new AutoRouter(registryFixture(), {
     availableMcpServers: ["local-fs"],

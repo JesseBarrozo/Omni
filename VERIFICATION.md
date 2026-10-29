@@ -7,18 +7,26 @@
 - [x] Test serveur réel sans modèle : création session, fermeture serveur et SQLite, réouverture SQLite dans un nouvel adapter, reprise de la session, checkpoint et catalogue.
 - [x] OpenAPI réel : Omni vérifie `/openapi.json`, la route de réponse permission et l’énumération `once|always|reject`; le SDK envoie `reply` alors que le serveur demande `decision`, donc le fetch ne convertit que le champ vérifié. Création puis rejet réel d’une permission sans outil exécuté.
 - [x] Test de contrat : erreur à la réponse permission n’accorde rien, inscrit `permission.requested`, puis demande l’interruption.
-- [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test test/opencode-harness.test.mjs` : 3/3; `npm test` : 112 tests, 86 passés, 0 échec, 26 opt-in ignorés; lint, format:check, check, build et `git diff --check` réussis.
-- [ ] Aucun appel modèle, streaming réel d’une génération, exécution outil réelle ou interaction permission issue d’un modèle n’a été testé. Cela reste à valider sans tester de clés API. OpenCode est intégré au swap manuel à frontière sûre, mais pas à Auto. Le parcours de modification réelle d’un fichier avec un modèle n’a pas été testé.
+- [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test test/opencode-harness.test.mjs` : 3/3; `npm test` : 115 tests, 88 passés, 0 échec, 27 opt-in ignorés; lint, format:check, check, build et `git diff --check` réussis.
+- [ ] Aucun appel modèle, streaming réel d’une génération, exécution outil réelle ou interaction permission issue d’un modèle n’a été testé. Cela reste à valider sans tester de clés API. OpenCode est intégré au swap manuel à frontière sûre et au routage déterministe Auto (prévisualisation live validée plus bas). Le parcours de modification réelle d’un fichier avec un modèle n’a pas été testé.
 
+
+## Auto Router OpenCode (en cours)
+
+- [x] `omni auto plan --project PATH --json PROMPT` construit une décision déterministe à partir des catalogues en direct et affiche sélection, candidats filtrés, raisons, critères, fallback et statut des fournisseurs sans créer de conversation ni soumettre le prompt à un modèle.
+- [x] Les fournisseurs de `OMNI_DISABLED_PROVIDERS` sont exclus avant toute lecture de credentials ou requête catalogue; le parcours isolé peut cibler uniquement le serveur OpenCode local.
+- [x] Tests unitaires : modèle OpenCode retenu pour une tâche avec outils, MCP non supporté explicitement exclu, et harness sans approbation de confidentialité exclu en mode strict.
+- [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test --test-name-pattern='Auto plan reads a real OpenCode catalog' test/opencode-harness.test.mjs` : 1/1 réussi avec le CLI/serveur installé; la décision a sélectionné un vrai ID `provider/model` et aucune conversation n’a été créée. Aucun appel génération ni clé API.
+- [ ] Le streaming d’une génération OpenCode, les outils pilotés par modèle, fallback live Auto et coût/latence réels ne sont pas validés.
 
 ## Harness Swap OpenCode (en cours)
 
 - [x] `omni swap --conversation ID --harness opencode` passe par `HarnessSwapService`, conserve le contexte, écrit le checkpoint avant la création de session et refuse un harness désactivé.
-- [x] Le serveur OpenCode réel a créé une session cible via la CLI Omni; après sortie du processus CLI et réouverture SQLite, un nouvel adapter a repris la même session et son objectif/résumé. Le test réel comprend aussi un appel catalogue et un aller-retour permission créé puis refusé, sans appel modèle ou outil.
+- [x] Le serveur OpenCode réel a créé une session cible via la CLI Omni; après sortie du processus CLI et réouverture SQLite, un nouvel adapter a repris la même session et son objectif/résumé. Le test réel comprend aussi un appel catalogue et un aller-retour permission créé puis refusé, sans appel modèle ou outil. Auto peut désormais utiliser son catalogue local comme décrit ci-dessous.
 - [x] `harness.resume_context_consumed` évite de réinjecter le résumé après admission du prompt; le test rouvre SQLite puis vérifie qu’il n’est pas réinjecté. Les swaps pendant un tour, un outil ou une permission active restent bloqués par le service commun.
 - [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test test/opencode-harness.test.mjs` : 4/4 réussis, dont le swap CLI réel et la reprise après réouverture SQLite; `node --test --test-name-pattern='CLI registry blocks disabled harnesses' test/cli.test.mjs` : 1/1 réussi.
 - [x] Validation complète après cette phase : `npm test` (113 tests, 87 réussis, 0 échec, 26 opt-in ignorés), `npm run lint`, `npm run format:check`, `npm run check`, `npm run build`, `npm audit --omit=dev` (0 vulnérabilité) et `git diff --check` réussis.
-- [ ] Aucun modèle n’a modifié de fichier; Harness OpenCode → autre harness → retour OpenCode avec génération réelle, état Git vérifié et preuve de non-répétition reste à faire sans test de clé API. Auto n’inclut pas OpenCode.
+- [ ] Aucun modèle n’a modifié de fichier; Harness OpenCode → autre harness → retour OpenCode avec génération réelle, état Git vérifié et preuve de non-répétition reste à faire sans test de clé API. La génération réelle OpenCode et le swap impliquant une modification par modèle restent à valider.
 
 ## Isolation des faux harnesses
 

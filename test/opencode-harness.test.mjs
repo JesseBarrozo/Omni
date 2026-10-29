@@ -366,3 +366,80 @@ test(
     }
   },
 );
+
+test(
+  "Auto plan reads a real OpenCode catalog without creating a conversation or generating a model response",
+  { skip: process.env.OMNI_LIVE_OPENCODE_TESTS !== "1" },
+  async () => {
+    const directory = mkdtempSync(join(tmpdir(), "omni-auto-plan-live-"));
+    temporaryDirectories.add(directory);
+    const { mkdirSync } = await import("node:fs");
+    const dataDirectory = join(directory, "data");
+    const configDirectory = join(directory, "config");
+    const cacheDirectory = join(directory, "cache");
+    const projectDirectory = join(directory, "project");
+    for (const path of [
+      dataDirectory,
+      configDirectory,
+      cacheDirectory,
+      projectDirectory,
+    ])
+      mkdirSync(path);
+    const env = {
+      PATH: process.env.PATH,
+      HOME: directory,
+      XDG_CONFIG_HOME: configDirectory,
+      XDG_DATA_HOME: dataDirectory,
+      XDG_CACHE_HOME: cacheDirectory,
+      TMPDIR: directory,
+      OMNI_DATA_DIR: dataDirectory,
+      OMNI_DISABLED_PROVIDERS:
+        "codex,claude,openai,openrouter,anthropic,google",
+      OMNI_AUTO_PREFERRED_PROVIDERS: "opencode",
+    };
+    const cliPath = new URL("../bin/omni.mjs", import.meta.url);
+    const createProject = spawnSync(
+      process.execPath,
+      [
+        cliPath.pathname,
+        "project",
+        "create",
+        "--name",
+        "Auto preview",
+        "--path",
+        projectDirectory,
+      ],
+      { cwd: projectDirectory, env, encoding: "utf8", timeout: 15_000 },
+    );
+    assert.equal(createProject.status, 0, createProject.stderr);
+    const preview = spawnSync(
+      process.execPath,
+      [
+        cliPath.pathname,
+        "auto",
+        "plan",
+        "--project",
+        projectDirectory,
+        "--json",
+        "Inspect the project",
+      ],
+      { cwd: projectDirectory, env, encoding: "utf8", timeout: 30_000 },
+    );
+    assert.equal(preview.status, 0, preview.stderr);
+    const decision = JSON.parse(preview.stdout);
+    assert.equal(decision.selected.providerId, "opencode");
+    assert.equal(decision.selected.harnessId, "opencode");
+    assert.match(decision.selected.modelId, /.+\/.+/);
+    assert.ok(
+      decision.checkedProviders.find(
+        (provider) => provider.providerId === "opencode",
+      ).modelCount > 0,
+    );
+    const store = new ChatStore(join(dataDirectory, "omni.sqlite"));
+    try {
+      assert.equal(store.count().conversations, 0);
+    } finally {
+      store.close();
+    }
+  },
+);

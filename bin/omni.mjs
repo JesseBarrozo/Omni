@@ -127,7 +127,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter --stdin\n  auth key set anthropic --stdin\n  auth key set google --stdin\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  auth key remove openrouter|anthropic|google [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter --stdin\n  auth key set anthropic --stdin\n  auth key set google --stdin\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  auth key remove openrouter|anthropic|google [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  auto plan --project ID_OR_PATH [--require-mcp SERVER[,SERVER]] [--json] PROMPT\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
@@ -140,7 +140,8 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
       if (!availableMcpServers.includes(name)) return false;
       try {
         if (providerId === "codex") mcp.codexServerConfig(name, { cwd });
-        else mcp.claudeServerConfig(name, { cwd });
+        else if (providerId === "claude") mcp.claudeServerConfig(name, { cwd });
+        else return false;
         return true;
       } catch {
         return false;
@@ -183,21 +184,17 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
     const enabled =
       storedProvider.enabled && !disabledProviders.has(providerId);
     registry.registerProvider({ id: providerId, name: providerId, enabled });
-    for (const harness of [
-      {
-        id: harnessId,
-        name: harnessName,
-        tools: true,
-      },
-      {
+    const harnesses = [{ id: harnessId, name: harnessName, tools: true }];
+    if (chatHarnessId)
+      harnesses.push({
         id: chatHarnessId,
         name:
           providerId === "codex"
             ? "Codex chat (sandbox lecture seule)"
             : "Claude chat (sans outils)",
         tools: providerId === "codex" ? "read-only" : false,
-      },
-    ])
+      });
+    for (const harness of harnesses)
       registry.registerHarness({
         id: harness.id,
         name: harness.name,
@@ -234,7 +231,7 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
     });
   };
 
-  if (codexAuthStatus().authenticated) {
+  if (!disabledProviders.has("codex") && codexAuthStatus().authenticated) {
     try {
       const models = await new CodexChat({
         store,
@@ -256,9 +253,14 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
         error: redactError(error.message),
       });
     }
-  } else checkedProviders.push({ providerId: "codex", authenticated: false });
+  } else
+    checkedProviders.push({
+      providerId: "codex",
+      authenticated: false,
+      disabled: disabledProviders.has("codex"),
+    });
 
-  if (claudeAuthStatus().authenticated) {
+  if (!disabledProviders.has("claude") && claudeAuthStatus().authenticated) {
     try {
       const models = await new ClaudeCodeChat({
         store,
@@ -286,12 +288,18 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
         error: redactError(error.message),
       });
     }
-  } else checkedProviders.push({ providerId: "claude", authenticated: false });
+  } else
+    checkedProviders.push({
+      providerId: "claude",
+      authenticated: false,
+      disabled: disabledProviders.has("claude"),
+    });
 
   if (
-    process.env.OPENAI_API_KEY ||
-    openAIAuth().hasCredentials() ||
-    openAIAuth().hasApiKey()
+    !disabledProviders.has("openai") &&
+    (process.env.OPENAI_API_KEY ||
+      openAIAuth().hasCredentials() ||
+      openAIAuth().hasApiKey())
   ) {
     try {
       const models = await createOpenAIChat().listModels();
@@ -316,9 +324,17 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
         error: redactError(error.message),
       });
     }
-  } else checkedProviders.push({ providerId: "openai", authenticated: false });
+  } else
+    checkedProviders.push({
+      providerId: "openai",
+      authenticated: false,
+      disabled: disabledProviders.has("openai"),
+    });
 
-  if (process.env.OPENROUTER_API_KEY || openRouterAuth().hasApiKey()) {
+  if (
+    !disabledProviders.has("openrouter") &&
+    (process.env.OPENROUTER_API_KEY || openRouterAuth().hasApiKey())
+  ) {
     try {
       const models = await createOpenRouterChat().listModels();
       if (models.length)
@@ -343,9 +359,16 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
       });
     }
   } else
-    checkedProviders.push({ providerId: "openrouter", authenticated: false });
+    checkedProviders.push({
+      providerId: "openrouter",
+      authenticated: false,
+      disabled: disabledProviders.has("openrouter"),
+    });
 
-  if (process.env.ANTHROPIC_API_KEY || anthropicApiAuth().hasApiKey()) {
+  if (
+    !disabledProviders.has("anthropic") &&
+    (process.env.ANTHROPIC_API_KEY || anthropicApiAuth().hasApiKey())
+  ) {
     try {
       const models = await createAnthropicApiChat().listModels();
       if (models.length)
@@ -370,9 +393,16 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
       });
     }
   } else
-    checkedProviders.push({ providerId: "anthropic", authenticated: false });
+    checkedProviders.push({
+      providerId: "anthropic",
+      authenticated: false,
+      disabled: disabledProviders.has("anthropic"),
+    });
 
-  if (process.env.GEMINI_API_KEY || geminiApiAuth().hasApiKey()) {
+  if (
+    !disabledProviders.has("google") &&
+    (process.env.GEMINI_API_KEY || geminiApiAuth().hasApiKey())
+  ) {
     try {
       const models = await createGeminiApiChat().listModels();
       if (models.length)
@@ -396,7 +426,65 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
         error: redactError(error.message),
       });
     }
-  } else checkedProviders.push({ providerId: "google", authenticated: false });
+  } else
+    checkedProviders.push({
+      providerId: "google",
+      authenticated: false,
+      disabled: disabledProviders.has("google"),
+    });
+
+  if (disabledProviders.has("opencode")) {
+    checkedProviders.push({
+      providerId: "opencode",
+      authenticated: false,
+      disabled: true,
+    });
+  } else {
+    const openCode = new OpenCodeHarness({
+      store,
+      cwd,
+      executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode",
+    });
+    try {
+      const models = await openCode.listModels();
+      const capabilities = await openCode.capabilities();
+      store.saveHarnessRegistry({
+        id: openCode.id,
+        name: openCode.name,
+        providerId: "opencode",
+        integration: "OpenCode local server via official SDK v2",
+        status: "connected",
+        available: true,
+        capabilities,
+      });
+      if (models.length)
+        addProvider("opencode", models, openCode.id, openCode.name, null);
+      else
+        store.saveProviderCatalog({
+          providerId: "opencode",
+          name: "OpenCode provider registry",
+          authStatus: "connected",
+          models: [],
+        });
+      checkedProviders.push({
+        providerId: "opencode",
+        authenticated: true,
+        modelCount: models.length,
+        enabled: store
+          .providerRegistry()
+          .find((provider) => provider.id === "opencode")?.enabled,
+      });
+    } catch (error) {
+      checkedProviders.push({
+        providerId: "opencode",
+        authenticated: false,
+        available: false,
+        error: redactError(error.message),
+      });
+    } finally {
+      await openCode.dispose();
+    }
+  }
 
   const previousResults = {};
   for (const event of store.routingResults(200)) {
@@ -1990,6 +2078,33 @@ try {
       );
     stdout.write(`Conversation ${conversation.id} · modèle ${model}\n`);
     await chat(conversation, model);
+  } else if (command === "auto" && args[0] === "plan") {
+    args.shift();
+    const requiredMcpValue = option("--require-mcp");
+    const requiredMcpServers = requiredMcpValue
+      ? [...new Set(requiredMcpValue.split(",").map((name) => name.trim()))]
+      : [];
+    if (
+      requiredMcpServers.some(
+        (name) => !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name),
+      )
+    )
+      throw new Error("Nom de serveur MCP requis invalide.");
+    const consumedValueIndexes = ["--project", "--require-mcp"]
+      .map((name) => args.indexOf(name) + 1)
+      .filter((index) => index > 0);
+    const prompt = args
+      .filter(
+        (value, index) =>
+          !value.startsWith("--") && !consumedValueIndexes.includes(index),
+      )
+      .join(" ");
+    if (!prompt)
+      throw new Error(
+        "Usage: omni auto plan --project ID_OR_PATH [--require-mcp SERVER[,SERVER]] [--json] PROMPT",
+      );
+    const project = store.project(option("--project") ?? "");
+    print(await autoRoute(prompt, project, { requiredMcpServers }));
   } else if (command === "run") {
     jsonRunOutput = hasFlag("--json");
     let harness = option("--harness");
@@ -2061,13 +2176,17 @@ try {
           ? "claude"
           : selected.harnessId === "codex"
             ? "codex"
-            : null;
+            : selected.harnessId === "opencode"
+              ? "opencode"
+              : null;
       model =
         selected.providerId === "claude"
           ? `claude:${selected.modelId}`
           : selected.harnessId === "codex-chat"
             ? `codex:${selected.modelId}`
-            : selected.modelId;
+            : selected.harnessId === "opencode"
+              ? `opencode:${selected.modelId}`
+              : selected.modelId;
     }
     if (!autoMode) {
       assertManualSelectionEnabled(model, harness);
@@ -2121,13 +2240,17 @@ try {
               ? `claude:${to.modelId}`
               : to.harnessId === "codex-chat"
                 ? `codex:${to.modelId}`
-                : to.modelId;
+                : to.harnessId === "opencode"
+                  ? `opencode:${to.modelId}`
+                  : to.modelId;
           harness =
             to.harnessId === "claude-code"
               ? "claude"
               : to.harnessId === "codex"
                 ? "codex"
-                : null;
+                : to.harnessId === "opencode"
+                  ? "opencode"
+                  : null;
           conversation = store.setModel(conversation.id, model);
           store.appendEvent(conversation.id, "routing.fallback", {
             decisionId: autoDecision.id,
