@@ -1,6 +1,6 @@
 # Omni
 
-Omni is an independent Universal AI Harness under phased development. Its CLI supports persistent SQLite conversations, OpenAI API-key chat, Codex OAuth chat through the official Codex app-server, and a Claude Code Agent SDK integration. The Claude integration is implemented but its live OAuth journey has not yet been verified. See [`AUDIT.md`](AUDIT.md) for the verified repository baseline and [`Omni_PRD.md`](Omni_PRD.md) for the product requirements.
+Omni is an independent Universal AI Harness under phased development. Its CLI supports persistent SQLite conversations, OpenAI API-key chat, Codex OAuth chat through the official Codex app-server, and Claude Code Agent SDK sessions. Claude OAuth streaming/session resumption and an approved temporary-file write have been exercised against a real logged-in account. See [`AUDIT.md`](AUDIT.md) for the verified repository baseline and [`Omni_PRD.md`](Omni_PRD.md) for the product requirements.
 
 ## Requirements
 
@@ -44,4 +44,4 @@ Use `OMNI_DATA_DIR` to point local data to a different directory. SQLite data us
 
 ## Project status
 
-The real Codex OAuth chat path has been exercised through the installed Codex app-server, including streamed deltas and session resumption after reopening Omni's database. OpenAI's direct API-key response remains unverified in this environment. The Claude SDK chat and harness code is present, but its OAuth stream/resume and approved tool-write tests have not run because no Claude account is connected; do not treat that integration as live-validated yet. Antigravity, general harness swap, deterministic auto orchestration and Orca integration remain unimplemented. The mock harness remains test-only. The installed Claude Agent SDK declares a proprietary license; review its terms before redistributing Omni with this dependency.
+The real Codex OAuth chat and harness paths have been exercised through the installed Codex app-server. Claude OAuth streaming/resume and an approved tool write were also exercised against the official Agent SDK. OpenAI's direct API-key response and the cross-harness swap remain unverified. Antigravity, deterministic auto orchestration and Orca integration remain unimplemented. The mock harness remains test-only. The installed Claude Agent SDK declares a proprietary license; review its terms before redistributing Omni with this dependency.

@@ -28,6 +28,7 @@ npm run format:check
 npm run check
 npm run build
 OMNI_LIVE_CODEX_HARNESS_TESTS=1 node --test test/codex-harness.test.mjs
+OMNI_LIVE_CLAUDE_TESTS=1 node --test test/claude.test.mjs
 ```
 
 Le test réel crée un dépôt Git jetable, demande au vrai app-server Codex de créer un seul fichier temporaire, n’accorde la permission que pour le chemin attendu, ferme puis rouvre SQLite et reprend le thread pour relire le fichier. Il exige un compte Codex local connecté.
@@ -40,6 +41,15 @@ Le test réel crée un dépôt Git jetable, demande au vrai app-server Codex de 
 - Le checkpoint Omni conserve la référence du thread Codex; il ne copie pas son état interne.
 - Si un test réel échoue ou est ignoré, conserver ce document à jour et relancer les commandes listées avant d’annoncer le parcours validé.
 
+## Deuxième harness : Claude Code
+
+- [x] Connexion au compte Claude via la commande officielle `claude auth login --claudeai`; statut local confirmé `loggedIn: true`.
+- [x] `OMNI_LIVE_CLAUDE_TESTS=1 node --test test/claude.test.mjs` : chat SDK streamé puis reprise du même `session_id` après fermeture et réouverture de SQLite.
+- [x] Le harness utilise l’outil réel `Write` sur un fichier temporaire uniquement après approbation du callback; les événements `permission.requested` et `permission.granted` sont vérifiés.
+- [x] Le test vérifie les deltas streamés, le résultat confirmé par le SDK et l’absence de secret dans l’export Omni.
+- [ ] Répéter le parcours via `omni run --harness claude` dans un TTY et refuser une permission; vérifier que le fichier n’est pas créé.
+- [ ] Interrompre une exécution réelle avec `Ctrl-C`, puis reprendre sans relancer automatiquement l’outil.
+
 ## Résultats de cette phase
 
 - `npm test` : réussi, 28 tests découverts, 23 réussis, 0 échec, 5 ignorés (intégrations réelles conditionnelles).
@@ -51,4 +61,5 @@ Le test réel crée un dépôt Git jetable, demande au vrai app-server Codex de 
 - `OMNI_LIVE_CODEX_HARNESS_TESTS=1 node --test test/codex-harness.test.mjs` : réussi, 2/2, avec compte Codex authentifié.
 - Parcours CLI interactif réel avec approbation, persistance et reprise dans un nouveau processus : réussi sur un projet temporaire.
 - Le capteur Dotcontext `tests-passing` a échoué car il injecte des options Jest (`--runInBand --json`) incompatibles avec la suite native Node `node --test`; l’exécution directe `npm test` ci-dessus réussit. Ce capteur doit être corrigé/configuré pour le runner Node avant de pouvoir servir de gate.
-- Parcours CLI de refus explicite, interruption réelle pendant un tour, permissions de commande/profil et tests OAuth Claude/OpenAI : non exécutés; voir la checklist ci-dessus et les tests ignorés.
+- Parcours CLI de refus explicite/interruption réelle, permissions Codex de commande/profil, OAuth OpenAI par clé et tests OAuth Codex chat distincts : non exécutés; voir les checklists ci-dessus et les tests ignorés.
+- `OMNI_LIVE_CLAUDE_TESTS=1 node --test test/claude.test.mjs` : réussi, 6/6 après authentification OAuth réelle.
