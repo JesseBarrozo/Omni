@@ -6,12 +6,22 @@ import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { ChatStore } from "../src/chat-store.mjs";
+import { McpRegistry } from "../src/mcp-registry.mjs";
 import { CodexHarness, codexAuthStatus } from "../src/codex-chat.mjs";
 import { ClaudeCodeHarness, claudeAuthStatus } from "../src/claude-code.mjs";
 import {
   HarnessSwapService,
   buildResumeSummary,
 } from "../src/harness-swap.mjs";
+
+const sdkServerPath = new URL(
+  "../node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js",
+  import.meta.url,
+).href;
+const sdkStdioPath = new URL(
+  "../node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js",
+  import.meta.url,
+).href;
 
 test("resume summary captures the persistent history, decisions, and Git state", () => {
   const summary = buildResumeSummary({
@@ -44,6 +54,22 @@ test("resume summary captures the persistent history, decisions, and Git state",
       { type: "command.started", payload: { command: "npm test" } },
       { type: "command.completed", payload: { command: "npm test" } },
       { type: "session.failed", payload: { error: "failed" } },
+      {
+        type: "permission.requested",
+        payload: {
+          method: "mcpServer/start",
+          toolName: "démarrer le serveur MCP",
+          server: "local-mcp",
+        },
+      },
+      {
+        type: "permission.granted",
+        payload: {
+          method: "mcpServer/start",
+          toolName: "démarrer le serveur MCP",
+          server: "local-mcp",
+        },
+      },
     ],
   });
   assert.equal(summary.objective, "Fix it");
@@ -51,6 +77,7 @@ test("resume summary captures the persistent history, decisions, and Git state",
   assert.equal(summary.filesModified[0].path, "src/a.mjs");
   assert.equal(summary.git.head, "abc");
   assert.equal(summary.errors[0].error, "failed");
+  assert.equal(summary.permissions.active.length, 0);
 });
 
 test("resume summary keeps concurrent operations active until each ID resolves", () => {
@@ -235,6 +262,7 @@ test(
     const dir = mkdtempSync(join(tmpdir(), "omni-live-swap-"));
     const dbPath = join(dir, "omni.sqlite");
     const file = join(dir, "swap-proof.txt");
+    const mcpMarker = join(dir, "mcp-once.txt");
     execFileSync("git", ["init", "-q", dir]);
     execFileSync("git", ["-C", dir, "config", "user.name", "Omni Test"]);
     execFileSync("git", [
@@ -255,6 +283,7 @@ test(
     let store;
     let codex;
     let claude;
+    let mcp;
     try {
       store = new ChatStore(dbPath);
       const project = store.createProject("Live harness swap", dir);
@@ -263,21 +292,73 @@ test(
         "Swap proof",
         "codex",
       );
+      const fixture = `
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { McpServer } from '${sdkServerPath}';
+import { StdioServerTransport } from '${sdkStdioPath}';
+const server = new McpServer({ name: 'omni-swap-mcp', version: '1.0.0' });
+server.registerTool('increment-once', { description: 'Write one persistent execution marker' }, async () => {
+  const old = existsSync(process.env.MCP_OUTPUT_FILE) ? Number(readFileSync(process.env.MCP_OUTPUT_FILE, 'utf8')) : 0;
+  writeFileSync(process.env.MCP_OUTPUT_FILE, String(old + 1));
+  return { content: [{ type: 'text', text: 'MCP marker incremented' }] };
+});
+server.registerTool('read-marker', { description: 'Read the execution marker without changing it' }, async () => {
+  const value = existsSync(process.env.MCP_OUTPUT_FILE) ? readFileSync(process.env.MCP_OUTPUT_FILE, 'utf8') : '0';
+  return { content: [{ type: 'text', text: value }] };
+});
+await server.connect(new StdioServerTransport());
+`;
+      const mcpEnv = {
+        ...process.env,
+        MCP_OUTPUT_FILE: mcpMarker,
+      };
+      mcp = new McpRegistry({ store, env: mcpEnv });
+      mcp.addServer({
+        name: "swap-mcp",
+        command: process.execPath,
+        args: ["--input-type=module", "-e", fixture],
+        cwd: dir,
+        envKeys: ["MCP_OUTPUT_FILE"],
+      });
+      const permissionRequests = { codex: [], claude: [] };
+      let codexMcpToolApproved = false;
       codex = new CodexHarness({
         store,
         cwd: dir,
-        requestPermission: async ({ method, params }) =>
-          method === "item/fileChange/requestApproval" &&
-          params?.changes?.length === 1 &&
-          params.changes[0].path === file,
+        mcpRegistry: mcp,
+        env: mcpEnv,
+        requestPermission: async (request) => {
+          permissionRequests.codex.push(request);
+          if (request.method === "mcpServer/start")
+            return request.server === "swap-mcp";
+          if (request.method === "mcpServer/elicitation/request") {
+            if (request.server !== "swap-mcp" || codexMcpToolApproved)
+              return false;
+            codexMcpToolApproved = true;
+            return true;
+          }
+          return (
+            request.method === "item/fileChange/requestApproval" &&
+            request.params?.changes?.length === 1 &&
+            request.params.changes[0].path === file
+          );
+        },
       });
       claude = new ClaudeCodeHarness({
         store,
         cwd: dir,
-        requestPermission: async ({ toolName, input }) =>
-          toolName === "Read" && input.file_path === file,
+        mcpRegistry: mcp,
+        requestPermission: async (request) => {
+          permissionRequests.claude.push(request);
+          if (request.toolName === "mcp-server-start")
+            return request.server === "swap-mcp";
+          if (request.toolName.startsWith("mcp__swap-mcp__")) return true;
+          return (
+            request.toolName === "Read" && request.input.file_path === file
+          );
+        },
       });
-      await codex.initialize();
+      await codex.initialize({ conversationId: conversation.id });
       const initialSession = await codex.createSession({
         conversationId: conversation.id,
         cwd: dir,
@@ -288,7 +369,7 @@ test(
       for await (const event of codex.run({
         conversationId: conversation.id,
         sessionId: initialSession.id,
-        prompt: `Use the file change tool once to create ${file} with exactly SWAP_ONCE. Do not run commands.`,
+        prompt: `First invoke MCP server swap-mcp tool increment-once exactly once. Then use the file change tool once to create ${file} with exactly SWAP_ONCE. Do not run commands.`,
         signal: new AbortController().signal,
       }))
         firstEvents.push(event);
@@ -308,6 +389,19 @@ test(
         }),
       );
       assert.equal(readFileSync(file, "utf8").trim(), "SWAP_ONCE");
+      assert.equal(readFileSync(mcpMarker, "utf8"), "1");
+      assert.ok(
+        permissionRequests.codex.some(
+          (request) => request.method === "mcpServer/start",
+        ),
+      );
+      assert.ok(
+        permissionRequests.codex.some(
+          (request) =>
+            request.method === "mcpServer/elicitation/request" &&
+            request.server === "swap-mcp",
+        ),
+      );
 
       const toClaude = await new HarnessSwapService({
         store,
@@ -320,7 +414,7 @@ test(
       store.addMessage(
         conversation.id,
         "user",
-        "Read the proof file and report its exact contents; do not modify it.",
+        "Use the swap-mcp read-marker tool, then read the proof file and report both exact values. Do not modify either file.",
       );
       store.setStatus(conversation.id, "running");
       let claudeText = "";
@@ -328,7 +422,7 @@ test(
         conversationId: conversation.id,
         sessionId: toClaude.session.id,
         prompt:
-          "Read the proof file and report its exact contents; do not modify it.",
+          "Use the swap-mcp read-marker tool, then read the proof file and report both exact values. Do not modify either file.",
         signal: new AbortController().signal,
       })) {
         if (event.type === "message.delta") claudeText += event.payload.delta;
@@ -338,6 +432,17 @@ test(
       store.setStatus(conversation.id, "completed");
       assert.match(claudeText, /SWAP_ONCE/);
       assert.equal(readFileSync(file, "utf8").trim(), "SWAP_ONCE");
+      assert.equal(readFileSync(mcpMarker, "utf8"), "1");
+      assert.ok(
+        permissionRequests.claude.some(
+          (request) => request.toolName === "mcp-server-start",
+        ),
+      );
+      assert.ok(
+        permissionRequests.claude.some((request) =>
+          request.toolName.startsWith("mcp__swap-mcp__"),
+        ),
+      );
       await claude.checkpoint(toClaude.session.id);
 
       const toCodex = await new HarnessSwapService({
@@ -369,14 +474,24 @@ test(
       store.setStatus(conversation.id, "completed");
       assert.match(codexText, /SWAP_ONCE/);
       assert.equal(readFileSync(file, "utf8").trim(), "SWAP_ONCE");
+      assert.equal(
+        readFileSync(mcpMarker, "utf8"),
+        "1",
+        "resuming with Codex must not repeat the completed MCP mutation",
+      );
       const events = store.listEvents(conversation.id);
       assert.equal(
         events.filter((event) => event.type === "harness.changed").length,
         2,
       );
       assert.equal(
-        events.filter((event) => event.type === "permission.granted").length,
+        events.filter(
+          (event) =>
+            event.type === "permission.granted" &&
+            event.payload.method === "mcpServer/elicitation/request",
+        ).length,
         1,
+        "the one-time MCP mutation is approved only once",
       );
       assert.equal(
         events.filter((event) => event.type === "file.changed").length,
@@ -384,6 +499,11 @@ test(
       );
       assert.ok(events.some((event) => event.type === "tool.started"));
       assert.ok(events.some((event) => event.type === "tool.completed"));
+      assert.equal(
+        JSON.stringify(events).includes(mcpMarker),
+        false,
+        "MCP fixture paths must not be recorded in conversation events",
+      );
       assert.equal(
         events.filter((event) => event.type === "session.checkpointed")
           .length >= 3,

@@ -446,7 +446,12 @@ export class CodexHarness {
         this.store.appendEvent(
           conversationId,
           allowed ? "permission.granted" : "permission.denied",
-          { method: request.method, server: entry.name },
+          {
+            method: request.method,
+            server: entry.name,
+            toolName: request.toolName,
+            conversationId,
+          },
         );
         if (allowed) configured.push(config);
       }
@@ -614,6 +619,7 @@ export class CodexHarness {
     const payload = mcpApproval
       ? {
           method: request.method,
+          requestId: request.id,
           server:
             typeof params.serverName === "string"
               ? params.serverName
@@ -663,6 +669,8 @@ export class CodexHarness {
       method: request.method,
       requestId: request.id,
       sessionId: session.id,
+      ...(payload.toolName ? { toolName: payload.toolName } : {}),
+      ...(payload.server ? { server: payload.server } : {}),
     });
 
     if (request.method === "item/commandExecution/requestApproval")

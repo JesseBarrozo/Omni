@@ -216,7 +216,7 @@ export class HarnessSwapService {
     });
     let session;
     try {
-      await target.initialize();
+      await target.initialize({ conversationId });
       session = await target.createSession({
         conversationId,
         cwd,
