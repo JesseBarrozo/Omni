@@ -6,10 +6,14 @@ import { redactSecrets } from "./core.mjs";
 const safeError = (value) => new Error(redactSecrets(String(value)));
 const toolNames = ["Read", "Grep", "Glob", "Bash", "Edit", "Write"];
 
-export function claudeAuthStatus({ executable = "claude" } = {}) {
+export function claudeAuthStatus({
+  executable = "claude",
+  env = process.env,
+} = {}) {
   const result = spawnSync(executable, ["auth", "status"], {
     stdio: "ignore",
     timeout: 10_000,
+    env,
   });
   return {
     provider: "claude",
@@ -20,8 +24,9 @@ export function claudeAuthStatus({ executable = "claude" } = {}) {
 export function startClaudeLogin({
   executable = "claude",
   stdio = "inherit",
+  env = process.env,
 } = {}) {
-  return spawnSync(executable, ["auth", "login", "--claudeai"], { stdio });
+  return spawnSync(executable, ["auth", "login", "--claudeai"], { stdio, env });
 }
 
 async function loadSdk() {
@@ -64,6 +69,7 @@ function queryOptions({
   tools,
   canUseTool,
   mcpServers = {},
+  env = process.env,
 }) {
   return {
     cwd,
@@ -77,7 +83,7 @@ function queryOptions({
     strictMcpConfig: true,
     mcpServers,
     env: {
-      ...process.env,
+      ...env,
       ANTHROPIC_API_KEY: undefined,
       ANTHROPIC_AUTH_TOKEN: undefined,
       ANTHROPIC_BASE_URL: undefined,
@@ -103,16 +109,21 @@ export class ClaudeCodeChat {
     cwd = process.cwd(),
     model,
     executable = "claude",
+    env = process.env,
   } = {}) {
     if (!store) throw new Error("ClaudeCodeChat requires the Omni store");
     this.store = store;
     this.cwd = cwd;
     this.model = model;
     this.executable = executable;
+    this.env = env;
   }
 
   async listModels() {
-    if (!claudeAuthStatus({ executable: this.executable }).authenticated)
+    if (
+      !claudeAuthStatus({ executable: this.executable, env: this.env })
+        .authenticated
+    )
       throw new Error(
         "Connectez un compte avec `omni auth login claude` avant de lister ses modèles",
       );
@@ -130,7 +141,12 @@ export class ClaudeCodeChat {
     const query = sdk.query({
       prompt: noPrompt(),
       options: {
-        ...queryOptions({ cwd: this.cwd, model: this.model, tools: [] }),
+        ...queryOptions({
+          cwd: this.cwd,
+          model: this.model,
+          tools: [],
+          env: this.env,
+        }),
         abortController,
       },
     });
@@ -171,6 +187,7 @@ export class ClaudeCodeChat {
             sessionId: priorSession ? undefined : sessionId,
             resume: priorSession,
             tools: [],
+            env: this.env,
           }),
           abortController: controller,
         },
@@ -234,6 +251,7 @@ export class ClaudeCodeHarness {
     requestPermission = async () => false,
     mcpRegistry = null,
     sdk = null,
+    env = process.env,
   } = {}) {
     this.store = store;
     this.cwd = cwd;
@@ -241,6 +259,7 @@ export class ClaudeCodeHarness {
     this.requestPermission = requestPermission;
     this.mcpRegistry = mcpRegistry;
     this.sdk = sdk;
+    this.env = env;
     this.queries = new Map();
     this.sessions = new Map();
     this.preparedMcpServers = new Map();
@@ -506,6 +525,7 @@ export class ClaudeCodeHarness {
             tools: toolNames,
             canUseTool,
             mcpServers,
+            env: this.env,
           }),
           abortController: controller,
         },

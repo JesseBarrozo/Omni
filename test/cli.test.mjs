@@ -189,6 +189,24 @@ test("CLI advertises named API-key profiles and requires stdin for new provider 
   }
 });
 
+test("CLI lists OAuth profiles without exposing credential data", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-oauth-profile-cli-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const listed = run("auth", "profile", "list", "claude", "--json");
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.deepEqual(JSON.parse(listed.stdout), {
+      profiles: ["default"],
+      active: "default",
+    });
+    assert.doesNotMatch(listed.stdout, /token|secret|credential/i);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test(
   "CLI manages temporary named OpenAI key profiles using the real system keyring",
   { skip: process.env.OMNI_LIVE_KEYRING_TESTS !== "1", timeout: 30_000 },

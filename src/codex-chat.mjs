@@ -11,10 +11,14 @@ const tomlInlineTable = (value) =>
     .map(([key, item]) => `${JSON.stringify(key)} = ${JSON.stringify(item)}`)
     .join(", ")} }`;
 
-export function codexAuthStatus({ executable = "codex" } = {}) {
+export function codexAuthStatus({
+  executable = "codex",
+  env = process.env,
+} = {}) {
   const result = spawnSync(executable, ["login", "status"], {
     stdio: "ignore",
     timeout: 10_000,
+    env,
   });
   return {
     provider: "codex",
@@ -25,8 +29,9 @@ export function codexAuthStatus({ executable = "codex" } = {}) {
 export function startCodexLogin({
   executable = "codex",
   stdio = "inherit",
+  env = process.env,
 } = {}) {
-  return spawnSync(executable, ["login"], { stdio });
+  return spawnSync(executable, ["login"], { stdio, env });
 }
 
 class CodexAppServer {
@@ -224,6 +229,7 @@ export class CodexChat {
     executable = "codex",
     cwd = process.cwd(),
     model = null,
+    env = process.env,
   } = {}) {
     if (!store)
       throw new Error("CodexChat requires the Omni conversation store");
@@ -231,11 +237,13 @@ export class CodexChat {
     this.executable = executable;
     this.cwd = cwd;
     this.model = model;
+    this.env = env;
   }
 
   async listModels() {
     const server = await new CodexAppServer({
       executable: this.executable,
+      env: this.env,
     }).start();
     try {
       const result = await server.request("model/list", {});
@@ -260,6 +268,7 @@ export class CodexChat {
       : model;
     const server = await new CodexAppServer({
       executable: this.executable,
+      env: this.env,
     }).start();
     let threadId;
     let turnId;

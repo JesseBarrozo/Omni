@@ -48,6 +48,12 @@ node ./bin/omni.mjs auth key use anthropic --profile work
 node ./bin/omni.mjs auth key remove openai --profile work --yes
 node ./bin/omni.mjs auth login codex
 node ./bin/omni.mjs auth login claude
+node ./bin/omni.mjs auth login codex --profile work
+node ./bin/omni.mjs auth login claude --profile work
+node ./bin/omni.mjs auth profile list codex --json
+node ./bin/omni.mjs auth profile use claude --profile work
+
+Les profils OAuth nommés Codex et Claude utilisent respectivement les mécanismes officiels `CODEX_HOME` et `CLAUDE_CONFIG_DIR`. Chaque profil a son propre répertoire Omni privé et doit être connecté séparément; aucun token existant n’est copié. Le profil `default` conserve la session CLI actuelle.
 node ./bin/omni.mjs project create --name "My project" --path ./my-project
 node ./bin/omni.mjs models list
 node ./bin/omni.mjs models list --provider codex

@@ -31,6 +31,7 @@ import {
   startClaudeLogin,
 } from "../src/claude-code.mjs";
 import { runChatTurn } from "../src/chat-runner.mjs";
+import { OAuthProfiles } from "../src/oauth-profiles.mjs";
 import { HarnessSwapService } from "../src/harness-swap.mjs";
 import {
   AutoRouter,
@@ -41,6 +42,8 @@ import {
 
 const dataDir = process.env.OMNI_DATA_DIR || join(homedir(), ".omni");
 const store = new ChatStore(join(dataDir, "omni.sqlite"));
+const oauthProfiles = new OAuthProfiles({ dataDir });
+const oauthEnv = (provider) => oauthProfiles.environment(provider);
 const openAIAuth = () => new OpenAIAuth({ dataDir });
 const openRouterAuth = () => new OpenRouterAuth();
 const anthropicApiAuth = () => new AnthropicApiAuth();
@@ -138,7 +141,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter|anthropic|google --stdin [--profile NAME]\n  auth key list openai|openrouter|anthropic|google [--json]\n  auth key use openai|openrouter|anthropic|google --profile NAME\n  auth key remove openai|openrouter|anthropic|google [--profile NAME] [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  usage report --conversation ID|--project ID_OR_PATH [--month YYYY-MM] [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  auto plan --project ID_OR_PATH [--require-mcp SERVER[,SERVER]] [--json] PROMPT\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth login codex|claude [--profile NAME]\n  auth profile list codex|claude [--json]\n  auth profile use codex|claude --profile NAME\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter|anthropic|google --stdin [--profile NAME]\n  auth key list openai|openrouter|anthropic|google [--json]\n  auth key use openai|openrouter|anthropic|google --profile NAME\n  auth key remove openai|openrouter|anthropic|google [--profile NAME] [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  usage report --conversation ID|--project ID_OR_PATH [--month YYYY-MM] [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  auto plan --project ID_OR_PATH [--require-mcp SERVER[,SERVER]] [--json] PROMPT\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
@@ -244,10 +247,14 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
     });
   };
 
-  if (!disabledProviders.has("codex") && codexAuthStatus().authenticated) {
+  if (
+    !disabledProviders.has("codex") &&
+    codexAuthStatus({ env: oauthEnv("codex") }).authenticated
+  ) {
     try {
       const models = await new CodexChat({
         store,
+        env: oauthEnv("codex"),
         cwd: project.rootPath ?? process.cwd(),
       }).listModels();
       if (models.length)
@@ -273,10 +280,14 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
       disabled: disabledProviders.has("codex"),
     });
 
-  if (!disabledProviders.has("claude") && claudeAuthStatus().authenticated) {
+  if (
+    !disabledProviders.has("claude") &&
+    claudeAuthStatus({ env: oauthEnv("claude") }).authenticated
+  ) {
     try {
       const models = await new ClaudeCodeChat({
         store,
+        env: oauthEnv("claude"),
         cwd: project.rootPath ?? process.cwd(),
       }).listModels();
       if (models.length)
@@ -632,6 +643,7 @@ function createHarnessRun(harnessId, conversation, modelId) {
     harnessId === "claude-code"
       ? new ClaudeCodeHarness({
           store,
+          env: oauthEnv("claude"),
           cwd: project.rootPath ?? process.cwd(),
           model: modelId?.startsWith("claude:")
             ? modelId.slice("claude:".length)
@@ -644,6 +656,7 @@ function createHarnessRun(harnessId, conversation, modelId) {
       : harnessId === "codex"
         ? new CodexHarness({
             store,
+            env: oauthEnv("codex"),
             executable: process.env.OMNI_CODEX_HARNESS_EXECUTABLE ?? "codex",
             cwd: project.rootPath ?? process.cwd(),
             model: modelId === "codex" ? undefined : modelId,
@@ -672,11 +685,17 @@ function createAutoChatProvider(candidate, conversation) {
   if (candidate.providerId === "claude")
     return new ClaudeCodeChat({
       store,
+      env: oauthEnv("claude"),
       cwd,
       model: candidate.modelId,
     });
   if (candidate.providerId === "codex")
-    return new CodexChat({ store, cwd, model: candidate.modelId });
+    return new CodexChat({
+      store,
+      cwd,
+      model: candidate.modelId,
+      env: oauthEnv("codex"),
+    });
   if (candidate.providerId === "openai") return createOpenAIChat();
   if (candidate.providerId === "openrouter") return createOpenRouterChat();
   if (candidate.providerId === "anthropic") return createAnthropicApiChat();
@@ -692,12 +711,14 @@ async function refreshProvider(providerId) {
   let provider;
   if (providerId === "codex") {
     name = "Codex OAuth";
-    authenticated = codexAuthStatus().authenticated;
-    if (authenticated) provider = new CodexChat({ store });
+    authenticated = codexAuthStatus({ env: oauthEnv("codex") }).authenticated;
+    if (authenticated)
+      provider = new CodexChat({ store, env: oauthEnv("codex") });
   } else if (providerId === "claude") {
     name = "Claude Code OAuth";
-    authenticated = claudeAuthStatus().authenticated;
-    if (authenticated) provider = new ClaudeCodeChat({ store });
+    authenticated = claudeAuthStatus({ env: oauthEnv("claude") }).authenticated;
+    if (authenticated)
+      provider = new ClaudeCodeChat({ store, env: oauthEnv("claude") });
   } else if (providerId === "openai") {
     const auth = openAIAuth();
     const oauthConnected = auth.hasCredentials();
@@ -831,13 +852,13 @@ async function refreshHarness(harnessId) {
   if (harnessId === "codex") {
     providerId = "codex";
     integration = "Codex app-server JSON-RPC";
-    authenticated = codexAuthStatus().authenticated;
-    adapter = new CodexHarness({ store });
+    authenticated = codexAuthStatus({ env: oauthEnv("codex") }).authenticated;
+    adapter = new CodexHarness({ store, env: oauthEnv("codex") });
   } else if (harnessId === "claude-code") {
     providerId = "claude";
     integration = "Claude Agent SDK";
-    authenticated = claudeAuthStatus().authenticated;
-    adapter = new ClaudeCodeHarness({ store });
+    authenticated = claudeAuthStatus({ env: oauthEnv("claude") }).authenticated;
+    adapter = new ClaudeCodeHarness({ store, env: oauthEnv("claude") });
   } else if (harnessId === "opencode") {
     providerId = "opencode";
     integration = "OpenCode local server via official SDK v2";
@@ -974,6 +995,7 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
     harnessId === "claude"
       ? new ClaudeCodeHarness({
           store,
+          env: oauthEnv("claude"),
           cwd: project.rootPath ?? process.cwd(),
           model: model === "claude" ? undefined : model.replace(/^claude:/, ""),
           requestPermission,
@@ -989,6 +1011,7 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
           })
         : new CodexHarness({
             store,
+            env: oauthEnv("codex"),
             cwd: project.rootPath ?? process.cwd(),
             model: model === "codex" ? undefined : model,
             requestPermission,
@@ -1028,16 +1051,22 @@ async function chat(
   const provider =
     preparedProvider ??
     (model === "codex"
-      ? new CodexChat({ store, cwd: project.rootPath ?? process.cwd() })
+      ? new CodexChat({
+          store,
+          cwd: project.rootPath ?? process.cwd(),
+          env: oauthEnv("codex"),
+        })
       : model.startsWith("codex:")
         ? new CodexChat({
             store,
+            env: oauthEnv("codex"),
             cwd: project.rootPath ?? process.cwd(),
             model: model.slice("codex:".length),
           })
         : model === "claude" || model.startsWith("claude:")
           ? new ClaudeCodeChat({
               store,
+              env: oauthEnv("claude"),
               cwd: project.rootPath ?? process.cwd(),
               model: model.startsWith("claude:")
                 ? model.slice("claude:".length)
@@ -1430,8 +1459,14 @@ try {
   } else if (command === "auth" && args[0] === "status") {
     const oauthConnected = openAIAuth().hasCredentials();
     const status = [
-      codexAuthStatus(),
-      claudeAuthStatus(),
+      {
+        ...codexAuthStatus({ env: oauthEnv("codex") }),
+        profile: oauthProfiles.active("codex"),
+      },
+      {
+        ...claudeAuthStatus({ env: oauthEnv("claude") }),
+        profile: oauthProfiles.active("claude"),
+      },
       {
         provider: "openai",
         authenticated:
@@ -1621,23 +1656,59 @@ try {
           : "Aucune clé API OpenAI enregistrée.",
       );
     }
+  } else if (
+    command === "auth" &&
+    args[0] === "profile" &&
+    ["list", "use"].includes(args[1])
+  ) {
+    const provider = args[2];
+    const profile = option("--profile");
+    if (!["codex", "claude"].includes(provider))
+      throw new Error("Indiquez codex ou claude comme fournisseur OAuth.");
+    if (args[1] === "list") {
+      const result = oauthProfiles.list(provider);
+      if (hasFlag("--json")) print(result);
+      else
+        result.profiles.forEach((name) =>
+          print(`${name}${name === result.active ? " (actif)" : ""}`),
+        );
+    } else {
+      if (!profile) throw new Error("Indiquez le profil avec --profile NAME.");
+      const profileEnv = oauthProfiles.environment(provider, profile);
+      const authenticated =
+        provider === "codex"
+          ? codexAuthStatus({ env: profileEnv }).authenticated
+          : claudeAuthStatus({ env: profileEnv }).authenticated;
+      if (!authenticated)
+        throw new Error(`Le profil ${provider} ${profile} n’est pas connecté.`);
+      oauthProfiles.use(provider, profile);
+      print(`Profil OAuth ${provider} ${profile} sélectionné.`);
+    }
   } else if (command === "auth" && args[0] === "login" && args[1] === "codex") {
-    const result = startCodexLogin();
+    const profile = option("--profile", "default");
+    const result = startCodexLogin({
+      env: oauthProfiles.environment("codex", profile),
+    });
     if (result.error)
       throw new Error("Impossible de lancer la connexion Codex");
     if (result.status !== 0)
       throw new Error("La connexion Codex a échoué ou a été annulée");
+    oauthProfiles.use("codex", profile);
     print("Connexion Codex terminée.");
   } else if (
     command === "auth" &&
     args[0] === "login" &&
     args[1] === "claude"
   ) {
-    const result = startClaudeLogin();
+    const profile = option("--profile", "default");
+    const result = startClaudeLogin({
+      env: oauthProfiles.environment("claude", profile),
+    });
     if (result.error)
       throw new Error("Impossible de lancer la connexion Claude");
     if (result.status !== 0)
       throw new Error("La connexion Claude a échoué ou a été annulée");
+    oauthProfiles.use("claude", profile);
     print("Connexion Claude terminée.");
   } else if (
     command === "auth" &&
