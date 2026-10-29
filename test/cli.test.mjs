@@ -660,6 +660,101 @@ test("CLI reports only persisted provider usage for a project or conversation", 
   }
 });
 
+test("CLI usage report filters usage and Auto measurements by UTC month", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-usage-month-cli-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const store = new ChatStore(join(dir, "data", "omni.sqlite"));
+    const project = store.createProject("monthly-usage", dir);
+    const conversation = store.createConversation(
+      project.id,
+      "monthly",
+      "openai",
+    );
+    const insertEvent = store.db.prepare(
+      "INSERT INTO conversation_events VALUES (?, ?, ?, ?, ?)",
+    );
+    insertEvent.run(
+      "usage-january",
+      conversation.id,
+      "usage.updated",
+      JSON.stringify({
+        providerId: "openai",
+        costUsd: 0.25,
+        tokens: { input: 10, output: 4 },
+      }),
+      "2025-01-31T23:59:59.999Z",
+    );
+    insertEvent.run(
+      "routing-january",
+      conversation.id,
+      "routing.result",
+      JSON.stringify({ outcome: "completed", latencyMs: 25 }),
+      "2025-01-31T23:59:59.999Z",
+    );
+    insertEvent.run(
+      "usage-february",
+      conversation.id,
+      "usage.updated",
+      JSON.stringify({
+        providerId: "openai",
+        costUsd: 0.5,
+        tokens: { input: 20, output: 8 },
+      }),
+      "2025-02-01T00:00:00.000Z",
+    );
+    insertEvent.run(
+      "routing-february",
+      conversation.id,
+      "routing.result",
+      JSON.stringify({ outcome: "failed", latencyMs: 100 }),
+      "2025-02-01T00:00:00.000Z",
+    );
+    store.close();
+
+    const january = run(
+      "usage",
+      "report",
+      "--project",
+      dir,
+      "--month",
+      "2025-01",
+      "--json",
+    );
+    assert.equal(january.status, 0, january.stderr);
+    const report = JSON.parse(january.stdout);
+    assert.equal(report.month, "2025-01");
+    assert.equal(report.summary.eventCount, 1);
+    assert.equal(report.summary.costUsd, 0.25);
+    assert.deepEqual(report.summary.tokens, {
+      input: 10,
+      output: 4,
+      reasoning: null,
+      cacheRead: null,
+      cacheWrite: null,
+    });
+    assert.equal(report.summary.routingResultCount, 1);
+    assert.equal(report.summary.routingOutcomes.completed, 1);
+    assert.equal(report.summary.averageLatencyMs, 25);
+    assert.equal(report.routing[0].createdAt, "2025-01-31T23:59:59.999Z");
+
+    const invalid = run(
+      "usage",
+      "report",
+      "--conversation",
+      conversation.id,
+      "--month",
+      "2025-13",
+    );
+    assert.notEqual(invalid.status, 0);
+    assert.match(invalid.stderr, /--month doit respecter YYYY-MM/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("CLI searches persisted conversation titles and messages with project filtering", () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-search-cli-"));
   const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };

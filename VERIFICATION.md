@@ -9,9 +9,12 @@
 
 ## Rapport d’usage CLI
 
+- [x] `usage report --month YYYY-MM` filtre les deux flux (usage et résultats Auto) aux bornes UTC exactes; test SQLite aux frontières `2025-01-31T23:59:59.999Z` / `2025-02-01T00:00:00.000Z`, et rejet d’un mois invalide.
+- [x] Validation après filtre mensuel : `npm test` (123 tests, 96 réussis, 0 échec, 27 opt-in ignorés), lint, format:check, check, build, audit production (0 vulnérabilité), format docs et diff-check réussis.
+
 - Le même rapport expose séparément les événements `routing.result` : nombre terminé/échoué/interrompu et latence moyenne des seules durées persistées. Le test vérifie un succès à 80 ms, un échec à 120 ms, une interruption sans durée et un filtre conversation.
 
-- [x] Après ajout de latence Auto : `npm test` (122 tests, 95 réussis, 0 échec, 27 opt-in ignorés), lint, format:check, check, build, audit production (0 vulnérabilité) et diff-check réussis.
+- [x] Après ajout de latence Auto : `npm test` (123 tests, 96 réussis, 0 échec, 27 opt-in ignorés), lint, format:check, check, build, audit production (0 vulnérabilité) et diff-check réussis.
 
 - [x] `omni usage report --project PATH_OR_ID [--json]` agrège les événements `usage.updated` persistés; `--conversation ID` isole une conversation.
 - [x] Les sommes USD n’incluent que les coûts rapportés et valides; chaque compteur token est agrégé uniquement sur ses valeurs présentes et valides. Les dimensions sans mesure restent `null`/« non rapportées », sans estimation.
@@ -20,7 +23,7 @@
 - [x] Événements d’échec et réponse incomplète : aucun compteur n’est persisté/émis comme usage.
 - [x] Anthropic Messages et Google Gen AI : les SDK officiels consomment les SSE loopback, lisent les compteurs du message/résultat final et émettent les dimensions présentes seulement; aucun endpoint externe ni secret.
 - [x] Le rapport agrège partiellement les mesures (par ex. input/output sans raison/cache) sans transformer les dimensions absentes en zéro; le test CLI couvre cette situation.
-- [x] Validation après les captures OpenAI/Anthropic/Gemini : `npm test` (122 tests, 95 réussis, 0 échec, 27 opt-in ignorés), lint, format:check, check, build, audit production (0 vulnérabilité) et diff-check réussis.
+- [x] Validation après les captures OpenAI/Anthropic/Gemini : `npm test` (123 tests, 96 réussis, 0 échec, 27 opt-in ignorés), lint, format:check, check, build, audit production (0 vulnérabilité) et diff-check réussis.
 - [ ] L’événement d’usage OpenCode reste validé par contrat SDK seulement; une génération live n’a pas été exécutée conformément à la consigne de ne pas tester les clés API. OpenAI a également été vérifié uniquement via SSE loopback.
 
 # Vérification et tests à refaire

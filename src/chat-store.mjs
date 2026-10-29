@@ -480,7 +480,10 @@ export class ChatStore {
         createdAt: row.createdAt,
       }));
   }
-  executionEvents(kind, { conversationId = null, projectId = null } = {}) {
+  executionEvents(
+    kind,
+    { conversationId = null, projectId = null, from = null, until = null } = {},
+  ) {
     const eventTypes = {
       tools: ["tool.started", "tool.completed", "tool.failed"],
       permissions: [
@@ -494,6 +497,11 @@ export class ChatStore {
     if (!eventTypes) throw new Error(`Historique inconnu: ${kind}`);
     if (!conversationId && !projectId)
       throw new Error("Un filtre --conversation ou --project est requis");
+    for (const boundary of [from, until])
+      if (boundary !== null && !Number.isFinite(Date.parse(boundary)))
+        throw new TypeError("Borne temporelle invalide");
+    if (from && until && from >= until)
+      throw new RangeError("La période de l’historique est vide ou inversée");
     if (conversationId) {
       const conversation = this.conversation(conversationId);
       if (projectId && this.project(projectId).id !== conversation.projectId)
@@ -509,6 +517,14 @@ export class ChatStore {
         "conversation_id IN (SELECT id FROM conversations WHERE project_id = ?)",
       );
       parameters.push(this.project(projectId).id);
+    }
+    if (from) {
+      clauses.push("created_at >= ?");
+      parameters.push(from);
+    }
+    if (until) {
+      clauses.push("created_at < ?");
+      parameters.push(until);
     }
     return this.db
       .prepare(
