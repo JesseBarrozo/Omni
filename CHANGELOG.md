@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Profils de clés nommés étendus à OpenRouter, Anthropic API et Gemini : sélection active par fournisseur, préservation de l’entrée historique `default`, et commandes CLI `set/list/use/remove` sans afficher les clés. Les variables d’environnement restent prioritaires.
+
 - Vérification d’intégration du budget Auto : `auto plan` a utilisé le catalogue réel OpenCode avec `OMNI_AUTO_MONTHLY_BUDGET_USD` configuré; tarifs affichés et exclusions des modèles non tarifés confirmés, sans génération.
 
 - En mode budget mensuel, Auto refuse explicitement les candidats sans suivi de coût et tarifs catalogue complets; si tous sont inconnus ou non pris en charge, la commande explique le blocage au lieu de poursuivre silencieusement.

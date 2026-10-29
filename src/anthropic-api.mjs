@@ -1,35 +1,35 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { SecretStore } from "./secret-store.mjs";
+import { ApiKeyProfiles } from "./api-key-profiles.mjs";
 
 const serviceName = "Omni Anthropic API Key";
-const accountName = "default";
 
 export class AnthropicApiAuth {
   constructor({ secretStore = new SecretStore({}) } = {}) {
-    this.secretStore = secretStore;
+    this.profiles = new ApiKeyProfiles({
+      serviceName,
+      providerName: "Anthropic",
+      secretStore,
+    });
   }
 
-  getApiKey() {
-    return this.secretStore.get(serviceName, accountName);
+  getApiKey(profile) {
+    return this.profiles.getApiKey(profile);
   }
-
-  hasApiKey() {
-    return this.getApiKey() !== null;
+  hasApiKey(profile) {
+    return this.profiles.hasApiKey(profile);
   }
-
-  setApiKey(value) {
-    if (
-      typeof value !== "string" ||
-      !value ||
-      value.length > 16384 ||
-      /[\r\n\0-\x1f\x7f]/.test(value)
-    )
-      throw new TypeError("La clé API doit être une seule ligne non vide.");
-    this.secretStore.set(serviceName, accountName, value);
+  setApiKey(value, profile) {
+    return this.profiles.setApiKey(value, profile);
   }
-
-  deleteApiKey() {
-    return this.secretStore.delete(serviceName, accountName);
+  listApiKeyProfiles() {
+    return this.profiles.listApiKeyProfiles();
+  }
+  useApiKeyProfile(profile) {
+    return this.profiles.useApiKeyProfile(profile);
+  }
+  deleteApiKey(profile) {
+    return this.profiles.deleteApiKey(profile);
   }
 }
 

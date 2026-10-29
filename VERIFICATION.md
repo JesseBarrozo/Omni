@@ -26,6 +26,12 @@
 - [x] Validation après les captures OpenAI/Anthropic/Gemini : `npm test` (123 tests, 96 réussis, 0 échec, 27 opt-in ignorés), lint, format:check, check, build, audit production (0 vulnérabilité) et diff-check réussis.
 - [ ] L’événement d’usage OpenCode reste validé par contrat SDK seulement; une génération live n’a pas été exécutée conformément à la consigne de ne pas tester les clés API. OpenAI a également été vérifié uniquement via SSE loopback.
 
+## Profils API key multi-fournisseurs
+
+- [x] OpenRouter, Anthropic API et Gemini partagent une gestion de profils nommés dans le trousseau système, avec `default` rétrocompatible, profil actif, liste, sélection et suppression.
+- [x] Le test du gestionnaire de profils vérifie la lecture d’une ancienne entrée `default`, le stockage de plusieurs clés synthétiques, le changement/suppression du profil actif, le fallback, l’index sans valeur secrète et le rejet d’un index mal formé. Aucun trousseau utilisateur ni clé réelle n’est utilisé.
+- [x] Les fabriques CLI continuent à donner priorité aux variables d’environnement; sinon elles lisent le profil actif du fournisseur. Les tests SDK loopback existants couvrent toujours le transport; aucune requête API distante n’a été effectuée.
+
 # Vérification et tests à refaire
 
 ## Harness OpenCode (commit `9eaf0d9`)

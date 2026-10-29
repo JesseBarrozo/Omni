@@ -105,7 +105,22 @@ test("OpenRouter credentials use a dedicated keyring identity and validate input
   assert.equal(auth.hasApiKey(), false);
   auth.setApiKey("openrouter-test-secret");
   assert.equal(auth.getApiKey(), "openrouter-test-secret");
-  assert.deepEqual([...entries.keys()], ["Omni OpenRouter API Key:default"]);
+  assert.deepEqual(
+    [...entries.keys()],
+    [
+      "Omni OpenRouter API Key:default",
+      "Omni OpenRouter API Key Profiles:registry",
+    ],
+  );
+  auth.setApiKey("openrouter-work-secret", "work");
+  assert.equal(auth.useApiKeyProfile("work"), "work");
+  assert.equal(auth.getApiKey(), "openrouter-work-secret");
+  assert.deepEqual(auth.listApiKeyProfiles(), {
+    profiles: ["default", "work"],
+    active: "work",
+  });
+  assert.equal(auth.deleteApiKey(), true);
+  assert.equal(auth.getApiKey(), "openrouter-test-secret");
   assert.throws(() => auth.setApiKey("invalid\nsecret"), /une seule ligne/);
   assert.equal(auth.deleteApiKey(), true);
   assert.equal(auth.hasApiKey(), false);

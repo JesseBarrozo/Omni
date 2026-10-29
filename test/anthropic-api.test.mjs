@@ -166,7 +166,13 @@ test("Anthropic API credentials have an isolated keyring identity", () => {
   };
   const auth = new AnthropicApiAuth({ secretStore });
   auth.setApiKey("anthropic-test-secret");
-  assert.deepEqual([...entries.keys()], ["Omni Anthropic API Key:default"]);
+  assert.deepEqual(
+    [...entries.keys()],
+    [
+      "Omni Anthropic API Key:default",
+      "Omni Anthropic API Key Profiles:registry",
+    ],
+  );
   assert.equal(auth.getApiKey(), "anthropic-test-secret");
   assert.throws(() => auth.setApiKey("bad\nkey"), /une seule ligne/);
   assert.equal(auth.deleteApiKey(), true);

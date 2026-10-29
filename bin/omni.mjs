@@ -45,6 +45,12 @@ const openAIAuth = () => new OpenAIAuth({ dataDir });
 const openRouterAuth = () => new OpenRouterAuth();
 const anthropicApiAuth = () => new AnthropicApiAuth();
 const geminiApiAuth = () => new GeminiApiAuth();
+const apiKeyAuthFor = (provider) =>
+  ({
+    openrouter: openRouterAuth,
+    anthropic: anthropicApiAuth,
+    google: geminiApiAuth,
+  })[provider]?.();
 const mcpRegistry = () => new McpRegistry({ store });
 const redactError = (value) => {
   let safe = redactSecrets(value);
@@ -132,7 +138,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter --stdin\n  auth key set anthropic --stdin\n  auth key set google --stdin\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  auth key remove openrouter|anthropic|google [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  usage report --conversation ID|--project ID_OR_PATH [--month YYYY-MM] [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  auto plan --project ID_OR_PATH [--require-mcp SERVER[,SERVER]] [--json] PROMPT\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter|anthropic|google --stdin [--profile NAME]\n  auth key list openai|openrouter|anthropic|google [--json]\n  auth key use openai|openrouter|anthropic|google --profile NAME\n  auth key remove openai|openrouter|anthropic|google [--profile NAME] [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  usage report --conversation ID|--project ID_OR_PATH [--month YYYY-MM] [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  auto plan --project ID_OR_PATH [--require-mcp SERVER[,SERVER]] [--json] PROMPT\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
@@ -1493,72 +1499,48 @@ try {
   } else if (
     command === "auth" &&
     args[0] === "key" &&
-    args[1] === "set" &&
-    args[2] === "google"
+    ["set", "list", "use", "remove"].includes(args[1]) &&
+    ["openrouter", "anthropic", "google"].includes(args[2])
   ) {
-    if (!hasFlag("--stdin"))
-      throw new Error("Fournissez la clé uniquement avec --stdin.");
-    geminiApiAuth().setApiKey(await readApiKeyFromStdin());
-    print("Clé Gemini enregistrée dans le trousseau système.");
-  } else if (
-    command === "auth" &&
-    args[0] === "key" &&
-    args[1] === "remove" &&
-    args[2] === "google"
-  ) {
-    if (!hasFlag("--yes"))
-      throw new Error("Confirmez la suppression avec --yes.");
-    print(
-      geminiApiAuth().deleteApiKey()
-        ? "Clé Gemini supprimée."
-        : "Aucune clé Gemini enregistrée.",
-    );
-  } else if (
-    command === "auth" &&
-    args[0] === "key" &&
-    args[1] === "set" &&
-    args[2] === "anthropic"
-  ) {
-    if (!hasFlag("--stdin"))
-      throw new Error("Fournissez la clé uniquement avec --stdin.");
-    anthropicApiAuth().setApiKey(await readApiKeyFromStdin());
-    print("Clé Anthropic enregistrée dans le trousseau système.");
-  } else if (
-    command === "auth" &&
-    args[0] === "key" &&
-    args[1] === "remove" &&
-    args[2] === "anthropic"
-  ) {
-    if (!hasFlag("--yes"))
-      throw new Error("Confirmez la suppression avec --yes.");
-    print(
-      anthropicApiAuth().deleteApiKey()
-        ? "Clé Anthropic supprimée."
-        : "Aucune clé Anthropic enregistrée.",
-    );
-  } else if (
-    command === "auth" &&
-    args[0] === "key" &&
-    args[1] === "set" &&
-    args[2] === "openrouter"
-  ) {
-    if (!hasFlag("--stdin"))
-      throw new Error("Fournissez la clé uniquement avec --stdin.");
-    openRouterAuth().setApiKey(await readApiKeyFromStdin());
-    print("Clé OpenRouter enregistrée dans le trousseau système.");
-  } else if (
-    command === "auth" &&
-    args[0] === "key" &&
-    args[1] === "remove" &&
-    args[2] === "openrouter"
-  ) {
-    if (!hasFlag("--yes"))
-      throw new Error("Confirmez la suppression avec --yes.");
-    print(
-      openRouterAuth().deleteApiKey()
-        ? "Clé OpenRouter supprimée."
-        : "Aucune clé OpenRouter enregistrée.",
-    );
+    const auth = apiKeyAuthFor(args[2]);
+    const providerName =
+      args[2] === "google"
+        ? "Gemini"
+        : args[2] === "anthropic"
+          ? "Anthropic"
+          : "OpenRouter";
+    if (args[1] === "set") {
+      if (!hasFlag("--stdin"))
+        throw new Error("Fournissez la clé uniquement avec --stdin.");
+      const profile = option("--profile", "default");
+      auth.setApiKey(await readApiKeyFromStdin(), profile);
+      print(
+        `Profil ${providerName} ${profile} enregistré dans le trousseau système.`,
+      );
+    } else if (args[1] === "list") {
+      const profiles = auth.listApiKeyProfiles();
+      if (hasFlag("--json")) print(profiles);
+      else if (profiles.profiles.length === 0)
+        print(`Aucun profil ${providerName} enregistré.`);
+      else
+        profiles.profiles.forEach((profile) =>
+          print(`${profile}${profile === profiles.active ? " (actif)" : ""}`),
+        );
+    } else if (args[1] === "use") {
+      const profile = option("--profile");
+      if (!profile) throw new Error("Indiquez le profil avec --profile NAME.");
+      auth.useApiKeyProfile(profile);
+      print(`Profil ${providerName} ${profile} sélectionné.`);
+    } else {
+      if (!hasFlag("--yes"))
+        throw new Error("Confirmez la suppression avec --yes.");
+      const profile = option("--profile");
+      print(
+        auth.deleteApiKey(profile)
+          ? `Profil ${providerName} ${profile ?? "actif"} supprimé.`
+          : `Aucun profil ${providerName} à supprimer.`,
+      );
+    }
   } else if (
     command === "auth" &&
     args[0] === "key" &&

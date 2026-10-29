@@ -157,6 +157,38 @@ test("CLI rejects API keys in arguments and requires explicit noninteractive rem
   }
 });
 
+test("CLI advertises named API-key profiles and requires stdin for new provider profiles", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-api-key-profiles-help-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const help = run("help");
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(
+      help.stdout,
+      /auth key set openrouter\|anthropic\|google --stdin \[--profile NAME\]/,
+    );
+    assert.match(
+      help.stdout,
+      /auth key list openai\|openrouter\|anthropic\|google/,
+    );
+
+    const missingStdin = run(
+      "auth",
+      "key",
+      "set",
+      "anthropic",
+      "--profile",
+      "work",
+    );
+    assert.equal(missingStdin.status, 1);
+    assert.match(missingStdin.stderr, /uniquement avec --stdin/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test(
   "CLI manages temporary named OpenAI key profiles using the real system keyring",
   { skip: process.env.OMNI_LIVE_KEYRING_TESTS !== "1", timeout: 30_000 },

@@ -194,7 +194,10 @@ test("Gemini API credentials use an isolated keyring identity", () => {
   };
   const auth = new GeminiApiAuth({ secretStore });
   auth.setApiKey("gemini-test-secret");
-  assert.deepEqual([...entries.keys()], ["Omni Gemini API Key:default"]);
+  assert.deepEqual(
+    [...entries.keys()],
+    ["Omni Gemini API Key:default", "Omni Gemini API Key Profiles:registry"],
+  );
   assert.equal(auth.getApiKey(), "gemini-test-secret");
   assert.throws(() => auth.setApiKey("bad\nkey"), /une seule ligne/);
   assert.equal(auth.deleteApiKey(), true);

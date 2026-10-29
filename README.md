@@ -11,9 +11,9 @@ Omni is an independent Universal AI Harness under phased development. Its CLI pr
 - Claude Code CLI, logged in with `claude auth login --claudeai`, for Claude Agent SDK chat and harness; Omni delegates authentication and never reads its token
 - for ChatGPT plan usage, run `omni auth login openai`; OAuth credentials are stored in the operating system’s secure credential store, never SQLite
 - optionally, an OpenAI API key in `OPENAI_API_KEY` for direct API billing, or store it with `omni auth key set openai --stdin`; the CLI reads one line without displaying it and stores it in the system credential store
-- optionally, an OpenRouter API key in `OPENROUTER_API_KEY`, or store it with `omni auth key set openrouter --stdin`; OpenRouter credentials use a distinct system credential-store entry
-- optionally, an Anthropic API key in `ANTHROPIC_API_KEY`, or store it with `omni auth key set anthropic --stdin`; Anthropic API credentials are distinct from Claude Code login and use a separate system credential-store entry
-- optionally, a Gemini Developer API key in `GEMINI_API_KEY`, or store it with `omni auth key set google --stdin`; Gemini credentials use a separate system credential-store entry from Antigravity’s local CLI account
+- optionally, an OpenRouter API key in `OPENROUTER_API_KEY`, or store it with `omni auth key set openrouter --stdin`; named profiles are available in a separate system credential-store namespace
+- optionally, an Anthropic API key in `ANTHROPIC_API_KEY`, or store it with `omni auth key set anthropic --stdin`; named API-key profiles are separate from Claude Code login
+- optionally, a Gemini Developer API key in `GEMINI_API_KEY`, or store it with `omni auth key set google --stdin`; named profiles are separate from Antigravity’s local CLI account
 
 Install dependencies with `npm install`. `npm run build`, `npm run lint`, `npm run format:check` and `npm run check` validate the current CLI and core runtime.
 
@@ -39,12 +39,13 @@ node ./bin/omni.mjs models disable --provider codex --model MODEL_ID --auto-only
 node ./bin/omni.mjs auth status --json
 node ./bin/omni.mjs auth login openai
 node ./bin/omni.mjs auth key set openai --stdin --profile work < /secure/path/openai-key
-node ./bin/omni.mjs auth key set openrouter --stdin < /secure/path/openrouter-key
-node ./bin/omni.mjs auth key set anthropic --stdin < /secure/path/anthropic-key
-node ./bin/omni.mjs auth key set google --stdin < /secure/path/gemini-key
-node ./bin/omni.mjs auth key list openai --json
+node ./bin/omni.mjs auth key set openrouter --stdin --profile work < /secure/path/openrouter-key
+node ./bin/omni.mjs auth key set anthropic --stdin --profile work < /secure/path/anthropic-key
+node ./bin/omni.mjs auth key set google --stdin --profile work < /secure/path/gemini-key
+node ./bin/omni.mjs auth key list openrouter --json
 node ./bin/omni.mjs auth key use openai --profile work
-node ./bin/omni.mjs auth key remove openai --profile work
+node ./bin/omni.mjs auth key use anthropic --profile work
+node ./bin/omni.mjs auth key remove openai --profile work --yes
 node ./bin/omni.mjs auth login codex
 node ./bin/omni.mjs auth login claude
 node ./bin/omni.mjs project create --name "My project" --path ./my-project
@@ -97,7 +98,7 @@ The CLI stores projects, conversations, messages, streamed partial responses and
 
 Import an export into a project with `node ./bin/omni.mjs conversation import --project PROJECT_ID_OR_PATH ./conversation.json`. Imported session events are historical records; Omni gives the imported conversation and its messages fresh IDs, preserves the transcript, and never replays an action.
 
-Use `OMNI_DATA_DIR` to point local data to a different directory. SQLite data uses restrictive local file permissions but is not encrypted. OpenAI credentials are resolved in this order: ChatGPT OAuth, `OPENAI_API_KEY`, then the active stored API-key profile. Manage profiles with `auth key set|list|use|remove openai`; set accepts a profile name and stdin only, list/status expose names and source but no key values, and remove asks for confirmation (use `--yes` in automation). The legacy `default` keyring identity remains supported. API keys are not copied into SQLite or logs.
+Use `OMNI_DATA_DIR` to point local data to a different directory. SQLite data uses restrictive local file permissions but is not encrypted. OpenAI credentials are resolved in this order: ChatGPT OAuth, `OPENAI_API_KEY`, then the active stored API-key profile. OpenAI, OpenRouter, Anthropic API, and Gemini API support named profiles through `auth key set|list|use|remove PROVIDER`; set reads stdin only, profile names and authentication source are shown without key values, and removal requires `--yes`. Existing `default` keyring identities remain supported. Environment variables override the active stored profile; API keys are not copied into SQLite or logs.
 
 ## Project status
 

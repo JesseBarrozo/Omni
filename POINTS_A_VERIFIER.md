@@ -4,10 +4,10 @@ Mis à jour le 29 octobre 2026. Ce relevé complète [`VERIFICATION.md`](VERIFIC
 
 ## Validations locales récentes
 
-- Dernière suite locale : `npm test` — 126 tests découverts, 99 réussis, aucun échec, 27 scénarios opt-in ignorés.
+- Dernière suite locale : `npm test` — 130 tests découverts, 103 réussis, aucun échec, 27 scénarios opt-in ignorés.
 - `npm run lint`, `npm run format:check`, `npm run check`, `npm run build`, Prettier sur la documentation et `git diff --check` réussis.
 - Aucun appel de génération à un fournisseur ni test de clé API pendant ces deux phases.
-- Derniers commits : `7dee5b4` (budget mensuel Auto basé sur les dépenses rapportées) et `d49a615` (plafond tarifaire de sortie OpenCode).
+- Dernier commit avant la phase en cours : `cfca4f9` (test du budget mensuel Auto contre le catalogue OpenCode).
 
 ## À reprendre seulement avec accès ou environnement approprié
 
@@ -35,7 +35,7 @@ Mis à jour le 29 octobre 2026. Ce relevé complète [`VERIFICATION.md`](VERIFIC
 ### Orca, packaging et comptes
 
 - [ ] `orca agent launch --agent omni` reste rejeté par la CLI Orca installée, qui ne documente pas l’enregistrement d’un agent tiers. Omni fonctionne comme commande CLI ordinaire; refaire le test depuis un terminal Orca géré si cet environnement est disponible. Ne pas modifier Orca.
-- [ ] La prise en charge de profils multi-comptes génériques entre fournisseurs reste à concevoir.
+- [x] Profils de clés API nommés disponibles pour OpenAI, OpenRouter, Anthropic API et Gemini, avec l’entrée `default` historique conservée. Les comptes OAuth multiples et le partage d’un registre unique entre OAuth et clés API restent à concevoir.
 - [ ] Avant redistribution, vérifier les notices des composants natifs embarqués par `@napi-rs/keyring` sur Linux et les conditions de licence du SDK Claude Agent; voir les détails dans `AUDIT.md` et `VERIFICATION.md`.
 
 ## Commandes locales de reprise
