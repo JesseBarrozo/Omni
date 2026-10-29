@@ -20,6 +20,7 @@ export const EVENT_TYPES = Object.freeze([
   "model.changed",
   "harness.changed",
   "routing.decision",
+  "routing.result",
   "routing.fallback",
   "usage.updated",
   "file.changed",
@@ -34,8 +35,6 @@ export const EVENT_TYPES = Object.freeze([
 
 const now = () => new Date().toISOString();
 const clone = (value) => JSON.parse(JSON.stringify(value));
-const score01 = (value, fallback = 0.5) =>
-  Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : fallback;
 
 export class EventStore {
   constructor(filePath = null, initial = []) {
@@ -330,16 +329,18 @@ export class AutoRouter {
       profile = "balance",
       excludedProviders = [],
       preferredProviders = [],
-      budgetRemaining = Infinity,
+      maxInputPerMillion = null,
       privacyMode = false,
+      previousResults = {},
     } = {},
   ) {
     this.registry = registry;
     this.profile = profile;
     this.excludedProviders = new Set(excludedProviders);
     this.preferredProviders = preferredProviders;
-    this.budgetRemaining = budgetRemaining;
+    this.maxInputPerMillion = maxInputPerMillion;
     this.privacyMode = privacyMode;
+    this.previousResults = previousResults;
   }
   analyze(input) {
     const text =
@@ -359,65 +360,121 @@ export class AutoRouter {
       privacy: input.privacy ?? this.privacyMode,
     };
   }
-  candidates(input) {
+  evaluate(input) {
     const task = this.analyze(input);
-    const harnesses = this.registry.listHarnesses();
-    return this.registry
-      .listModels({ autoOnly: true })
-      .filter((model) => !this.excludedProviders.has(model.providerId))
-      .filter(
-        (model) =>
-          this.budgetRemaining === Infinity ||
-          (model.pricing?.inputPerMillion ?? 0) <= this.budgetRemaining,
-      )
-      .flatMap((model) =>
-        harnesses
-          .filter((h) => !task.needsTools || h.capabilities?.tools !== false)
-          .filter((h) => !task.privacy || h.privacyApproved !== false)
-          .map((h) => {
-            const capability = task.needsTools
-              ? score01(model.capabilities?.tools ? 1 : 0, 0)
-              : 1;
-            const quality = score01(model.quality, 0.6);
-            const latency = 1 - score01(model.latency, 0.5);
-            const cost =
-              1 - Math.min(1, (model.pricing?.inputPerMillion ?? 0) / 100);
-            const preferred = this.preferredProviders.includes(model.providerId)
-              ? 0.15
-              : 0;
-            const local = /local|ollama|lm studio|llama/i.test(model.providerId)
-              ? 1
-              : 0;
-            const profile =
-              this.profile === "efficiency"
-                ? cost * 0.45 + latency * 0.3 + quality * 0.1
-                : this.profile === "intelligence"
-                  ? quality * 0.55 + capability * 0.25 + cost * 0.05
-                  : this.profile === "local-first"
-                    ? local * 0.6 + quality * 0.2 + latency * 0.1
-                    : quality * 0.35 +
-                      capability * 0.25 +
-                      cost * 0.2 +
-                      latency * 0.2;
-            return {
-              model,
-              harness: h,
-              score: profile + preferred,
-              reasons: {
-                task: task.type,
-                complexity: task.complexity,
-                tools: task.needsTools,
-                profile: this.profile,
-              },
-            };
-          }),
-      );
+    const evaluated = [];
+    for (const model of this.registry.models.values()) {
+      const provider = this.registry.providers.get(model.providerId);
+      for (const harness of this.registry.harnesses.values()) {
+        const exclusions = [];
+        if (!provider?.enabled) exclusions.push("provider-disabled");
+        if (!model.enabled) exclusions.push("model-disabled");
+        if (!model.enabledForAuto)
+          exclusions.push("model-not-enabled-for-auto");
+        if (this.excludedProviders.has(model.providerId))
+          exclusions.push("provider-excluded-by-policy");
+        if (model.available === false) exclusions.push("model-unavailable");
+        if (!harness.enabled) exclusions.push("harness-disabled");
+        if (
+          Array.isArray(harness.providerIds) &&
+          !harness.providerIds.includes(model.providerId)
+        )
+          exclusions.push("provider-harness-incompatible");
+        if (harness.available === false) exclusions.push("harness-unavailable");
+        if (task.needsTools && harness.capabilities?.tools !== true)
+          exclusions.push("required-tools-unsupported");
+        if (task.privacy && harness.privacyApproved !== true)
+          exclusions.push("privacy-not-approved");
+        const price = model.pricing?.inputPerMillion;
+        if (
+          this.maxInputPerMillion !== null &&
+          (!Number.isFinite(price) || price > this.maxInputPerMillion)
+        )
+          exclusions.push(
+            Number.isFinite(price)
+              ? "input-price-over-limit"
+              : "input-price-unknown",
+          );
+        const key = `${model.providerId}/${model.id}/${harness.id}`;
+        evaluated.push({
+          key,
+          model,
+          provider,
+          harness,
+          eligible: exclusions.length === 0,
+          exclusions,
+          preferredRank: this.preferredProviders.indexOf(model.providerId),
+          previous: this.previousResults[key] ?? null,
+          latencyMs: this.previousResults[key]?.averageLatencyMs ?? null,
+          inputPerMillion: price ?? null,
+          quality: Number.isFinite(model.quality) ? model.quality : null,
+        });
+      }
+    }
+    const eligible = evaluated.filter((item) => item.eligible);
+    eligible.sort((a, b) => {
+      const preferredA = a.preferredRank < 0 ? Infinity : a.preferredRank;
+      const preferredB = b.preferredRank < 0 ? Infinity : b.preferredRank;
+      if (preferredA !== preferredB) return preferredA - preferredB;
+      const successA = a.previous?.attempts
+        ? a.previous.successes / a.previous.attempts
+        : null;
+      const successB = b.previous?.attempts
+        ? b.previous.successes / b.previous.attempts
+        : null;
+      if (successA !== successB) {
+        if (successA === null) return 1;
+        if (successB === null) return -1;
+        if (successA !== successB) return successB - successA;
+      }
+      if (this.profile === "intelligence" && a.quality !== b.quality) {
+        if (a.quality === null) return 1;
+        if (b.quality === null) return -1;
+        return b.quality - a.quality;
+      }
+      if (this.profile === "efficiency") {
+        if (a.inputPerMillion !== b.inputPerMillion) {
+          if (a.inputPerMillion === null) return 1;
+          if (b.inputPerMillion === null) return -1;
+          return a.inputPerMillion - b.inputPerMillion;
+        }
+      }
+      if (a.latencyMs !== b.latencyMs) {
+        if (a.latencyMs === null) return 1;
+        if (b.latencyMs === null) return -1;
+        return a.latencyMs - b.latencyMs;
+      }
+      if (a.inputPerMillion !== b.inputPerMillion) {
+        if (a.inputPerMillion === null) return 1;
+        if (b.inputPerMillion === null) return -1;
+        return a.inputPerMillion - b.inputPerMillion;
+      }
+      return a.key.localeCompare(b.key);
+    });
+    return { task, evaluated, eligible };
+  }
+  candidates(input) {
+    return this.evaluate(input).eligible;
   }
   select(input) {
-    const candidates = this.candidates(input).sort((a, b) => b.score - a.score);
+    const { task, evaluated, eligible } = this.evaluate(input);
+    const candidates = eligible;
     if (!candidates.length)
       throw new Error("No compatible enabled model/harness candidate");
     const selected = candidates[0];
+    const ranking = [
+      "preferredProviders (configured order)",
+      "recorded success rate (only when available)",
+      ...(this.profile === "intelligence"
+        ? ["explicit model quality (only when available)"]
+        : []),
+      ...(this.profile === "efficiency"
+        ? ["known input price (only when available)"]
+        : []),
+      "recorded latency (only when available)",
+      "known input price (only when available)",
+      "provider/model/harness ID (stable tie-break)",
+    ];
     return {
       id: randomUUID(),
       selected: {
@@ -432,12 +489,28 @@ export class AutoRouter {
             harnessId: candidates[1].harness.id,
           }
         : null,
+      evaluatedCandidates: evaluated.map((candidate) => ({
+        key: candidate.key,
+        eligible: candidate.eligible,
+        exclusions: candidate.exclusions,
+        previous: candidate.previous,
+        observedLatencyMs: candidate.latencyMs,
+        knownInputPricePerMillion: candidate.inputPerMillion,
+      })),
+      criteria: {
+        task,
+        profile: this.profile,
+        privacyMode: task.privacy,
+        maxInputPerMillion: this.maxInputPerMillion,
+        preferredProviders: this.preferredProviders,
+        ranking,
+      },
       candidates: candidates.map((c) => ({
         modelId: c.model.id,
+        providerId: c.model.providerId,
         harnessId: c.harness.id,
-        score: Number(c.score.toFixed(4)),
       })),
-      explanation: `Mode Auto · ${selected.harness.name ?? selected.harness.id} · ${selected.model.name ?? selected.model.id} · tâche ${selected.reasons.task}, profil ${this.profile}${selected.reasons.tools ? ", outils requis" : ""}`,
+      explanation: `Mode Auto · ${selected.harness.name ?? selected.harness.id} · ${selected.model.name ?? selected.model.id} · tâche ${task.type}, profil ${this.profile}${task.needsTools ? ", outils requis" : ""}`,
     };
   }
 }

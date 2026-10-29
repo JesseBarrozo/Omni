@@ -69,3 +69,33 @@ Le test réel crée un dépôt Git jetable, demande au vrai app-server Codex de 
 - `OMNI_LIVE_HARNESS_SWAP_TESTS=1 node --test test/harness-swap.test.mjs` : réussi, 6/6. Parcours réel Codex → checkpoint → Claude → lecture après reprise → nouveau thread Codex; le test séparé a exécuté `omni swap` puis `omni run` dans deux processus.
 - Refus explicite dans le CLI swap/run, interruption réelle pendant une opération et permissions CLI en TTY : à refaire; les tests actuels couvrent l’approbation réelle via SDK/app-server et la reprise CLI sans TTY.
 - Les événements d’outils, commandes et modifications de fichiers sont conservés dans le journal Omni pour alimenter le résumé de swap; les parcours réels Claude/Codex ont vérifié les appels d’outils et le changement de fichier.
+
+## Phase Auto Orchestrator
+
+- [x] `omni run --auto` interroge les vrais comptes OAuth Codex et Claude puis leurs catalogues de modèles officiels; les identifiants du journal proviennent de ces réponses.
+- [x] Le routeur exclut fournisseurs/modèles désactivés, modèles non autorisés par `OMNI_AUTO_MODELS`, incompatibilités modèle/harness, capacités d’outils manquantes, confidentialité stricte non approuvée et prix inconnus/supérieurs au plafond configuré.
+- [x] Le choix est déterministe et enregistre les candidats évalués, exclusions, critères, ordre, secours et explication. Les issues et latences réelles sont recherchées dans les 200 derniers résultats de toutes les conversations.
+- [x] Le test réel `OMNI_LIVE_AUTO_TESTS=1 node --test test/auto-router.test.mjs` a interrogé un compte OAuth, restreint le choix à un modèle concret trouvé dans son catalogue, lancé `omni run --auto`, reçu une réponse modèle, puis vérifié la décision et l’issue `completed` dans SQLite après le sous-processus.
+- [x] Les journaux du parcours réel ont été contrôlés pour l’absence de clé API/token Bearer.
+- [x] Aucune relance automatique n’a lieu après le démarrage d’une tâche. Le candidat de secours est conservé dans la décision mais n’est pas exécuté après une panne, afin de ne pas rejouer un outil non idempotent.
+- [ ] Le fallback après un échec de préflight avant tout effet de bord n’est pas encore implémenté; aucun fallback d’exécution post-démarrage n’est autorisé.
+
+### Limites réelles de routage
+
+- Le catalogue Codex/Claude peut contenir des alias tels que `default`; le routeur les expose comme entrées de catalogue, mais le test d’exécution choisit un identifiant de modèle concret pour exercer l’appel réel.
+- Les adaptateurs actuels ne fournissent pas de métadonnées tarifaires vérifiées ni un indicateur d’approbation de confidentialité. `OMNI_AUTO_MAX_INPUT_PER_MILLION` exclut donc les modèles au tarif inconnu et `OMNI_AUTO_PRIVACY=strict` exclut les deux harnesses cloud.
+- Capacités d’outils viennent du contrat des deux adaptateurs Omni; la disponibilité est établie par authentification et réponse du catalogue, pas par une mesure synthétique.
+- Seuls Codex et Claude Code sont inclus dans le registre runtime actuel. OpenAI direct, Antigravity et Orca ne font pas partie de ce routeur.
+
+### Commandes de validation Auto
+
+```sh
+npm test
+npm run lint
+npm run format:check
+npm run check
+npm run build
+OMNI_LIVE_AUTO_TESTS=1 node --test test/auto-router.test.mjs
+```
+
+Résultats du commit Auto : `npm test` : 40 tests, 32 réussis, 0 échec, 8 intégrations conditionnelles ignorées; `npm run lint`, `npm run format:check`, `npm run check`, `npm run build` et `git diff --check` réussis. Avec `OMNI_LIVE_AUTO_TESTS=1`, le test Auto réel passe 6/6, y compris l’appel OAuth et la vérification du journal SQLite après le sous-processus CLI.

@@ -127,6 +127,24 @@ export class ChatStore {
         createdAt: row.createdAt,
       }));
   }
+  routingResults(limit = 200) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 10000)
+      throw new Error(
+        "La limite des résultats de routage doit être entre 1 et 10000",
+      );
+    return this.db
+      .prepare(
+        "SELECT id, conversation_id AS conversationId, type, payload_json, created_at AS createdAt FROM conversation_events WHERE type = 'routing.result' ORDER BY created_at DESC, rowid DESC LIMIT ?",
+      )
+      .all(limit)
+      .map((row) => ({
+        id: row.id,
+        conversationId: row.conversationId,
+        type: row.type,
+        payload: JSON.parse(row.payload_json),
+        createdAt: row.createdAt,
+      }));
+  }
   conversation(id) {
     const c = this.db
       .prepare("SELECT * FROM conversations WHERE id = ?")

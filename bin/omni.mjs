@@ -20,7 +20,7 @@ import {
 } from "../src/claude-code.mjs";
 import { runChatTurn } from "../src/chat-runner.mjs";
 import { HarnessSwapService } from "../src/harness-swap.mjs";
-import { redactSecrets } from "../src/core.mjs";
+import { AutoRouter, ModelRegistry, redactSecrets } from "../src/core.mjs";
 
 const dataDir = process.env.OMNI_DATA_DIR || join(homedir(), ".omni");
 const store = new ChatStore(join(dataDir, "omni.sqlite"));
@@ -37,8 +37,140 @@ const option = (name, fallback = null) => {
 const hasFlag = (name) => args.includes(name);
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
+
+async function autoRoute(prompt, project) {
+  const registry = new ModelRegistry();
+  const checkedProviders = [];
+  const disabledProviders = new Set(
+    (process.env.OMNI_DISABLED_PROVIDERS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  const autoModelAllowlist = process.env.OMNI_AUTO_MODELS
+    ? new Set(
+        process.env.OMNI_AUTO_MODELS.split(",").map((value) => value.trim()),
+      )
+    : null;
+  const addProvider = (providerId, models, harnessId, harnessName) => {
+    const enabled = !disabledProviders.has(providerId);
+    registry.registerProvider({ id: providerId, name: providerId, enabled });
+    registry.registerHarness({
+      id: harnessId,
+      name: harnessName,
+      enabled: true,
+      available: true,
+      providerIds: [providerId],
+      capabilities: { tools: true },
+      privacyApproved: false,
+    });
+    for (const modelId of models)
+      registry.registerModel({
+        id: modelId,
+        providerId,
+        name: modelId,
+        available: true,
+        enabled,
+        enabledForAuto:
+          !autoModelAllowlist ||
+          autoModelAllowlist.has(`${providerId}:${modelId}`),
+      });
+    checkedProviders.push({
+      providerId,
+      authenticated: true,
+      modelCount: models.length,
+      enabled,
+    });
+  };
+
+  if (codexAuthStatus().authenticated) {
+    try {
+      const models = await new CodexChat({
+        store,
+        cwd: project.rootPath ?? process.cwd(),
+      }).listModels();
+      if (models.length)
+        addProvider("codex", models, "codex", "Codex app-server");
+      else
+        checkedProviders.push({
+          providerId: "codex",
+          authenticated: true,
+          modelCount: 0,
+        });
+    } catch (error) {
+      checkedProviders.push({
+        providerId: "codex",
+        authenticated: true,
+        available: false,
+        error: redactSecrets(error.message),
+      });
+    }
+  } else checkedProviders.push({ providerId: "codex", authenticated: false });
+
+  if (claudeAuthStatus().authenticated) {
+    try {
+      const models = await new ClaudeCodeChat({
+        store,
+        cwd: project.rootPath ?? process.cwd(),
+      }).listModels();
+      if (models.length)
+        addProvider("claude", models, "claude-code", "Claude Code Agent SDK");
+      else
+        checkedProviders.push({
+          providerId: "claude",
+          authenticated: true,
+          modelCount: 0,
+        });
+    } catch (error) {
+      checkedProviders.push({
+        providerId: "claude",
+        authenticated: true,
+        available: false,
+        error: redactSecrets(error.message),
+      });
+    }
+  } else checkedProviders.push({ providerId: "claude", authenticated: false });
+
+  const previousResults = {};
+  for (const event of store.routingResults(200)) {
+    const { candidateKey, outcome, latencyMs } = event.payload;
+    if (!candidateKey) continue;
+    const result = (previousResults[candidateKey] ??= {
+      attempts: 0,
+      successes: 0,
+      latencyTotalMs: 0,
+      latencySamples: 0,
+    });
+    result.attempts += 1;
+    if (outcome === "completed") result.successes += 1;
+    if (Number.isFinite(latencyMs)) {
+      result.latencyTotalMs += latencyMs;
+      result.latencySamples += 1;
+      result.averageLatencyMs = result.latencyTotalMs / result.latencySamples;
+    }
+  }
+  const maxInputPerMillion = process.env.OMNI_AUTO_MAX_INPUT_PER_MILLION
+    ? Number(process.env.OMNI_AUTO_MAX_INPUT_PER_MILLION)
+    : null;
+  if (maxInputPerMillion !== null && !Number.isFinite(maxInputPerMillion))
+    throw new Error("OMNI_AUTO_MAX_INPUT_PER_MILLION doit être un nombre");
+  const privacyMode = process.env.OMNI_AUTO_PRIVACY === "strict";
+  const router = new AutoRouter(registry, {
+    profile: process.env.OMNI_AUTO_PROFILE ?? "balance",
+    preferredProviders: (process.env.OMNI_AUTO_PREFERRED_PROVIDERS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+    excludedProviders: [...disabledProviders],
+    maxInputPerMillion,
+    privacyMode,
+    previousResults,
+  });
+  const decision = router.select({ prompt, needsTools: true });
+  return { ...decision, checkedProviders };
+}
 
 function permissionPrompt(rl, provider) {
   return async (request, signal) => {
@@ -528,9 +660,12 @@ try {
     stdout.write(`Conversation ${conversation.id} · modèle ${model}\n`);
     await chat(conversation, model);
   } else if (command === "run") {
-    const harness = option("--harness");
+    let harness = option("--harness");
+    const autoMode = hasFlag("--auto");
     if (harness && !["claude", "codex"].includes(harness))
       throw new Error(`Harness non pris en charge: ${harness}`);
+    if (autoMode && (harness || option("--model")))
+      throw new Error("--auto choisit seul le modèle et le harness");
     const conversationArg = option("--conversation");
     let conversation = conversationArg
       ? store.recoverConversation(conversationArg)
@@ -543,7 +678,7 @@ try {
         : harness === "codex"
           ? (conversation?.modelId ?? "codex")
           : (conversation?.modelId ?? null);
-    const model = option("--model", defaultModel);
+    let model = option("--model", defaultModel);
     const projectArg = option("--project");
     const project = conversation
       ? store.project(conversation.projectId)
@@ -562,10 +697,20 @@ try {
           !a.startsWith("--") && !consumedValueIndexes.includes(index),
       )
       .join(" ");
-    if (!model || !prompt)
+    if ((!autoMode && !model) || !prompt)
       throw new Error(
-        "Usage: omni run --project ID_OR_PATH [--model MODEL] [--harness claude|codex] PROMPT",
+        "Usage: omni run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] PROMPT",
       );
+    let autoDecision = null;
+    if (autoMode) {
+      autoDecision = await autoRoute(prompt, project);
+      const selected = autoDecision.selected;
+      harness = selected.harnessId === "claude-code" ? "claude" : "codex";
+      model =
+        selected.providerId === "claude"
+          ? `claude:${selected.modelId}`
+          : selected.modelId;
+    }
     if (conversation) {
       conversation = store.setModel(conversation.id, model);
     } else {
@@ -575,9 +720,45 @@ try {
         model,
       );
     }
-    if (harness === "claude") await runClaudeHarness(conversation, prompt);
-    else if (harness === "codex") await runCodexHarness(conversation, prompt);
-    else await chat(conversation, model, prompt);
+    if (autoDecision) {
+      store.appendEvent(conversation.id, "routing.decision", {
+        ...autoDecision,
+        prompt: redactSecrets(prompt),
+      });
+      print(
+        `Auto: ${autoDecision.explanation} · secours ${autoDecision.fallback ? `${autoDecision.fallback.providerId}/${autoDecision.fallback.modelId}` : "aucun"}`,
+      );
+    }
+    const routingStartedAt = Date.now();
+    try {
+      if (harness === "claude") await runClaudeHarness(conversation, prompt);
+      else if (harness === "codex") await runCodexHarness(conversation, prompt);
+      else await chat(conversation, model, prompt);
+      if (autoDecision)
+        store.appendEvent(conversation.id, "routing.result", {
+          decisionId: autoDecision.id,
+          candidateKey: `${autoDecision.selected.providerId}/${autoDecision.selected.modelId}/${autoDecision.selected.harnessId}`,
+          providerId: autoDecision.selected.providerId,
+          modelId: autoDecision.selected.modelId,
+          harnessId: autoDecision.selected.harnessId,
+          outcome: "completed",
+          latencyMs: Date.now() - routingStartedAt,
+        });
+    } catch (error) {
+      if (autoDecision)
+        store.appendEvent(conversation.id, "routing.result", {
+          decisionId: autoDecision.id,
+          candidateKey: `${autoDecision.selected.providerId}/${autoDecision.selected.modelId}/${autoDecision.selected.harnessId}`,
+          providerId: autoDecision.selected.providerId,
+          modelId: autoDecision.selected.modelId,
+          harnessId: autoDecision.selected.harnessId,
+          outcome: "failed",
+          latencyMs: Date.now() - routingStartedAt,
+          error: redactSecrets(error.message),
+          automaticallyRetried: false,
+        });
+      throw error;
+    }
   } else if (command === "swap") {
     await swapHarness(
       option("--conversation"),
