@@ -280,7 +280,7 @@ export class ModelRegistry {
     if (!this.providers.has(model.providerId))
       throw new Error(`Unknown provider: ${model.providerId}`);
     const value = { enabled: true, enabledForAuto: true, ...clone(model) };
-    this.models.set(model.id, value);
+    this.models.set(`${model.providerId}\0${model.id}`, value);
     return value;
   }
   registerHarness(harness) {
@@ -294,15 +294,16 @@ export class ModelRegistry {
     provider.enabled = enabled;
     return provider;
   }
-  setModelEnabled(
-    id,
-    enabled,
-    enabledForAuto = this.models.get(id)?.enabledForAuto,
-  ) {
-    const model = this.models.get(id);
+  setModelEnabled(id, enabled, enabledForAuto) {
+    const matches = [...this.models.values()].filter(
+      (candidate) => candidate.id === id,
+    );
+    if (matches.length > 1)
+      throw new Error(`Model ID is ambiguous across providers: ${id}`);
+    const model = matches[0];
     if (!model) throw new Error(`Unknown model: ${id}`);
     model.enabled = enabled;
-    model.enabledForAuto = enabledForAuto;
+    model.enabledForAuto = enabledForAuto ?? model.enabledForAuto;
     return model;
   }
   listModels({ includeDisabled = false, autoOnly = false } = {}) {

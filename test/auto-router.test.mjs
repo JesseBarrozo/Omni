@@ -125,8 +125,12 @@ test("AutoRouter chooses the least-capability chat adapter when tools are unnece
 
 test("AutoRouter excludes unknown prices under a configured cost ceiling and records fallback", () => {
   const registry = registryFixture();
-  registry.models.get("codex-model").pricing = { inputPerMillion: 1 };
-  registry.models.get("claude-model").pricing = { inputPerMillion: 2 };
+  [...registry.models.values()].find(
+    (model) => model.id === "codex-model",
+  ).pricing = { inputPerMillion: 1 };
+  [...registry.models.values()].find(
+    (model) => model.id === "claude-model",
+  ).pricing = { inputPerMillion: 2 };
   const decision = new AutoRouter(registry, {
     maxInputPerMillion: 3,
     excludedProviders: ["claude"],
@@ -145,6 +149,44 @@ test("AutoRouter excludes unknown prices under a configured cost ceiling and rec
     noKnownPrice.evaluated.some((candidate) =>
       candidate.exclusions.includes("input-price-unknown"),
     ),
+  );
+});
+
+test("ModelRegistry preserves identical model IDs from different providers", () => {
+  const registry = new ModelRegistry();
+  registry.registerProvider({ id: "codex" });
+  registry.registerProvider({ id: "openai" });
+  registry.registerModel({ id: "gpt-shared", providerId: "codex" });
+  registry.registerModel({ id: "gpt-shared", providerId: "openai" });
+  registry.registerHarness({
+    id: "codex-chat",
+    providerIds: ["codex"],
+    capabilities: { tools: false },
+  });
+  registry.registerHarness({
+    id: "openai-chat",
+    providerIds: ["openai"],
+    capabilities: { tools: false },
+  });
+
+  const decision = new AutoRouter(registry, {
+    preferredProviders: ["codex", "openai"],
+  }).select({ prompt: "Reply with one word" });
+
+  assert.equal(decision.selected.providerId, "codex");
+  assert.deepEqual(
+    decision.candidates.map(({ providerId, modelId }) => ({
+      providerId,
+      modelId,
+    })),
+    [
+      { providerId: "codex", modelId: "gpt-shared" },
+      { providerId: "openai", modelId: "gpt-shared" },
+    ],
+  );
+  assert.throws(
+    () => registry.setModelEnabled("gpt-shared", false),
+    /ambiguous across providers/,
   );
 });
 

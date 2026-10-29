@@ -122,6 +122,18 @@ Le test réel crée un dépôt Git jetable, demande au vrai app-server Codex de 
 
 ## Phase Auto Orchestrator
 
+### Re-exécution des intégrations opt-in (2026-10-29)
+
+- [x] `OMNI_LIVE_CODEX_TESTS=1 node --test test/codex.test.mjs` : 2/2 réussis, streaming OAuth et reprise du même thread après réouverture SQLite.
+- [x] `OMNI_LIVE_CODEX_HARNESS_TESTS=1 node --test test/codex-harness.test.mjs` : 2/2 réussis, écriture temporaire après permission et reprise réelle.
+- [x] `OMNI_LIVE_CLAUDE_TESTS=1 node --test test/claude.test.mjs` : 6/6 réussis, streaming/reprise et écriture temporaire autorisée.
+- [x] `OMNI_LIVE_HARNESS_SWAP_TESTS=1 node --test test/harness-swap.test.mjs` : 6/6 réussis, dont Codex → Claude → Codex sur dépôt Git temporaire et CLI swap/reprise séparés.
+- [x] `OMNI_LIVE_PROVIDER_REGISTRY_TESTS=1 node --test test/cli.test.mjs` et `OMNI_LIVE_HARNESS_REGISTRY_TESTS=1 node --test test/cli.test.mjs` : chaque exécution 6 réussis, 0 échec, 1 autre opt-in ignoré; catalogues providers réels et initialisation harness réelle validés.
+- [x] Les tests Auto réels ont d’abord révélé une collision : Codex et OpenAI présentent les mêmes 8 identifiants et le registre indexé par ID seul écrasait le fournisseur précédent. Après correction composite fournisseur/ID : `OMNI_LIVE_AUTO_TESTS=1 node --test test/auto-router.test.mjs` et `OMNI_LIVE_AUTO_FALLBACK_TESTS=1 node --test test/auto-router.test.mjs` : chacun 8 réussis, 0 échec, 1 autre opt-in ignoré. Le premier a obtenu une vraie réponse Codex; le second a basculé après échec de préflight vers une vraie réponse Claude.
+- [x] `OMNI_LIVE_KEYRING_TESTS=1 node --test test/openai-auth.test.mjs` : 7/7 réussis. `OMNI_LIVE_OPENAI_OAUTH_TESTS=1 node --test test/openai-oauth-live.test.mjs` : 1/1 réussi avec le compte ChatGPT OAuth réel.
+- [ ] OpenAI API key : non exécuté, car `OPENAI_API_KEY` n’est pas configurée. Il s’agit d’une authentification distincte de ChatGPT OAuth.
+- [x] `ModelRegistry` conserve deux modèles homonymes de fournisseurs différents, trie/rend les deux candidats et refuse l’activation par ID seul si cet ID est ambigu.
+
 - [x] `omni run --auto` interroge les vrais comptes OAuth Codex et Claude puis leurs catalogues de modèles officiels; les identifiants du journal proviennent de ces réponses.
 - [x] Le routeur exclut fournisseurs/modèles désactivés, modèles non autorisés par `OMNI_AUTO_MODELS`, incompatibilités modèle/harness, capacités d’outils manquantes, confidentialité stricte non approuvée et prix inconnus/supérieurs au plafond configuré.
 - [x] Le choix est déterministe et enregistre les candidats évalués, exclusions, critères, ordre, secours et explication. Les issues et latences réelles sont recherchées dans les 200 derniers résultats de toutes les conversations.
