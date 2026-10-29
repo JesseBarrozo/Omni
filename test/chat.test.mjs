@@ -121,6 +121,13 @@ test("provider and model catalogs persist preferences and mark stale models unav
       .version,
     3,
   );
+  assert.deepEqual(
+    store.db
+      .prepare("SELECT version FROM schema_migrations ORDER BY version")
+      .all()
+      .map(({ version }) => version),
+    [1, 2, 3],
+  );
   store.saveProviderCatalog({
     providerId: "codex",
     name: "Codex OAuth",

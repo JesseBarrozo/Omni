@@ -1,5 +1,7 @@
 # Vérification et tests à refaire
 
+- [x] Ordre des migrations vérifié sur une base neuve : versions SQLite `[1, 2, 3]`.
+
 ## Harness Registry
 
 - [x] Le registre SQLite version 3 conserve les capacités de l’adaptateur, son statut, sa disponibilité et son activation après redémarrage.

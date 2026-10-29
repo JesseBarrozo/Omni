@@ -37,27 +37,6 @@ export class ChatStore {
           )
           .run(new Date().toISOString());
       })();
-    if (version < 3)
-      this.db.transaction(() => {
-        this.db.exec(`
-          CREATE TABLE IF NOT EXISTS harnesses (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            provider_id TEXT NOT NULL,
-            integration TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'unknown' CHECK (status IN ('connected', 'disconnected', 'unavailable', 'unknown')),
-            enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
-            available INTEGER NOT NULL DEFAULT 0 CHECK (available IN (0, 1)),
-            capabilities_json TEXT NOT NULL,
-            checked_at TEXT
-          );
-        `);
-        this.db
-          .prepare(
-            "INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?)",
-          )
-          .run(new Date().toISOString());
-      })();
     if (version < 2)
       this.db.transaction(() => {
         this.db.exec(`
@@ -81,6 +60,27 @@ export class ChatStore {
         this.db
           .prepare(
             "INSERT INTO schema_migrations (version, applied_at) VALUES (2, ?)",
+          )
+          .run(new Date().toISOString());
+      })();
+    if (version < 3)
+      this.db.transaction(() => {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS harnesses (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            integration TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'unknown' CHECK (status IN ('connected', 'disconnected', 'unavailable', 'unknown')),
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+            available INTEGER NOT NULL DEFAULT 0 CHECK (available IN (0, 1)),
+            capabilities_json TEXT NOT NULL,
+            checked_at TEXT
+          );
+        `);
+        this.db
+          .prepare(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?)",
           )
           .run(new Date().toISOString());
       })();
