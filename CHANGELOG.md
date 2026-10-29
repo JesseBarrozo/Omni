@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- OpenAI ChatGPT OAuth : ajout du flux Sign in with ChatGPT officiel pour les applications open source, avec PKCE, validation OIDC, scopes du plan ChatGPT, trousseau système, renouvellement sérialisé, catalogue OAuth et chat Responses `store:false`. Parcours CLI réel validé : connexion, catalogue de 8 modèles, réponse avec `gpt-6.1-sol`, puis reprise de l’historique dans un nouveau processus.
 - Correctif migration SQLite : appliquer les migrations v2 (Provider/Model Registry) puis v3 (Harness Registry) dans l’ordre pour les bases neuves et les mises à niveau depuis v1.
 - Historique outils/permissions CLI : `tools list` et `permissions list` consultent les événements canoniques par conversation ou projet, en excluant les entrées brutes sensibles de l’affichage.
 - Recherche de conversations : `omni conversation search --query TEXT [--project ID_OR_PATH] [--json]` recherche les titres et le contenu des messages SQLite, avec correspondance littérale et extrait du résultat.

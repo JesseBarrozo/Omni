@@ -64,7 +64,10 @@ test("CLI persists projects and resumes with the saved or explicitly changed mod
     const resumed = run("resume", conversation.id);
     assert.equal(resumed.status, 1);
     assert.match(resumed.stdout, /modèle saved-model/);
-    assert.match(resumed.stderr, /OPENAI_API_KEY est requis/);
+    assert.match(
+      resumed.stderr,
+      /conversation interactive nécessite un terminal TTY/,
+    );
     assert.doesNotMatch(
       `${resumed.stdout}${resumed.stderr}`,
       /sk-[A-Za-z0-9_-]{12,}/,

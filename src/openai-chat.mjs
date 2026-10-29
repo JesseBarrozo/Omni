@@ -1,23 +1,53 @@
 import OpenAI from "openai";
 
 export class OpenAIChat {
-  constructor({ apiKey = process.env.OPENAI_API_KEY, client } = {}) {
-    if (!client && !apiKey)
+  constructor({
+    apiKey = process.env.OPENAI_API_KEY,
+    client,
+    oauth,
+    fetchImpl = fetch,
+    clientFactory = (apiKey) => new OpenAI({ apiKey, maxRetries: 0 }),
+  } = {}) {
+    if (!client && !apiKey && !oauth)
       throw new Error(
-        "OPENAI_API_KEY est requis. Configurez-le dans votre environnement, jamais dans un fichier Omni.",
+        "Connectez OpenAI avec `omni auth login openai` ou configurez OPENAI_API_KEY.",
       );
-    this.client = client ?? new OpenAI({ apiKey, maxRetries: 0 });
+    this.client = client ?? (apiKey ? clientFactory(apiKey) : null);
+    this.oauth = oauth;
+    this.fetch = fetchImpl;
+    this.clientFactory = clientFactory;
   }
   async listModels() {
+    if (this.oauth) {
+      const token = await this.oauth.getAccessToken();
+      const response = await this.fetch("https://api.openai.com/v1/models", {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(30000),
+      });
+      const catalog = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(
+          `Catalogue OpenAI indisponible (HTTP ${response.status}, ${catalog.error?.code ?? "erreur inconnue"}).`,
+        );
+      if (!Array.isArray(catalog.models))
+        throw new Error("OpenAI a renvoyé un catalogue de modèles invalide.");
+      return catalog.models
+        .filter((model) => model.visibility === "list" && model.slug)
+        .map(({ slug }) => slug);
+    }
     const response = await this.client.models.list();
     return response.data.map(({ id }) => id).sort();
   }
   async stream({ model, messages, signal, onDelta }) {
-    const stream = await this.client.responses.create(
+    const client = this.oauth
+      ? this.clientFactory(await this.oauth.getAccessToken())
+      : this.client;
+    const stream = await client.responses.create(
       {
         model,
         input: messages.map(({ role, content }) => ({ role, content })),
         stream: true,
+        ...(this.oauth ? { store: false } : {}),
       },
       { signal },
     );

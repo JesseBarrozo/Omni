@@ -6,6 +6,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { ChatStore } from "../src/chat-store.mjs";
 import { OpenAIChat } from "../src/openai-chat.mjs";
+import { OpenAIAuth } from "../src/openai-auth.mjs";
 import {
   CodexHarness,
   CodexChat,
@@ -24,6 +25,13 @@ import { AutoRouter, ModelRegistry, redactSecrets } from "../src/core.mjs";
 
 const dataDir = process.env.OMNI_DATA_DIR || join(homedir(), ".omni");
 const store = new ChatStore(join(dataDir, "omni.sqlite"));
+const openAIAuth = () => new OpenAIAuth({ dataDir });
+const createOpenAIChat = () => {
+  const auth = openAIAuth();
+  return auth.hasCredentials()
+    ? new OpenAIChat({ oauth: auth })
+    : new OpenAIChat();
+};
 const print = (value) =>
   stdout.write(
     `${typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n`,
@@ -37,7 +45,7 @@ const option = (name, fallback = null) => {
 const hasFlag = (name) => args.includes(name);
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project) {
@@ -180,9 +188,9 @@ async function autoRoute(prompt, project) {
     }
   } else checkedProviders.push({ providerId: "claude", authenticated: false });
 
-  if (process.env.OPENAI_API_KEY) {
+  if (process.env.OPENAI_API_KEY || openAIAuth().hasCredentials()) {
     try {
-      const models = await new OpenAIChat().listModels();
+      const models = await createOpenAIChat().listModels();
       if (models.length)
         addProvider(
           "openai",
@@ -322,7 +330,7 @@ function createAutoChatProvider(candidate, conversation) {
     });
   if (candidate.providerId === "codex")
     return new CodexChat({ store, cwd, model: candidate.modelId });
-  if (candidate.providerId === "openai") return new OpenAIChat();
+  if (candidate.providerId === "openai") return createOpenAIChat();
   throw new Error(
     `Fournisseur de chat Auto non pris en charge: ${candidate.providerId}`,
   );
@@ -341,9 +349,14 @@ async function refreshProvider(providerId) {
     authenticated = claudeAuthStatus().authenticated;
     if (authenticated) provider = new ClaudeCodeChat({ store });
   } else if (providerId === "openai") {
-    name = "OpenAI API key";
-    authenticated = Boolean(process.env.OPENAI_API_KEY);
-    if (authenticated) provider = new OpenAIChat();
+    const auth = openAIAuth();
+    const oauthConnected = auth.hasCredentials();
+    name = oauthConnected ? "OpenAI ChatGPT OAuth" : "OpenAI API key";
+    authenticated = oauthConnected || Boolean(process.env.OPENAI_API_KEY);
+    if (authenticated)
+      provider = oauthConnected
+        ? new OpenAIChat({ oauth: auth })
+        : new OpenAIChat();
   } else throw new Error(`Fournisseur non pris en charge: ${providerId}`);
   if (!authenticated) {
     store.saveProviderCatalog({
@@ -594,7 +607,7 @@ async function chat(
                 ? model.slice("claude:".length)
                 : undefined,
             })
-          : new OpenAIChat());
+          : createOpenAIChat());
   const rl = createInterface({
     input: stdin,
     output: stdout,
@@ -634,6 +647,8 @@ async function chat(
       await send(initialPrompt);
       return;
     }
+    if (!stdin.isTTY)
+      throw new Error("La conversation interactive nécessite un terminal TTY");
     while (true) {
       const prompt = await rl.question("Vous: ");
       if (["/quit", "/exit"].includes(prompt.trim())) break;
@@ -830,12 +845,34 @@ try {
           `${status.projects.length} projets · ${status.conversations} conversations · ${status.messages} messages · ${dataDir}`,
         );
   } else if (command === "auth" && args[0] === "status") {
-    const status = [codexAuthStatus(), claudeAuthStatus()];
+    const oauthConnected = openAIAuth().hasCredentials();
+    const status = [
+      codexAuthStatus(),
+      claudeAuthStatus(),
+      {
+        provider: "openai",
+        authenticated: oauthConnected || Boolean(process.env.OPENAI_API_KEY),
+        source: oauthConnected
+          ? "chatgpt-oauth"
+          : process.env.OPENAI_API_KEY
+            ? "api-key"
+            : null,
+      },
+    ];
     hasFlag("--json")
       ? print(status)
       : status.forEach(({ provider, authenticated }) =>
           print(`${provider}: ${authenticated ? "connecté" : "non connecté"}`),
         );
+  } else if (
+    command === "auth" &&
+    args[0] === "login" &&
+    args[1] === "openai"
+  ) {
+    await openAIAuth().login();
+    print(
+      "Connexion ChatGPT OpenAI vérifiée et enregistrée dans le trousseau système.",
+    );
   } else if (command === "auth" && args[0] === "login" && args[1] === "codex") {
     const result = startCodexLogin();
     if (result.error)

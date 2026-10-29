@@ -1,5 +1,17 @@
 # Vérification et tests à refaire
 
+## OAuth OpenAI ChatGPT plan
+
+- [x] Intégration OAuth officielle pour app open source : autorisation PKCE, callback loopback `127.0.0.1`, validation `state`, signature/issuer/audience/nonce/expiration OIDC, exigence du scope `chatgpt.tokens.use.direct`.
+- [x] Tests unitaires : audience OIDC tableau, réutilisation du `client_id` et du host ID, rotation du refresh token, verrou de renouvellement concurrent, refus d’état invalide, catalogue et requête `store:false`.
+- [x] L’ID token est vérifié puis abandonné; les jetons d’accès/renouvellement requis sont seuls conservés au trousseau système.
+- [x] Trousseau système réel : `OMNI_LIVE_KEYRING_TESTS=1 node --test test/openai-auth.test.mjs` a écrit, relu puis supprimé un secret aléatoire; aucun secret n’a été imprimé.
+- [x] Parcours CLI réel : `omni auth login openai` a terminé le flux OpenAI; `auth status --json` indique `chatgpt-oauth` sans révéler de jeton.
+- [x] `providers refresh --provider openai --json` a interrogé le vrai compte et listé 8 modèles OAuth (`gpt-5.6-luna` à `gpt-6.1-terra`).
+- [x] `omni run --project /tmp/omni-openai-oauth.TwV3uu --model gpt-6.1-sol` a reçu « Omni OAuth réel validé. »; une seconde invocation avec `--conversation b3f06b28-7f23-4469-b636-968e00134b42` a repris la conversation après redémarrage et a répété la réponse précédente.
+- [x] `npm test` (60 tests découverts : 47 réussis, 0 échec, 13 opt-in ignorés), `npm run lint`, `npm run format:check`, `npm run check`, `npm run build`, `git diff --check` et `npm audit --omit=dev` (0 vulnérabilité) réussis.
+- [ ] Limitation actuelle : un seul profil OpenAI OAuth; sur Linux, le backend est strictement Secret Service et échoue fermé s’il est absent. Le parcours de chat avec clé API reste une voie de facturation distincte et n’a pas été exécuté dans cette phase.
+
 ## Recherche Universal Chat
 
 - [x] La recherche SQLite retrouve titres et messages persistés après redémarrage et peut limiter les résultats à un projet.
