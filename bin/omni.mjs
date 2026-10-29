@@ -93,7 +93,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
@@ -1142,9 +1142,19 @@ try {
     );
   } else if (command === "mcp" && args[0] === "add") {
     const name = option("--name");
+    const transport = option("--transport", "stdio");
     const commandPath = option("--command");
-    if (!name || !commandPath)
-      throw new Error("mcp add exige --name et --command.");
+    const url = option("--url");
+    if (
+      !name ||
+      (transport === "stdio" && !commandPath) ||
+      (transport === "http" && !url)
+    )
+      throw new Error(
+        "mcp add exige --name et --command (stdio) ou --url avec --transport http.",
+      );
+    if (!["stdio", "http"].includes(transport))
+      throw new Error("--transport doit être stdio ou http.");
     let serverArgs;
     try {
       serverArgs = JSON.parse(option("--args-json", "[]"));
@@ -1157,13 +1167,26 @@ try {
       .filter(Boolean);
     const cwdOption = option("--cwd");
     const cwd = cwdOption ? resolve(cwdOption) : null;
+    const headerEnv = {};
+    for (const item of (option("--header-env", "") ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)) {
+      const separator = item.indexOf("=");
+      if (separator < 1)
+        throw new Error("--header-env attend HEADER=VARIABLE.");
+      headerEnv[item.slice(0, separator)] = item.slice(separator + 1);
+    }
     if (cwd && !statSync(cwd, { throwIfNoEntry: false })?.isDirectory())
       throw new Error("Le répertoire --cwd MCP est introuvable.");
     const server = mcpRegistry().addServer({
       name,
+      transport,
       command: commandPath,
       args: serverArgs,
       cwd,
+      url,
+      headerEnv,
       envKeys,
     });
     print({
@@ -1176,8 +1199,10 @@ try {
       .listServers()
       .map((server) => ({
         name: server.name,
-        command: server.command,
-        cwd: server.cwd,
+        transport: server.transport,
+        ...(server.transport === "stdio"
+          ? { command: server.command, cwd: server.cwd }
+          : {}),
         envKeys: server.envKeys,
         tools: server.tools.map(({ name: toolName }) => toolName),
       }));

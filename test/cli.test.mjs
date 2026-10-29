@@ -64,6 +64,54 @@ test("CLI only accepts required MCP capabilities with Auto routing", () => {
   }
 });
 
+test("CLI registers Streamable HTTP MCP without persisting or printing header secrets", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-http-mcp-cli-"));
+  const secret = "temporary-cli-header-secret";
+  const env = {
+    ...process.env,
+    OMNI_DATA_DIR: join(dir, "data"),
+    OMNI_TEST_REMOTE_MCP: secret,
+  };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const added = run(
+      "mcp",
+      "add",
+      "--name",
+      "remote-docs",
+      "--transport",
+      "http",
+      "--url",
+      "https://mcp.example.test/mcp",
+      "--header-env",
+      "Authorization=OMNI_TEST_REMOTE_MCP",
+      "--env-names",
+      "OMNI_TEST_REMOTE_MCP",
+    );
+    assert.equal(added.status, 0, added.stderr);
+    assert.equal(added.stdout.includes(secret), false);
+    assert.equal(added.stderr.includes(secret), false);
+    const listed = run("mcp", "list", "--json");
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.equal(listed.stdout.includes(secret), false);
+    assert.equal(JSON.parse(listed.stdout)[0].transport, "http");
+    const store = new ChatStore(join(dir, "data", "omni.sqlite"));
+    try {
+      assert.equal(
+        JSON.stringify(
+          store.db.prepare("SELECT * FROM mcp_servers").get(),
+        ).includes(secret),
+        false,
+      );
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("CLI rejects malformed API-key stdin without echoing it", () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-api-key-cli-"));
   const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };

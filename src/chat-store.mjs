@@ -105,6 +105,35 @@ export class ChatStore {
           )
           .run(new Date().toISOString());
       })();
+    if (version < 5)
+      this.db.transaction(() => {
+        this.db.exec(`
+          ALTER TABLE mcp_servers RENAME TO mcp_servers_v4;
+          CREATE TABLE mcp_servers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            transport TEXT NOT NULL DEFAULT 'stdio' CHECK (transport IN ('stdio', 'http')),
+            command TEXT,
+            args_json TEXT NOT NULL DEFAULT '[]',
+            cwd TEXT,
+            url TEXT,
+            env_keys_json TEXT NOT NULL DEFAULT '[]',
+            header_env_json TEXT NOT NULL DEFAULT '{}',
+            tools_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            CHECK ((transport = 'stdio' AND command IS NOT NULL AND url IS NULL) OR (transport = 'http' AND command IS NULL AND url IS NOT NULL))
+          );
+          INSERT INTO mcp_servers (id, name, transport, command, args_json, cwd, env_keys_json, tools_json, created_at, updated_at)
+            SELECT id, name, 'stdio', command, args_json, cwd, env_keys_json, tools_json, created_at, updated_at FROM mcp_servers_v4;
+          DROP TABLE mcp_servers_v4;
+        `);
+        this.db
+          .prepare(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (5, ?)",
+          )
+          .run(new Date().toISOString());
+      })();
     try {
       chmodSync(file, 0o600);
     } catch {}
@@ -159,7 +188,16 @@ export class ChatStore {
     save();
     return this.providerRegistry();
   }
-  saveMcpServer({ name, command, args = [], cwd = null, envKeys = [] }) {
+  saveMcpServer({
+    name,
+    transport = "stdio",
+    command = null,
+    args = [],
+    cwd = null,
+    url = null,
+    envKeys = [],
+    headerEnv = {},
+  }) {
     const now = new Date().toISOString();
     const current = this.db
       .prepare("SELECT id FROM mcp_servers WHERE name = ?")
@@ -168,19 +206,22 @@ export class ChatStore {
     this.db
       .prepare(
         `INSERT INTO mcp_servers
-         (id, name, command, args_json, cwd, env_keys_json, tools_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, '[]', ?, ?)
-         ON CONFLICT(name) DO UPDATE SET command = excluded.command,
+         (id, name, transport, command, args_json, cwd, url, env_keys_json, header_env_json, tools_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)
+         ON CONFLICT(name) DO UPDATE SET transport = excluded.transport, command = excluded.command,
          args_json = excluded.args_json, cwd = excluded.cwd,
-         env_keys_json = excluded.env_keys_json, tools_json = '[]', updated_at = excluded.updated_at`,
+         url = excluded.url, env_keys_json = excluded.env_keys_json, header_env_json = excluded.header_env_json, tools_json = '[]', updated_at = excluded.updated_at`,
       )
       .run(
         id,
         name,
+        transport,
         command,
         JSON.stringify(args),
         cwd,
+        url,
         JSON.stringify(envKeys),
+        JSON.stringify(headerEnv),
         now,
         now,
       );
@@ -189,8 +230,8 @@ export class ChatStore {
   mcpServer(name) {
     const row = this.db
       .prepare(
-        `SELECT id, name, command, args_json AS args, cwd,
-                env_keys_json AS envKeys, tools_json AS tools,
+        `SELECT id, name, transport, command, args_json AS args, cwd, url,
+                env_keys_json AS envKeys, header_env_json AS headerEnv, tools_json AS tools,
                 created_at AS createdAt, updated_at AS updatedAt
          FROM mcp_servers WHERE name = ?`,
       )
@@ -200,6 +241,7 @@ export class ChatStore {
           ...row,
           args: JSON.parse(row.args),
           envKeys: JSON.parse(row.envKeys),
+          headerEnv: JSON.parse(row.headerEnv),
           tools: JSON.parse(row.tools),
         }
       : null;

@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createServer } from "node:http";
 import { ChatStore } from "../src/chat-store.mjs";
 import { CodexHarness, codexAuthStatus } from "../src/codex-chat.mjs";
 import { McpRegistry } from "../src/mcp-registry.mjs";
@@ -33,7 +34,7 @@ test("CodexHarness satisfies the adapter contract and reports real capabilities"
   assert.equal(assertHarnessAdapter(harness), harness);
   assert.deepEqual(await harness.capabilities(), {
     tools: true,
-    mcpTransports: ["stdio"],
+    mcpTransports: ["stdio", "http"],
     streaming: true,
     checkpoint: true,
     permissions: true,
@@ -444,6 +445,123 @@ await server.connect(new StdioServerTransport());
     } finally {
       await harness?.dispose();
       store?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "real Codex OAuth app-server executes an approved authenticated Streamable HTTP MCP tool",
+  {
+    skip:
+      process.env.OMNI_LIVE_CODEX_HTTP_MCP_TESTS !== "1" ||
+      !codexAuthStatus().authenticated,
+  },
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "omni-codex-http-mcp-live-"));
+    const marker = join(dir, "http-marker.txt");
+    const secret = "codex-http-mcp-transient-auth";
+    const store = new ChatStore(join(dir, "omni.sqlite"));
+    const project = store.createProject("Codex HTTP MCP", dir);
+    const conversation = store.createConversation(
+      project.id,
+      "HTTP MCP call",
+      "codex",
+    );
+    const { McpServer } =
+      await import("@modelcontextprotocol/sdk/server/mcp.js");
+    const { StreamableHTTPServerTransport } =
+      await import("@modelcontextprotocol/sdk/server/streamableHttp.js");
+    const httpServer = createServer(async (req, res) => {
+      if (req.headers.authorization !== secret) {
+        res.writeHead(401).end();
+        return;
+      }
+      let body;
+      if (req.method === "POST") {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      }
+      const server = new McpServer({
+        name: "omni-codex-http-live",
+        version: "1",
+      });
+      server.registerTool(
+        "write-marker",
+        { description: "Increment a temporary marker once", inputSchema: {} },
+        async () => {
+          const count = existsSync(marker)
+            ? Number(readFileSync(marker, "utf8"))
+            : 0;
+          writeFileSync(marker, String(count + 1));
+          return { content: [{ type: "text", text: "written" }] };
+        },
+      );
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
+      await server.connect(transport);
+      await transport.handleRequest(req, res, body);
+    });
+    await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    let harness;
+    try {
+      const env = {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        CODEX_HOME: process.env.CODEX_HOME ?? "",
+        OMNI_HTTP_MCP_TOKEN: secret,
+      };
+      const registry = new McpRegistry({ store, env });
+      registry.addServer({
+        name: "live-http",
+        transport: "http",
+        url: `http://127.0.0.1:${httpServer.address().port}/mcp`,
+        headerEnv: { Authorization: "OMNI_HTTP_MCP_TOKEN" },
+        envKeys: ["OMNI_HTTP_MCP_TOKEN"],
+      });
+      const permissions = [];
+      harness = new CodexHarness({
+        store,
+        cwd: dir,
+        env,
+        mcpRegistry: registry,
+        requestPermission: async (request) => {
+          permissions.push(request);
+          return (
+            request.method === "mcpServer/start" ||
+            request.method === "mcpServer/elicitation/request"
+          );
+        },
+      });
+      const events = [];
+      for await (const event of harness.run({
+        conversationId: conversation.id,
+        prompt:
+          "Use the live-http write-marker MCP tool exactly once, then confirm completion. Do not use shell commands.",
+        signal: new AbortController().signal,
+      }))
+        events.push(event);
+      assert.ok(
+        events.some(({ type }) => type === "message.completed"),
+        JSON.stringify(events),
+      );
+      assert.equal(readFileSync(marker, "utf8"), "1");
+      assert.ok(permissions.some(({ method }) => method === "mcpServer/start"));
+      assert.ok(
+        permissions.some(
+          ({ method }) => method === "mcpServer/elicitation/request",
+        ),
+      );
+      assert.equal(
+        JSON.stringify(store.listEvents(conversation.id)).includes(secret),
+        false,
+      );
+    } finally {
+      await harness?.dispose();
+      await new Promise((resolve) => httpServer.close(resolve));
+      store.close();
       rmSync(dir, { recursive: true, force: true });
     }
   },

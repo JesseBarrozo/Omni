@@ -6,6 +6,10 @@ import { redactSecrets } from "./core.mjs";
 const abortError = () =>
   Object.assign(new Error("Execution interrompue"), { name: "AbortError" });
 const safeError = (message) => new Error(redactSecrets(String(message)));
+const tomlInlineTable = (value) =>
+  `{ ${Object.entries(value)
+    .map(([key, item]) => `${JSON.stringify(key)} = ${JSON.stringify(item)}`)
+    .join(", ")} }`;
 
 export function codexAuthStatus({ executable = "codex" } = {}) {
   const result = spawnSync(executable, ["login", "status"], {
@@ -47,18 +51,26 @@ class CodexAppServer {
     const args = ["app-server", "--listen", "stdio://", "-c", "mcp_servers={}"];
     for (const server of this.mcpServers) {
       const prefix = `mcp_servers.${server.name}`;
-      args.push(
-        "-c",
-        `${prefix}.command=${JSON.stringify(server.command)}`,
-        "-c",
-        `${prefix}.args=${JSON.stringify(server.args)}`,
-        "-c",
-        `${prefix}.cwd=${JSON.stringify(server.cwd)}`,
-        "-c",
-        `${prefix}.env_vars=${JSON.stringify(server.env_vars)}`,
-        "-c",
-        `${prefix}.default_tools_approval_mode="prompt"`,
-      );
+      if (server.url) {
+        args.push("-c", `${prefix}.url=${JSON.stringify(server.url)}`);
+        if (Object.keys(server.env_http_headers ?? {}).length)
+          args.push(
+            "-c",
+            `${prefix}.env_http_headers=${tomlInlineTable(server.env_http_headers)}`,
+          );
+      } else {
+        args.push(
+          "-c",
+          `${prefix}.command=${JSON.stringify(server.command)}`,
+          "-c",
+          `${prefix}.args=${JSON.stringify(server.args)}`,
+          "-c",
+          `${prefix}.cwd=${JSON.stringify(server.cwd)}`,
+          "-c",
+          `${prefix}.env_vars=${JSON.stringify(server.env_vars)}`,
+        );
+      }
+      args.push("-c", `${prefix}.default_tools_approval_mode="prompt"`);
     }
     this.child = spawn(this.executable, args, {
       stdio: ["pipe", "pipe", "ignore"],
@@ -366,7 +378,7 @@ function codexChildEnvironment(env, mcpServers) {
     Object.entries(env).filter(([name]) => !isCredentialEnv(name)),
   );
   for (const server of mcpServers)
-    for (const name of server.env_vars)
+    for (const name of server.env_vars ?? server.credential_env_vars ?? [])
       if (typeof env[name] === "string") childEnv[name] = env[name];
   return childEnv;
 }
@@ -481,7 +493,7 @@ export class CodexHarness {
   async capabilities() {
     return {
       tools: true,
-      mcpTransports: ["stdio"],
+      mcpTransports: ["stdio", "http"],
       streaming: true,
       checkpoint: true,
       permissions: true,

@@ -256,7 +256,7 @@ export class ClaudeCodeHarness {
   async capabilities() {
     return {
       tools: true,
-      mcpTransports: ["stdio"],
+      mcpTransports: ["stdio", "http"],
       streaming: true,
       checkpoint: true,
       permissions: true,

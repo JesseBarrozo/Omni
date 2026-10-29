@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { redactSecrets } from "./core.mjs";
 
 const namePattern = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/;
@@ -10,16 +11,38 @@ const suspiciousArgPattern =
   /^(?:sk-[A-Za-z0-9_-]{12,}|Bearer\s+\S+|(?:api[-_]?key|access[-_]?token|refresh[-_]?token|password|client[-_]?secret)\s*[:=]\s*.+)$/i;
 const credentialFlagPattern =
   /^--?(?:api[-_]?key|access[-_]?token|refresh[-_]?token|password|client[-_]?secret)$/i;
+const reservedHttpHeaders = new Set([
+  "accept",
+  "connection",
+  "content-length",
+  "content-type",
+  "host",
+  "mcp-protocol-version",
+  "mcp-session-id",
+  "transfer-encoding",
+]);
 
-function validateDefinition({ name, command, args, cwd, envKeys }) {
+function validateDefinition({
+  name,
+  transport = "stdio",
+  command,
+  args = [],
+  cwd = null,
+  url,
+  envKeys = [],
+  headerEnv = {},
+}) {
   if (typeof name !== "string" || !namePattern.test(name))
     throw new TypeError("Nom de serveur MCP invalide.");
+  if (!["stdio", "http"].includes(transport))
+    throw new TypeError("Transport MCP invalide.");
   if (
-    typeof command !== "string" ||
-    command.length === 0 ||
-    command.length > 4096 ||
-    /[\0\r\n]/.test(command) ||
-    suspiciousArgPattern.test(command)
+    transport === "stdio" &&
+    (typeof command !== "string" ||
+      command.length === 0 ||
+      command.length > 4096 ||
+      /[\0\r\n]/.test(command) ||
+      suspiciousArgPattern.test(command))
   )
     throw new TypeError("Commande de serveur MCP invalide.");
   if (
@@ -45,6 +68,53 @@ function validateDefinition({ name, command, args, cwd, envKeys }) {
     new Set(envKeys).size !== envKeys.length
   )
     throw new TypeError("Noms de variables d’environnement MCP invalides.");
+  if (transport === "http") {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new TypeError("URL MCP invalide.");
+    }
+    const loopback = ["localhost", "127.0.0.1", "::1"].includes(
+      parsed.hostname,
+    );
+    if (
+      (parsed.protocol !== "https:" &&
+        !(parsed.protocol === "http:" && loopback)) ||
+      parsed.username ||
+      parsed.password ||
+      parsed.hash ||
+      parsed.search
+    )
+      throw new TypeError(
+        "Le MCP HTTP exige HTTPS; HTTP est permis uniquement sur localhost/loopback, sans identifiants intégrés, query ni fragment.",
+      );
+    if (cwd !== null || args.length)
+      throw new TypeError(
+        "cwd et arguments ne s’appliquent pas à un MCP HTTP.",
+      );
+    if (!headerEnv || Array.isArray(headerEnv) || typeof headerEnv !== "object")
+      throw new TypeError("Références de variables d’en-tête MCP invalides.");
+    const normalizedHeaders = new Set();
+    for (const [header, key] of Object.entries(headerEnv)) {
+      const normalizedHeader = header.toLowerCase();
+      if (
+        !/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/.test(header) ||
+        reservedHttpHeaders.has(normalizedHeader) ||
+        normalizedHeaders.has(normalizedHeader) ||
+        !envNamePattern.test(key) ||
+        !envKeys.includes(key)
+      )
+        throw new TypeError(
+          "Chaque en-tête HTTP doit être unique, non réservé et référencer un nom de variable autorisé via --env-names.",
+        );
+      normalizedHeaders.add(normalizedHeader);
+    }
+  } else if (url || Object.keys(headerEnv).length) {
+    throw new TypeError(
+      "URL et en-têtes ne s’appliquent qu’au transport HTTP.",
+    );
+  }
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     const references = [...arg.matchAll(envReferencePattern)].map(
@@ -87,6 +157,12 @@ export class McpRegistry {
   claudeServerConfig(name, { cwd } = {}) {
     const server = this.store.mcpServer(name);
     if (!server) throw new Error("Serveur MCP introuvable.");
+    if (server.transport === "http")
+      return {
+        type: "http",
+        url: server.url,
+        headers: this.#resolveHeaders(server),
+      };
     if (server.cwd && cwd && server.cwd !== cwd)
       throw new Error(
         `Le SDK Claude ne permet pas de définir un cwd MCP distinct du projet (${name}).`,
@@ -117,6 +193,23 @@ export class McpRegistry {
   codexServerConfig(name, { cwd } = {}) {
     const server = this.store.mcpServer(name);
     if (!server) throw new Error("Serveur MCP introuvable.");
+    if (server.transport === "http") {
+      if (server.name.includes("."))
+        throw new Error(
+          "Codex n’accepte pas les points dans les noms de clé MCP; renommez ce serveur avant de l’utiliser.",
+        );
+      for (const key of server.envKeys)
+        if (typeof this.env[key] !== "string")
+          throw new Error(
+            `Une variable d’environnement MCP autorisée n’est pas définie (${key}).`,
+          );
+      return {
+        name: server.name,
+        url: server.url,
+        env_http_headers: server.headerEnv,
+        credential_env_vars: server.envKeys,
+      };
+    }
     if (server.name.includes("."))
       throw new Error(
         "Codex n’accepte pas les points dans les noms de clé MCP; renommez ce serveur avant de l’utiliser.",
@@ -146,9 +239,34 @@ export class McpRegistry {
     return this.store.removeMcpServer(name);
   }
 
+  #resolveHeaders(server) {
+    const headers = {};
+    for (const [header, key] of Object.entries(server.headerEnv)) {
+      const value = this.env[key];
+      if (
+        !server.envKeys.includes(key) ||
+        typeof value !== "string" ||
+        /[\r\n]/.test(value)
+      )
+        throw new Error(
+          "Une variable d’environnement d’authentification MCP autorisée est absente ou invalide.",
+        );
+      headers[header] = value;
+    }
+    return headers;
+  }
+
   async #withClient(name, operation) {
     const server = this.store.mcpServer(name);
     if (!server) throw new Error("Serveur MCP introuvable.");
+    if (server.transport === "http") {
+      const headers = this.#resolveHeaders(server);
+      const transport = new StreamableHTTPClientTransport(new URL(server.url), {
+        requestInit: { headers, redirect: "error" },
+        redirectPolicy: "same-origin",
+      });
+      return this.#connectAndRun(transport, server, operation);
+    }
     const args = server.args.map((arg) => {
       for (const match of arg.matchAll(envReferencePattern)) {
         const key = match[1];
@@ -172,6 +290,10 @@ export class McpRegistry {
       stderr: "pipe",
     });
     transport.stderr?.resume();
+    return this.#connectAndRun(transport, server, operation);
+  }
+
+  async #connectAndRun(transport, server, operation) {
     const client = new Client({ name: "omni", version: "0.1.0" });
     try {
       await client.connect(transport, { timeout: this.timeoutMs });

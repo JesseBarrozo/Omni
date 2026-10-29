@@ -6,9 +6,16 @@ import {
   claudeAuthStatus,
 } from "../src/claude-code.mjs";
 import { assertHarnessAdapter } from "../src/adapters.mjs";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
 import { ChatStore } from "../src/chat-store.mjs";
 import { McpRegistry } from "../src/mcp-registry.mjs";
 
@@ -26,7 +33,7 @@ test("Claude harness satisfies the adapter contract and denies tools by default"
   assert.equal(assertHarnessAdapter(harness), harness);
   assert.deepEqual(await harness.capabilities(), {
     tools: true,
-    mcpTransports: ["stdio"],
+    mcpTransports: ["stdio", "http"],
     streaming: true,
     checkpoint: true,
     permissions: true,
@@ -431,6 +438,115 @@ test(
       assert.ok(events.some((event) => event.type === "session.completed"));
     } finally {
       await harness.dispose();
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "real Claude OAuth harness executes a permission-approved Streamable HTTP MCP tool",
+  {
+    skip:
+      process.env.OMNI_LIVE_CLAUDE_HTTP_MCP_TESTS !== "1" ||
+      !claudeAuthStatus().authenticated,
+  },
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "omni-claude-http-mcp-live-"));
+    const store = new ChatStore(join(dir, "omni.sqlite"));
+    const project = store.createProject("Claude HTTP MCP", dir);
+    const conversation = store.createConversation(
+      project.id,
+      "HTTP tool",
+      "claude",
+    );
+    const marker = join(dir, "http-marker.txt");
+    const { McpServer } =
+      await import("@modelcontextprotocol/sdk/server/mcp.js");
+    const { StreamableHTTPServerTransport } =
+      await import("@modelcontextprotocol/sdk/server/streamableHttp.js");
+    const httpTrace = [];
+    const httpMethods = [];
+    let toolInvocations = 0;
+    const httpServer = createServer(async (req, res) => {
+      res.on("finish", () => httpTrace.push(`${req.method}:${res.statusCode}`));
+      let body;
+      if (req.method === "POST") {
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        httpMethods.push(body.method);
+      }
+      const server = new McpServer({
+        name: "omni-claude-http-live",
+        version: "1",
+      });
+      server.registerTool(
+        "write_marker",
+        { description: "Write exactly one temporary marker", inputSchema: {} },
+        async () => {
+          toolInvocations += 1;
+          const count = existsSync(marker)
+            ? Number(readFileSync(marker, "utf8"))
+            : 0;
+          writeFileSync(marker, String(count + 1));
+          return { content: [{ type: "text", text: "written" }] };
+        },
+      );
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
+      await server.connect(transport);
+      await transport.handleRequest(req, res, body);
+    });
+    await new Promise((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    const registry = new McpRegistry({ store, env: process.env });
+    registry.addServer({
+      name: "live-http",
+      transport: "http",
+      url: `http://127.0.0.1:${httpServer.address().port}/mcp`,
+    });
+    const approvals = [];
+    const harness = new ClaudeCodeHarness({
+      store,
+      cwd: dir,
+      mcpRegistry: registry,
+      requestPermission: async (request) => {
+        approvals.push(request);
+        return (
+          request.action === "start" ||
+          request.toolName === "mcp__live-http__write_marker"
+        );
+      },
+    });
+    try {
+      await harness.initialize();
+      const events = [];
+      for await (const event of harness.run({
+        conversationId: conversation.id,
+        prompt:
+          "Call mcp__live-http__write_marker exactly once and then confirm. Do not use other tools.",
+        signal: new AbortController().signal,
+      }))
+        events.push(event);
+      assert.equal(approvals.length, 2);
+      assert.equal(approvals[0].action, "start");
+      assert.equal(approvals[1].toolName, "mcp__live-http__write_marker");
+      assert.equal(
+        existsSync(marker),
+        true,
+        `HTTP=${httpTrace.join(",")} methods=${httpMethods.join(",")} toolInvocations=${toolInvocations} approvals=${JSON.stringify(approvals.map(({ action, toolName }) => ({ action, toolName })))} failed=${JSON.stringify(
+          store
+            .listEvents(conversation.id)
+            .filter(({ type }) => type === "tool.failed")
+            .map(({ payload }) => payload),
+        )}`,
+      );
+      assert.equal(readFileSync(marker, "utf8"), "1");
+      assert.ok(events.some(({ type }) => type === "session.completed"));
+    } finally {
+      await harness.dispose();
+      await new Promise((resolve) => httpServer.close(resolve));
       store.close();
       rmSync(dir, { recursive: true, force: true });
     }
