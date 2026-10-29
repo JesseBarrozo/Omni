@@ -32,6 +32,8 @@ node ./bin/omni.mjs run --project ./my-project --model claude:sonnet "Explain th
 node ./bin/omni.mjs run --project ./my-project --harness claude "Inspect the project and propose changes"
 node ./bin/omni.mjs run --project ./my-project --harness codex --model codex "Inspect the project and propose changes"
 node ./bin/omni.mjs run --harness claude --conversation CONVERSATION_ID "Continue the task"
+node ./bin/omni.mjs swap --conversation CONVERSATION_ID --harness codex
+node ./bin/omni.mjs swap --conversation CONVERSATION_ID --harness claude
 node ./bin/omni.mjs chat --project ./my-project --model MODEL_ID
 node ./bin/omni.mjs resume CONVERSATION_ID [--model MODEL_ID]
 ```
@@ -44,4 +46,4 @@ Use `OMNI_DATA_DIR` to point local data to a different directory. SQLite data us
 
 ## Project status
 
-The real Codex OAuth chat and harness paths have been exercised through the installed Codex app-server. Claude OAuth streaming/resume and an approved tool write were also exercised against the official Agent SDK. OpenAI's direct API-key response and the cross-harness swap remain unverified. Antigravity, deterministic auto orchestration and Orca integration remain unimplemented. The mock harness remains test-only. The installed Claude Agent SDK declares a proprietary license; review its terms before redistributing Omni with this dependency.
+The real Codex OAuth chat and harness paths have been exercised through the installed Codex app-server. Claude OAuth streaming/resume and an approved tool write were exercised against the official Agent SDK. An opt-in integration test now executes Codex → Claude → Codex on a temporary Git project, verifying permission, checkpoint summaries, file state and no duplicate write. Run it with `OMNI_LIVE_HARNESS_SWAP_TESTS=1 node --test test/harness-swap.test.mjs`. OpenAI's direct API-key response and the interactive CLI rejection/interrupt paths remain unverified. Antigravity, deterministic auto orchestration and Orca integration remain unimplemented. The mock harness remains test-only. The installed Claude Agent SDK declares a proprietary license; review its terms before redistributing Omni with this dependency.

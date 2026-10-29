@@ -203,6 +203,18 @@ test(
           .filter((event) => event.type === "permission.granted").length,
         1,
       );
+      assert.equal(
+        store
+          .listEvents(conversation.id)
+          .filter((event) => event.type === "tool.started").length,
+        1,
+      );
+      assert.equal(
+        store
+          .listEvents(conversation.id)
+          .filter((event) => event.type === "file.changed").length,
+        1,
+      );
       assert.ok(
         events.some(
           (event) =>

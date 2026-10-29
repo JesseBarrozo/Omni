@@ -16,7 +16,7 @@
 - Le parcours Codex OAuth via l’app-server officiel a répondu en réel, streamé les deltas et repris le même thread après redémarrage de la base Omni. L’authentification reste gérée par le CLI Codex; Omni n’importe ni n’extrait son jeton. Cette intégration est en lecture seule.
 - L’intégration Claude Code utilise le SDK Agent officiel, le login CLI et les callbacks de permission Omni. Après connexion OAuth Claude, les tests réels de streaming, reprise de session après redémarrage SQLite et écriture temporaire avec permission explicite ont réussi. Le test CLI interactif de refus et l’interruption réelle restent à vérifier; voir `VERIFICATION.md`.
 - Le premier harness Codex app-server est intégré via l’interface JSON-RPC officielle : sandbox initiale lecture seule, streaming, interruption, checkpoint/reprise et approbations interactives. Le test réel d’écriture approuvée puis reprise après redémarrage et le parcours CLI interactif ont réussi. Les refus explicites CLI, les demandes d’approbation de commande/profil et l’interruption réelle pendant un tour restent à vérifier; voir `VERIFICATION.md`.
-- Antigravity, le gestionnaire général de secrets, Harness Swap, Auto Orchestrator et Orca ne sont pas validés.
+- Harness Swap est disponible par CLI entre Codex et Claude : checkpoint avec résumé portable/historique/Git, garde de frontière sûre et création de session par le SDK réel. Le test Codex → Claude → Codex a réussi sur un dépôt Git temporaire. La reprise via CLI et l’interruption/refus interactifs restent à vérifier. Auto Orchestrator, Antigravity, le gestionnaire général de secrets et Orca ne sont pas validés.
 
 ---
 

@@ -19,6 +19,7 @@ import {
   startClaudeLogin,
 } from "../src/claude-code.mjs";
 import { runChatTurn } from "../src/chat-runner.mjs";
+import { HarnessSwapService } from "../src/harness-swap.mjs";
 import { redactSecrets } from "../src/core.mjs";
 
 const dataDir = process.env.OMNI_DATA_DIR || join(homedir(), ".omni");
@@ -36,8 +37,96 @@ const option = (name, fallback = null) => {
 const hasFlag = (name) => args.includes(name);
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude] [--conversation ID] PROMPT\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
+
+function permissionPrompt(rl, provider) {
+  return async (request, signal) => {
+    if (!stdin.isTTY) {
+      stdout.write(
+        `Permission ${provider} refusée (session non interactive).\n`,
+      );
+      return false;
+    }
+    if (signal?.aborted) return false;
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (allowed) => {
+        if (settled) return;
+        settled = true;
+        resolve(allowed);
+      };
+      const onAbort = () => finish(false);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      rl.question(
+        `${provider} demande une permission: ${JSON.stringify(request)}\nAutoriser cette action une fois ? [y/N] `,
+      )
+        .then((answer) => {
+          signal?.removeEventListener("abort", onAbort);
+          finish(answer.trim().toLowerCase() === "y");
+        })
+        .catch(() => finish(false));
+    });
+  };
+}
+
+async function swapHarness(conversationId, harnessId, requestedModel) {
+  if (!conversationId || !["claude", "codex"].includes(harnessId))
+    throw new Error(
+      "Usage: omni swap --conversation ID --harness claude|codex [--model MODEL]",
+    );
+  const conversation = store.conversation(conversationId);
+  const project = store.project(conversation.projectId);
+  const rl = createInterface({
+    input: stdin,
+    output: stdout,
+    terminal: Boolean(stdin.isTTY),
+  });
+  const model =
+    requestedModel ??
+    (harnessId === "claude"
+      ? conversation.modelId?.startsWith("claude")
+        ? conversation.modelId
+        : "claude"
+      : "codex");
+  const requestPermission = permissionPrompt(rl, harnessId);
+  const adapter =
+    harnessId === "claude"
+      ? new ClaudeCodeHarness({
+          store,
+          cwd: project.rootPath ?? process.cwd(),
+          model: model === "claude" ? undefined : model.replace(/^claude:/, ""),
+          requestPermission,
+        })
+      : new CodexHarness({
+          store,
+          cwd: project.rootPath ?? process.cwd(),
+          model: model === "codex" ? undefined : model,
+          requestPermission,
+        });
+  try {
+    const service = new HarnessSwapService({
+      store,
+      adapters: new Map([[adapter.id, adapter]]),
+    });
+    const result = await service.swap({
+      conversationId,
+      toHarnessId: adapter.id,
+      model,
+    });
+    print({
+      conversationId,
+      harnessId: adapter.id,
+      sessionId: result.session.id,
+      checkpointId: result.checkpoint.id,
+      git: result.summary.git,
+      resumeContextAttached: true,
+    });
+  } finally {
+    rl.close();
+    await adapter.dispose();
+  }
+}
 
 async function chat(conversation, model, initialPrompt = null) {
   const project = store.project(conversation.projectId);
@@ -164,14 +253,18 @@ async function runClaudeHarness(conversation, prompt) {
   try {
     store.setStatus(conversation.id, "running");
     await adapter.initialize();
-    const sessionId = store
+    const sessionRef = store
       .listEvents(conversation.id)
       .filter(
         (event) =>
-          event.type === "session.started" &&
-          event.payload.harnessId === "claude-code",
+          (event.type === "session.started" &&
+            event.payload.harnessId === "claude-code") ||
+          (event.type === "harness.changed" &&
+            event.payload.toHarnessId === "claude-code"),
       )
-      .at(-1)?.payload.sessionId;
+      .at(-1);
+    const sessionId =
+      sessionRef?.payload.sessionId ?? sessionRef?.payload.targetSessionId;
     for await (const event of adapter.run({
       conversationId: conversation.id,
       sessionId,
@@ -274,14 +367,18 @@ async function runCodexHarness(conversation, prompt) {
   try {
     store.setStatus(conversation.id, "running");
     await adapter.initialize();
-    const sessionId = store
+    const sessionRef = store
       .listEvents(conversation.id)
       .filter(
         (event) =>
-          event.type === "session.started" &&
-          event.payload.harnessId === "codex",
+          (event.type === "session.started" &&
+            event.payload.harnessId === "codex") ||
+          (event.type === "harness.changed" &&
+            event.payload.toHarnessId === "codex"),
       )
-      .at(-1)?.payload.sessionId;
+      .at(-1);
+    const sessionId =
+      sessionRef?.payload.sessionId ?? sessionRef?.payload.targetSessionId;
     const session = sessionId
       ? await adapter.resumeSession(sessionId, {
           conversationId: conversation.id,
@@ -481,6 +578,12 @@ try {
     if (harness === "claude") await runClaudeHarness(conversation, prompt);
     else if (harness === "codex") await runCodexHarness(conversation, prompt);
     else await chat(conversation, model, prompt);
+  } else if (command === "swap") {
+    await swapHarness(
+      option("--conversation"),
+      option("--harness"),
+      option("--model"),
+    );
   } else help();
 } catch (error) {
   let safe = redactSecrets(error.message);

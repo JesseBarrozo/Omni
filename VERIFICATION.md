@@ -29,6 +29,7 @@ npm run check
 npm run build
 OMNI_LIVE_CODEX_HARNESS_TESTS=1 node --test test/codex-harness.test.mjs
 OMNI_LIVE_CLAUDE_TESTS=1 node --test test/claude.test.mjs
+OMNI_LIVE_HARNESS_SWAP_TESTS=1 node --test test/harness-swap.test.mjs
 ```
 
 Le test réel crée un dépôt Git jetable, demande au vrai app-server Codex de créer un seul fichier temporaire, n’accorde la permission que pour le chemin attendu, ferme puis rouvre SQLite et reprend le thread pour relire le fichier. Il exige un compte Codex local connecté.
@@ -47,19 +48,24 @@ Le test réel crée un dépôt Git jetable, demande au vrai app-server Codex de 
 - [x] `OMNI_LIVE_CLAUDE_TESTS=1 node --test test/claude.test.mjs` : chat SDK streamé puis reprise du même `session_id` après fermeture et réouverture de SQLite.
 - [x] Le harness utilise l’outil réel `Write` sur un fichier temporaire uniquement après approbation du callback; les événements `permission.requested` et `permission.granted` sont vérifiés.
 - [x] Le test vérifie les deltas streamés, le résultat confirmé par le SDK et l’absence de secret dans l’export Omni.
-- [ ] Répéter le parcours via `omni run --harness claude` dans un TTY et refuser une permission; vérifier que le fichier n’est pas créé.
+- [x] `omni swap --conversation ID --harness claude` crée un checkpoint portable; un nouveau processus `omni run --conversation ID --harness claude ...` démarre le thread réel et restitue le contexte du checkpoint.
+- [ ] Répéter le parcours CLI dans un TTY et refuser explicitement une permission; vérifier que le fichier n’est pas créé.
 - [ ] Interrompre une exécution réelle avec `Ctrl-C`, puis reprendre sans relancer automatiquement l’outil.
 
 ## Résultats de cette phase
 
-- `npm test` : réussi, 28 tests découverts, 23 réussis, 0 échec, 5 ignorés (intégrations réelles conditionnelles).
+- `npm test` : réussi, 34 tests découverts, 27 réussis, 0 échec, 7 ignorés (intégrations réelles conditionnelles).
 - `npm run lint` : réussi.
 - `npm run format:check` : réussi.
 - `npm run check` : réussi.
 - `npm run build` : réussi.
+- `npm run format` : réussi.
 - `git diff --check` : réussi.
 - `OMNI_LIVE_CODEX_HARNESS_TESTS=1 node --test test/codex-harness.test.mjs` : réussi, 2/2, avec compte Codex authentifié.
 - Parcours CLI interactif réel avec approbation, persistance et reprise dans un nouveau processus : réussi sur un projet temporaire.
 - Le capteur Dotcontext `tests-passing` a échoué car il injecte des options Jest (`--runInBand --json`) incompatibles avec la suite native Node `node --test`; l’exécution directe `npm test` ci-dessus réussit. Ce capteur doit être corrigé/configuré pour le runner Node avant de pouvoir servir de gate.
 - Parcours CLI de refus explicite/interruption réelle, permissions Codex de commande/profil, OAuth OpenAI par clé et tests OAuth Codex chat distincts : non exécutés; voir les checklists ci-dessus et les tests ignorés.
 - `OMNI_LIVE_CLAUDE_TESTS=1 node --test test/claude.test.mjs` : réussi, 6/6 après authentification OAuth réelle.
+- `OMNI_LIVE_HARNESS_SWAP_TESTS=1 node --test test/harness-swap.test.mjs` : réussi, 6/6. Parcours réel Codex → checkpoint → Claude → lecture après reprise → nouveau thread Codex; le test séparé a exécuté `omni swap` puis `omni run` dans deux processus.
+- Refus explicite dans le CLI swap/run, interruption réelle pendant une opération et permissions CLI en TTY : à refaire; les tests actuels couvrent l’approbation réelle via SDK/app-server et la reprise CLI sans TTY.
+- Les événements d’outils, commandes et modifications de fichiers sont conservés dans le journal Omni pour alimenter le résumé de swap; les parcours réels Claude/Codex ont vérifié les appels d’outils et le changement de fichier.

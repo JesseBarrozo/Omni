@@ -18,11 +18,11 @@
   "scripts": {
     "test": "node --test",
     "start": "node ./bin/omni.mjs",
-    "check": "node --check src/core.mjs && node --check src/adapters.mjs && node --check src/chat-store.mjs && node --check src/openai-chat.mjs && node --check src/codex-chat.mjs && node --check src/claude-code.mjs && node --check src/chat-runner.mjs && node --check src/index.mjs && node --check bin/omni.mjs",
+    "check": "node --check src/core.mjs && node --check src/adapters.mjs && node --check src/chat-store.mjs && node --check src/openai-chat.mjs && node --check src/codex-chat.mjs && node --check src/claude-code.mjs && node --check src/harness-swap.mjs && node --check src/chat-runner.mjs && node --check src/index.mjs && node --check bin/omni.mjs",
     "build": "esbuild bin/omni.mjs --bundle --platform=node --format=esm --packages=external --outfile=dist/omni.mjs",
-    "lint": "eslint bin/omni.mjs src/core.mjs src/chat-store.mjs src/openai-chat.mjs src/codex-chat.mjs src/claude-code.mjs src/chat-runner.mjs test/chat.test.mjs test/cli.test.mjs test/codex.test.mjs test/codex-harness.test.mjs test/claude.test.mjs",
-    "format:check": "prettier --check bin/omni.mjs src/core.mjs src/chat-store.mjs src/openai-chat.mjs src/codex-chat.mjs src/claude-code.mjs src/chat-runner.mjs test/chat.test.mjs test/cli.test.mjs test/codex.test.mjs test/codex-harness.test.mjs test/claude.test.mjs",
-    "format": "prettier --write bin/omni.mjs src/core.mjs src/chat-store.mjs src/openai-chat.mjs src/codex-chat.mjs src/claude-code.mjs src/chat-runner.mjs test/chat.test.mjs test/cli.test.mjs test/codex.test.mjs test/codex-harness.test.mjs test/claude.test.mjs"
+    "lint": "eslint bin/omni.mjs src/core.mjs src/chat-store.mjs src/openai-chat.mjs src/codex-chat.mjs src/claude-code.mjs src/harness-swap.mjs src/chat-runner.mjs test/chat.test.mjs test/cli.test.mjs test/codex.test.mjs test/codex-harness.test.mjs test/claude.test.mjs test/harness-swap.test.mjs",
+    "format:check": "prettier --check bin/omni.mjs src/core.mjs src/chat-store.mjs src/openai-chat.mjs src/codex-chat.mjs src/claude-code.mjs src/harness-swap.mjs src/chat-runner.mjs test/chat.test.mjs test/cli.test.mjs test/codex.test.mjs test/codex-harness.test.mjs test/claude.test.mjs test/harness-swap.test.mjs",
+    "format": "prettier --write bin/omni.mjs src/core.mjs src/chat-store.mjs src/openai-chat.mjs src/codex-chat.mjs src/claude-code.mjs src/harness-swap.mjs src/chat-runner.mjs test/chat.test.mjs test/cli.test.mjs test/codex.test.mjs test/codex-harness.test.mjs test/claude.test.mjs test/harness-swap.test.mjs"
   },
   "engines": {
     "node": ">=20"

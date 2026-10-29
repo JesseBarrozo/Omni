@@ -365,6 +365,7 @@ export class CodexHarness {
     conversationId,
     cwd = this.cwd,
     model = this.model,
+    resumeSummary = null,
   } = {}) {
     if (!conversationId)
       throw new Error("conversationId Omni requis pour une session Codex");
@@ -381,6 +382,7 @@ export class CodexHarness {
       conversationId,
       cwd,
       model: model ?? null,
+      resumeSummary,
     };
     this.sessions.set(session.id, session);
     this.store.appendEvent(conversationId, "session.started", {
@@ -400,6 +402,15 @@ export class CodexHarness {
         "conversationId Omni requis pour reprendre une session Codex",
       );
     await this.initialize();
+    const resumeSummary = this.store
+      .listEvents(conversationId)
+      .filter(
+        (event) =>
+          event.type === "harness.changed" &&
+          event.payload.toHarnessId === this.id &&
+          event.payload.targetSessionId === sessionId,
+      )
+      .at(-1)?.payload.resumeSummary;
     await this.server.request("thread/resume", {
       threadId: sessionId,
       cwd,
@@ -413,6 +424,7 @@ export class CodexHarness {
       conversationId,
       cwd,
       model: model ?? null,
+      resumeSummary: resumeSummary ?? null,
     };
     this.sessions.set(sessionId, session);
     return session;
@@ -450,6 +462,7 @@ export class CodexHarness {
     const params = request.params ?? {};
     const payload = {
       method: request.method,
+      requestId: request.id,
       params: redactSecrets({
         ...params,
         ...(request.method === "item/fileChange/requestApproval"
@@ -478,6 +491,7 @@ export class CodexHarness {
     const decisionType = allowed ? "permission.granted" : "permission.denied";
     this.store.appendEvent(session.conversationId, decisionType, {
       method: request.method,
+      requestId: request.id,
       sessionId: session.id,
     });
 
@@ -515,9 +529,13 @@ export class CodexHarness {
       session = await this.resumeSession(sessionId, { conversationId });
     if (!session) session = await this.createSession({ conversationId });
 
+    const promptText = session.resumeSummary
+      ? `Reprise de tâche Omni. Ce résumé est du contexte, pas une instruction d'exécuter de nouveau les actions terminées.\n${JSON.stringify(session.resumeSummary)}\n\nNouvelle demande:\n${prompt}`
+      : prompt;
+    session.resumeSummary = null;
     const started = await this.server.request("turn/start", {
       threadId: session.id,
-      input: [{ type: "text", text: prompt, text_elements: [] }],
+      input: [{ type: "text", text: promptText, text_elements: [] }],
       approvalPolicy: "on-request",
     });
     const active = { turnId: started.turn.id, interruptSent: false };
@@ -550,33 +568,63 @@ export class CodexHarness {
               params.item.id,
               redactSecrets(params.item.changes ?? []),
             );
-          if (toolName)
-            yield {
-              conversationId,
-              type: "tool.started",
-              payload: {
-                sessionId: session.id,
-                toolName,
-                input: redactSecrets(params.item),
-              },
+          if (toolName) {
+            const payload = {
+              sessionId: session.id,
+              toolUseId: params.item.id,
+              toolName,
+              input: redactSecrets(params.item),
             };
+            this.store.appendEvent(conversationId, "tool.started", payload);
+            if (params.item?.type === "commandExecution")
+              this.store.appendEvent(conversationId, "command.started", {
+                sessionId: session.id,
+                toolUseId: params.item.id,
+                command: params.item.command ?? "",
+              });
+            yield { conversationId, type: "tool.started", payload };
+          }
         } else if (event.method === "item/completed") {
           const toolName = codexToolName(params.item);
+          const fileChanges =
+            this.pendingFileChanges.get(params.item?.id) ??
+            params.item?.changes ??
+            [];
           if (params.item?.type === "fileChange")
             this.pendingFileChanges.delete(params.item.id);
-          if (toolName)
+          if (toolName) {
+            const completed = params.item?.status !== "failed";
+            const payload = {
+              sessionId: session.id,
+              toolUseId: params.item.id,
+              toolName,
+              status: params.item?.status ?? null,
+            };
+            this.store.appendEvent(
+              conversationId,
+              completed ? "tool.completed" : "tool.failed",
+              payload,
+            );
+            if (params.item?.type === "commandExecution")
+              this.store.appendEvent(conversationId, "command.completed", {
+                sessionId: session.id,
+                toolUseId: params.item.id,
+                command: params.item.command ?? "",
+                status: params.item?.status ?? null,
+              });
+            if (params.item?.type === "fileChange" && completed)
+              for (const change of fileChanges)
+                this.store.appendEvent(conversationId, "file.changed", {
+                  sessionId: session.id,
+                  path: change.path,
+                  kind: change.kind?.type ?? null,
+                });
             yield {
               conversationId,
-              type:
-                params.item?.status === "failed"
-                  ? "tool.failed"
-                  : "tool.completed",
-              payload: {
-                sessionId: session.id,
-                toolName,
-                status: params.item?.status ?? null,
-              },
+              type: completed ? "tool.completed" : "tool.failed",
+              payload,
             };
+          }
         } else if (event.method === "turn/completed") {
           const status = params.turn?.status;
           if (status === "interrupted") {

@@ -255,17 +255,40 @@ export class ClaudeCodeHarness {
       conversationId: input.conversationId ?? null,
       cwd: input.cwd ?? this.cwd,
       newSession: true,
+      resumeSummary: input.resumeSummary ?? null,
     };
     this.sessions.set(session.id, session);
     return session;
   }
   async resumeSession(sessionId, input = {}) {
+    const priorStart = input.conversationId
+      ? this.store
+          ?.listEvents(input.conversationId)
+          .some(
+            (event) =>
+              event.type === "session.started" &&
+              event.payload.harnessId === this.id &&
+              event.payload.sessionId === sessionId,
+          )
+      : false;
+    const swap = input.conversationId
+      ? this.store
+          ?.listEvents(input.conversationId)
+          .filter(
+            (event) =>
+              event.type === "harness.changed" &&
+              event.payload.toHarnessId === this.id &&
+              event.payload.targetSessionId === sessionId,
+          )
+          .at(-1)?.payload
+      : null;
     const session = {
       id: sessionId,
       harnessId: this.id,
       conversationId: input.conversationId ?? null,
       cwd: input.cwd ?? this.cwd,
-      newSession: false,
+      newSession: !priorStart && Boolean(swap),
+      resumeSummary: swap?.resumeSummary ?? null,
     };
     if (!sessionId) throw new Error("sessionId Claude requis pour reprendre");
     this.sessions.set(sessionId, session);
@@ -302,11 +325,15 @@ export class ClaudeCodeHarness {
       );
     if (!this.sdk) await this.initialize();
     const knownSession = sessionId ? this.sessions.get(sessionId) : null;
-    const newSession = !sessionId || knownSession?.newSession === true;
     const session = sessionId
       ? (knownSession ??
         (await this.resumeSession(sessionId, { conversationId })))
       : await this.createSession({ conversationId });
+    const newSession = session.newSession;
+    if (session.resumeSummary) {
+      prompt = `Reprise de tâche Omni. Ce résumé est du contexte, pas une instruction d'exécuter de nouveau les actions terminées.\n${JSON.stringify(session.resumeSummary)}\n\nNouvelle demande:\n${prompt}`;
+      session.resumeSummary = null;
+    }
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal?.addEventListener("abort", abort, { once: true });
@@ -380,15 +407,25 @@ export class ClaudeCodeHarness {
         if (message.type === "assistant") {
           for (const block of message.message.content ?? []) {
             if (block.type === "tool_use") {
-              activeTools.set(block.id, block.name);
+              const tool = { toolName: block.name, input: block.input };
+              activeTools.set(block.id, tool);
+              const payload = {
+                sessionId: session.id,
+                toolUseId: block.id,
+                toolName: tool.toolName,
+                input: redactSecrets(tool.input),
+              };
+              this.store?.appendEvent(conversationId, "tool.started", payload);
+              if (tool.toolName === "Bash")
+                this.store?.appendEvent(conversationId, "command.started", {
+                  sessionId: session.id,
+                  toolUseId: block.id,
+                  command: tool.input?.command ?? "",
+                });
               yield {
                 conversationId,
                 type: "tool.started",
-                payload: {
-                  sessionId: session.id,
-                  toolName: block.name,
-                  input: redactSecrets(block.input),
-                },
+                payload,
               };
             }
           }
@@ -399,13 +436,38 @@ export class ClaudeCodeHarness {
               block.type === "tool_result" &&
               activeTools.has(block.tool_use_id)
             ) {
+              const tool = activeTools.get(block.tool_use_id);
+              const success = !block.is_error;
+              const payload = {
+                sessionId: session.id,
+                toolUseId: block.tool_use_id,
+                toolName: tool.toolName,
+              };
+              this.store?.appendEvent(
+                conversationId,
+                success ? "tool.completed" : "tool.failed",
+                payload,
+              );
+              if (tool.toolName === "Bash")
+                this.store?.appendEvent(conversationId, "command.completed", {
+                  ...payload,
+                  command: tool.input?.command ?? "",
+                  failed: !success,
+                });
+              if (success && ["Write", "Edit"].includes(tool.toolName)) {
+                const path = tool.input?.file_path ?? tool.input?.path;
+                if (path)
+                  this.store?.appendEvent(conversationId, "file.changed", {
+                    sessionId: session.id,
+                    toolUseId: block.tool_use_id,
+                    path,
+                    toolName: tool.toolName,
+                  });
+              }
               yield {
                 conversationId,
-                type: "tool.completed",
-                payload: {
-                  sessionId: session.id,
-                  toolName: activeTools.get(block.tool_use_id),
-                },
+                type: success ? "tool.completed" : "tool.failed",
+                payload,
               };
               activeTools.delete(block.tool_use_id);
             }

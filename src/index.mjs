@@ -3,3 +3,4 @@ export * from "./adapters.mjs";
 export * from "./codex-chat.mjs";
 export { CodexHarness } from "./codex-chat.mjs";
 export * from "./claude-code.mjs";
+export * from "./harness-swap.mjs";
