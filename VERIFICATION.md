@@ -2,9 +2,9 @@
 
 - [x] `CODEX_HOME` et `CLAUDE_CONFIG_DIR` sont transmis aux commandes CLI officielles pour leurs profils nommés; le profil `default` conserve l’environnement utilisateur existant.
 - [x] Les profils non-default utilisent des répertoires Omni privés (`0700`) et un registre de noms seulement (`0600`). Les tokens restent gérés par les CLI tiers; aucune donnée d’authentification n’est copiée ou lue par Omni.
-- [x] `auth profile list/use` expose la sélection par fournisseur; `auth login codex|claude --profile NAME` connecte le profil isolé. Les appels de statut, catalogues et harnesses utilisent le profil actif.
+- [x] `auth profile list/use/remove` expose la gestion par fournisseur; la suppression exige `--yes`, protège `default`, et revient à `default` si le profil actif est supprimé. `auth login codex|claude --profile NAME` connecte le profil isolé. Les appels de statut, catalogues et harnesses utilisent le profil actif.
 - [x] Tests avec un exécutable local contrôlé : statut/login reçoivent les bons chemins pour chaque CLI; tests de permissions, persistance des noms et sortie sans credentials. Aucun binaire Codex/Claude utilisateur ou endpoint fournisseur lancé pendant cette validation.
-- [x] Validation : `npm test` (134 tests, 107 réussis, 0 échec, 27 opt-in ignorés), lint, format:check, check, build, format docs et diff-check réussis.
+- [x] Validation : `npm test` (135 tests, 108 réussis, 0 échec, 27 opt-in ignorés), lint, format:check, check, build, format docs et diff-check réussis.
 - [ ] Il faut connecter chaque nouveau profil séparément; la migration automatique d’une session déjà connectée depuis le profil global n’est volontairement pas faite. Le test du login OAuth réel de chaque profil isolé n’a pas été lancé.
 
 ## Antigravity CLI — isolement sûr non disponible sur cet environnement

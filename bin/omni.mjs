@@ -141,7 +141,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth login codex|claude [--profile NAME]\n  auth profile list codex|claude [--json]\n  auth profile use codex|claude --profile NAME\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter|anthropic|google --stdin [--profile NAME]\n  auth key list openai|openrouter|anthropic|google [--json]\n  auth key use openai|openrouter|anthropic|google --profile NAME\n  auth key remove openai|openrouter|anthropic|google [--profile NAME] [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  usage report --conversation ID|--project ID_OR_PATH [--month YYYY-MM] [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  auto plan --project ID_OR_PATH [--require-mcp SERVER[,SERVER]] [--json] PROMPT\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth login codex|claude [--profile NAME]\n  auth profile list codex|claude [--json]\n  auth profile use codex|claude --profile NAME\n  auth profile remove codex|claude --profile NAME --yes\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter|anthropic|google --stdin [--profile NAME]\n  auth key list openai|openrouter|anthropic|google [--json]\n  auth key use openai|openrouter|anthropic|google --profile NAME\n  auth key remove openai|openrouter|anthropic|google [--profile NAME] [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  usage report --conversation ID|--project ID_OR_PATH [--month YYYY-MM] [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  auto plan --project ID_OR_PATH [--require-mcp SERVER[,SERVER]] [--json] PROMPT\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
@@ -1659,7 +1659,7 @@ try {
   } else if (
     command === "auth" &&
     args[0] === "profile" &&
-    ["list", "use"].includes(args[1])
+    ["list", "use", "remove"].includes(args[1])
   ) {
     const provider = args[2];
     const profile = option("--profile");
@@ -1672,7 +1672,7 @@ try {
         result.profiles.forEach((name) =>
           print(`${name}${name === result.active ? " (actif)" : ""}`),
         );
-    } else {
+    } else if (args[1] === "use") {
       if (!profile) throw new Error("Indiquez le profil avec --profile NAME.");
       const profileEnv = oauthProfiles.environment(provider, profile);
       const authenticated =
@@ -1683,6 +1683,15 @@ try {
         throw new Error(`Le profil ${provider} ${profile} n’est pas connecté.`);
       oauthProfiles.use(provider, profile);
       print(`Profil OAuth ${provider} ${profile} sélectionné.`);
+    } else {
+      if (!profile) throw new Error("Indiquez le profil avec --profile NAME.");
+      if (!hasFlag("--yes"))
+        throw new Error("Confirmez la suppression du profil OAuth avec --yes.");
+      print(
+        oauthProfiles.remove(provider, profile)
+          ? `Profil OAuth ${provider} ${profile} supprimé.`
+          : `Profil OAuth ${provider} ${profile} introuvable.`,
+      );
     }
   } else if (command === "auth" && args[0] === "login" && args[1] === "codex") {
     const profile = option("--profile", "default");

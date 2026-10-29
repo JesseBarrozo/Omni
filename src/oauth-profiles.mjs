@@ -1,4 +1,10 @@
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 const PROFILE_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -91,5 +97,23 @@ export class OAuthProfiles {
       profiles: this.#read().profiles[provider] ?? ["default"],
       active: this.active(provider),
     };
+  }
+
+  remove(provider, profile) {
+    this.#validate(provider, profile);
+    if (profile === "default")
+      throw new Error(
+        "Le profil default utilise la configuration CLI existante et ne peut pas être supprimé par Omni.",
+      );
+    const registry = this.#read();
+    const profiles = registry.profiles[provider] ?? ["default"];
+    if (!profiles.includes(profile)) return false;
+    const directory = join(this.dataDir, "oauth", provider, profile);
+    rmSync(directory, { recursive: true, force: true });
+    registry.profiles[provider] = profiles.filter((name) => name !== profile);
+    if (registry.active[provider] === profile)
+      registry.active[provider] = "default";
+    this.#write(registry);
+    return true;
   }
 }

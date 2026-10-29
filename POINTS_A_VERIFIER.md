@@ -4,7 +4,7 @@ Mis à jour le 29 octobre 2026. Ce relevé complète [`VERIFICATION.md`](VERIFIC
 
 ## Validations locales récentes
 
-- Dernière suite locale : `npm test` — 134 tests découverts, 107 réussis, aucun échec, 27 scénarios opt-in ignorés.
+- Dernière suite locale : `npm test` — 135 tests découverts, 108 réussis, aucun échec, 27 scénarios opt-in ignorés.
 - `npm run lint`, `npm run format:check`, `npm run check`, `npm run build`, Prettier sur la documentation et `git diff --check` réussis.
 - Aucun appel de génération à un fournisseur ni test de clé API pendant les phases profils API et OAuth.
 - Derniers commits : `b162ace` (profils API multi-fournisseurs) après `cfca4f9` (test du budget Auto contre le catalogue OpenCode).

@@ -119,3 +119,25 @@ test("Codex and Claude login/status commands receive the isolated profile enviro
     rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test("removing a named OAuth profile deletes only its Omni directory and selects default", () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "omni-oauth-profile-remove-"));
+  try {
+    const profiles = new OAuthProfiles({ dataDir });
+    const env = profiles.environment("codex", "work");
+    profiles.use("codex", "work");
+    assert.equal(profiles.remove("codex", "work"), true);
+    assert.equal(profiles.active("codex"), "default");
+    assert.deepEqual(profiles.list("codex").profiles, ["default"]);
+    assert.equal(
+      statSync(env.CODEX_HOME, { throwIfNoEntry: false }),
+      undefined,
+    );
+    assert.throws(
+      () => profiles.remove("codex", "default"),
+      /ne peut pas être supprimé/i,
+    );
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});

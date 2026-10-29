@@ -202,6 +202,16 @@ test("CLI lists OAuth profiles without exposing credential data", () => {
       active: "default",
     });
     assert.doesNotMatch(listed.stdout, /token|secret|credential/i);
+    const unconfirmed = run(
+      "auth",
+      "profile",
+      "remove",
+      "claude",
+      "--profile",
+      "work",
+    );
+    assert.equal(unconfirmed.status, 1);
+    assert.match(unconfirmed.stderr, /Confirmez la suppression.*--yes/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

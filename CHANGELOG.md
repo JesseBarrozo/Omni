@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Suppression explicite des profils OAuth nommés Codex/Claude avec `auth profile remove --profile NAME --yes`; `default` est protégé, le répertoire supprimé est limité au profil Omni et la sélection active revient à `default`.
+
 - Profils OAuth nommés Codex et Claude Code : les logins séparés passent par `CODEX_HOME` et `CLAUDE_CONFIG_DIR`, avec commandes de liste/sélection et répertoires de profil privés. Omni ne lit ni ne copie les tokens des CLI; `default` conserve leur configuration courante.
 
 - Profils de clés nommés étendus à OpenRouter, Anthropic API et Gemini : sélection active par fournisseur, préservation de l’entrée historique `default`, et commandes CLI `set/list/use/remove` sans afficher les clés. Les variables d’environnement restent prioritaires.
