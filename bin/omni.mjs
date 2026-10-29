@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { homedir } from "node:os";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -8,6 +8,7 @@ import { ChatStore } from "../src/chat-store.mjs";
 import { serializeJsonLine } from "../src/cli-output.mjs";
 import { OpenAIChat } from "../src/openai-chat.mjs";
 import { OpenAIAuth } from "../src/openai-auth.mjs";
+import { McpRegistry } from "../src/mcp-registry.mjs";
 import {
   AntigravityCliChat,
   antigravityCliStatus,
@@ -32,6 +33,7 @@ import { AutoRouter, ModelRegistry, redactSecrets } from "../src/core.mjs";
 const dataDir = process.env.OMNI_DATA_DIR || join(homedir(), ".omni");
 const store = new ChatStore(join(dataDir, "omni.sqlite"));
 const openAIAuth = () => new OpenAIAuth({ dataDir });
+const mcpRegistry = () => new McpRegistry({ store });
 const redactError = (value) => {
   const safe = redactSecrets(value);
   try {
@@ -91,7 +93,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project) {
@@ -1099,6 +1101,238 @@ try {
     print(
       "Antigravity CLI fermé. Validez le compte avec `omni providers refresh --provider antigravity`.",
     );
+  } else if (command === "mcp" && args[0] === "add") {
+    const name = option("--name");
+    const commandPath = option("--command");
+    if (!name || !commandPath)
+      throw new Error("mcp add exige --name et --command.");
+    let serverArgs;
+    try {
+      serverArgs = JSON.parse(option("--args-json", "[]"));
+    } catch {
+      throw new Error("--args-json doit contenir un tableau JSON valide.");
+    }
+    const envKeys = (option("--env-names", "") ?? "")
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean);
+    const cwdOption = option("--cwd");
+    const cwd = cwdOption ? resolve(cwdOption) : null;
+    if (cwd && !statSync(cwd, { throwIfNoEntry: false })?.isDirectory())
+      throw new Error("Le répertoire --cwd MCP est introuvable.");
+    const server = mcpRegistry().addServer({
+      name,
+      command: commandPath,
+      args: serverArgs,
+      cwd,
+      envKeys,
+    });
+    print({
+      name: server.name,
+      configured: true,
+      environmentNames: server.envKeys,
+    });
+  } else if (command === "mcp" && args[0] === "list") {
+    const servers = mcpRegistry()
+      .listServers()
+      .map((server) => ({
+        name: server.name,
+        command: server.command,
+        cwd: server.cwd,
+        envKeys: server.envKeys,
+        tools: server.tools.map(({ name: toolName }) => toolName),
+      }));
+    if (hasFlag("--json")) print(servers);
+    else if (servers.length === 0) print("Aucun serveur MCP configuré.");
+    else
+      servers.forEach((server) =>
+        print(
+          `${server.name}: ${server.command} · ${server.tools.length} outils découverts`,
+        ),
+      );
+  } else if (command === "mcp" && args[0] === "tools") {
+    const name = option("--server");
+    const conversationId = option("--conversation");
+    if (!name || !conversationId)
+      throw new Error("mcp tools exige --server NAME et --conversation ID.");
+    const conversation = store.conversation(conversationId);
+    const project = store.project(conversation.projectId);
+    const permissionPayload = {
+      projectId: project.id,
+      tool: `mcp:${name}`,
+      action: "discover-tools",
+      server: name,
+      toolName: "__discover__",
+      scope: "once",
+    };
+    store.appendEvent(
+      conversation.id,
+      "permission.requested",
+      permissionPayload,
+    );
+    if (!stdin.isTTY || !stdout.isTTY) {
+      store.appendEvent(conversation.id, "permission.denied", {
+        ...permissionPayload,
+        granted: false,
+        reason: "non-interactive-session",
+      });
+      throw new Error(
+        "Découverte refusée : une approbation interactive est requise.",
+      );
+    }
+    const rl = createInterface({ input: stdin, output: stdout });
+    let answer;
+    try {
+      answer = await rl.question(
+        `Autoriser le démarrage de ${name} pour découvrir ses outils dans ${project.name} ? [y/N] `,
+      );
+    } finally {
+      rl.close();
+    }
+    if (!/^y(es)?$/i.test(answer.trim())) {
+      store.appendEvent(conversation.id, "permission.denied", {
+        ...permissionPayload,
+        granted: false,
+        reason: "user-denied",
+      });
+      throw new Error("Découverte MCP refusée par l’utilisateur.");
+    }
+    store.appendEvent(conversation.id, "permission.granted", {
+      ...permissionPayload,
+      granted: true,
+    });
+    print(
+      await mcpRegistry().discoverTools(name, {
+        requestPermission: async () => true,
+      }),
+    );
+  } else if (command === "mcp" && args[0] === "call") {
+    const name = option("--server");
+    const toolName = option("--tool");
+    const conversationId = option("--conversation");
+    const inputFile = option("--input-file");
+    if (!name || !toolName || !conversationId || !inputFile)
+      throw new Error(
+        "mcp call exige --server, --tool, --conversation et --input-file.",
+      );
+    const conversation = store.conversation(conversationId);
+    const project = store.project(conversation.projectId);
+    const server = store.mcpServer(name);
+    if (!server) throw new Error("Serveur MCP introuvable.");
+    if (!server.tools.some((tool) => tool.name === toolName))
+      throw new Error(
+        "Outil MCP absent du catalogue; lancez `omni mcp tools`.",
+      );
+    const file = resolve(inputFile);
+    const stat = statSync(file, { throwIfNoEntry: false });
+    if (!stat?.isFile() || stat.size > 1024 * 1024)
+      throw new Error(
+        "Le fichier d’arguments MCP est absent ou dépasse 1 MiB.",
+      );
+    let input;
+    try {
+      input = JSON.parse(readFileSync(file, "utf8"));
+    } catch {
+      throw new Error(
+        "Le fichier d’arguments MCP doit contenir du JSON valide.",
+      );
+    }
+    if (!input || Array.isArray(input) || typeof input !== "object")
+      throw new Error("Les arguments MCP doivent être un objet JSON.");
+    const permissionPayload = {
+      projectId: project.id,
+      tool: `mcp:${name}`,
+      action: "execute",
+      server: name,
+      toolName,
+      scope: "once",
+    };
+    store.appendEvent(
+      conversation.id,
+      "permission.requested",
+      permissionPayload,
+    );
+    if (!stdin.isTTY || !stdout.isTTY) {
+      store.appendEvent(conversation.id, "permission.denied", {
+        ...permissionPayload,
+        granted: false,
+        reason: "non-interactive-session",
+      });
+      throw new Error(
+        "Appel MCP refusé : une approbation interactive est requise.",
+      );
+    }
+    const rl = createInterface({ input: stdin, output: stdout });
+    let answer;
+    try {
+      answer = await rl.question(
+        `Autoriser une fois ${name}/${toolName} dans le projet ${project.name} ? [y/N] `,
+      );
+    } finally {
+      rl.close();
+    }
+    if (!/^y(es)?$/i.test(answer.trim())) {
+      store.appendEvent(conversation.id, "permission.denied", {
+        ...permissionPayload,
+        granted: false,
+        reason: "user-denied",
+      });
+      throw new Error("Appel MCP refusé par l’utilisateur.");
+    }
+    store.appendEvent(conversation.id, "permission.granted", {
+      ...permissionPayload,
+      granted: true,
+    });
+    store.appendEvent(conversation.id, "tool.started", {
+      server: name,
+      toolName,
+    });
+    let result;
+    try {
+      result = await mcpRegistry().callTool(name, toolName, input, {
+        requestPermission: async () => true,
+      });
+    } catch {
+      store.appendEvent(conversation.id, "tool.failed", {
+        server: name,
+        toolName,
+        errorCode: "mcp-call-failed",
+      });
+      throw new Error(
+        "L’appel de l’outil MCP a échoué; détails exclus des journaux.",
+      );
+    }
+    if (result.isError)
+      store.appendEvent(conversation.id, "tool.failed", {
+        server: name,
+        toolName,
+        isError: true,
+      });
+    else
+      store.appendEvent(conversation.id, "tool.completed", {
+        server: name,
+        toolName,
+        status: "completed",
+      });
+    print(result);
+  } else if (command === "mcp" && args[0] === "remove") {
+    const name = option("--server");
+    if (!name) throw new Error("mcp remove exige --server NAME.");
+    if (!hasFlag("--yes")) {
+      if (!stdin.isTTY || !stdout.isTTY)
+        throw new Error(
+          "Confirmez la suppression avec --yes en mode non interactif.",
+        );
+      const rl = createInterface({ input: stdin, output: stdout });
+      const answer = await rl.question(
+        `Supprimer la configuration MCP ${name} ? [y/N] `,
+      );
+      rl.close();
+      if (!/^y(es)?$/i.test(answer.trim())) {
+        print("Suppression annulée.");
+        process.exitCode = 1;
+      } else print({ name, removed: mcpRegistry().removeServer(name) });
+    } else print({ name, removed: mcpRegistry().removeServer(name) });
   } else if (command === "providers" && args[0] === "list") {
     const result = store.providerRegistry();
     hasFlag("--json")

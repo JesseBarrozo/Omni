@@ -106,7 +106,7 @@ test("projects and partial/completed conversation messages survive database reop
   assert.equal(
     db.db.prepare("SELECT count(*) AS count FROM schema_migrations").get()
       .count,
-    3,
+    4,
   );
   db.close();
   rmSync(dir, { recursive: true, force: true });
@@ -119,14 +119,14 @@ test("provider and model catalogs persist preferences and mark stale models unav
   assert.equal(
     store.db.prepare("SELECT max(version) version FROM schema_migrations").get()
       .version,
-    3,
+    4,
   );
   assert.deepEqual(
     store.db
       .prepare("SELECT version FROM schema_migrations ORDER BY version")
       .all()
       .map(({ version }) => version),
-    [1, 2, 3],
+    [1, 2, 3, 4],
   );
   store.saveProviderCatalog({
     providerId: "codex",

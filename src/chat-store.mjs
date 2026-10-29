@@ -84,6 +84,27 @@ export class ChatStore {
           )
           .run(new Date().toISOString());
       })();
+    if (version < 4)
+      this.db.transaction(() => {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS mcp_servers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            command TEXT NOT NULL,
+            args_json TEXT NOT NULL,
+            cwd TEXT,
+            env_keys_json TEXT NOT NULL,
+            tools_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+        `);
+        this.db
+          .prepare(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (4, ?)",
+          )
+          .run(new Date().toISOString());
+      })();
     try {
       chmodSync(file, 0o600);
     } catch {}
@@ -137,6 +158,72 @@ export class ChatStore {
     });
     save();
     return this.providerRegistry();
+  }
+  saveMcpServer({ name, command, args = [], cwd = null, envKeys = [] }) {
+    const now = new Date().toISOString();
+    const current = this.db
+      .prepare("SELECT id FROM mcp_servers WHERE name = ?")
+      .get(name);
+    const id = current?.id ?? randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO mcp_servers
+         (id, name, command, args_json, cwd, env_keys_json, tools_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, '[]', ?, ?)
+         ON CONFLICT(name) DO UPDATE SET command = excluded.command,
+         args_json = excluded.args_json, cwd = excluded.cwd,
+         env_keys_json = excluded.env_keys_json, tools_json = '[]', updated_at = excluded.updated_at`,
+      )
+      .run(
+        id,
+        name,
+        command,
+        JSON.stringify(args),
+        cwd,
+        JSON.stringify(envKeys),
+        now,
+        now,
+      );
+    return this.mcpServer(name);
+  }
+  mcpServer(name) {
+    const row = this.db
+      .prepare(
+        `SELECT id, name, command, args_json AS args, cwd,
+                env_keys_json AS envKeys, tools_json AS tools,
+                created_at AS createdAt, updated_at AS updatedAt
+         FROM mcp_servers WHERE name = ?`,
+      )
+      .get(name);
+    return row
+      ? {
+          ...row,
+          args: JSON.parse(row.args),
+          envKeys: JSON.parse(row.envKeys),
+          tools: JSON.parse(row.tools),
+        }
+      : null;
+  }
+  mcpServers() {
+    return this.db
+      .prepare("SELECT name FROM mcp_servers ORDER BY name")
+      .all()
+      .map(({ name }) => this.mcpServer(name));
+  }
+  saveMcpTools(name, tools) {
+    const result = this.db
+      .prepare(
+        "UPDATE mcp_servers SET tools_json = ?, updated_at = ? WHERE name = ?",
+      )
+      .run(JSON.stringify(tools), new Date().toISOString(), name);
+    if (!result.changes) throw new Error(`Serveur MCP inconnu: ${name}`);
+    return this.mcpServer(name);
+  }
+  removeMcpServer(name) {
+    return Boolean(
+      this.db.prepare("DELETE FROM mcp_servers WHERE name = ?").run(name)
+        .changes,
+    );
   }
   providerRegistry() {
     return this.db

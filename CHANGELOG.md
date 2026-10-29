@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- MCP local stdio : registre SQLite via le SDK TypeScript officiel, commandes `mcp add|list|tools|call|remove`, approbation interactive à usage unique avant tout démarrage du serveur ou appel d’outil, refus non interactif et événements d’exécution sans paramètres bruts. L’usage reste manuel, non relié aux boucles d’outils des harnesses.
 - Provider OpenAI : ajout de profils de clés nommés, de la sélection du profil actif et des commandes CLI `auth key list|use`; l’index de profils ne contient aucun secret et l’identité `default` reste compatible.
 - Validation profils OpenAI : deux profils temporaires ont été créés, sélectionnés, listés et supprimés via le trousseau système réel. Aucun appel réseau OpenAI effectué.
 - Clé API OpenAI : stockage et suppression via une entrée distincte du trousseau système; entrée stdin bornée, masquée, statut sans valeur, confirmation de suppression, et résolution OAuth → environnement → trousseau. Les appels API avec cette clé ne sont pas validés dans cette phase.

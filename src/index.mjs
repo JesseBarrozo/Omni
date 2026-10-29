@@ -7,4 +7,5 @@ export * from "./openai-auth.mjs";
 export * from "./openai-chat.mjs";
 export * from "./antigravity-cli.mjs";
 export * from "./secret-store.mjs";
+export * from "./mcp-registry.mjs";
 export * from "./harness-swap.mjs";

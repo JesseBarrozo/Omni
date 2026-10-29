@@ -53,7 +53,14 @@ node ./bin/omni.mjs swap --conversation CONVERSATION_ID --harness codex
 node ./bin/omni.mjs swap --conversation CONVERSATION_ID --harness claude
 node ./bin/omni.mjs chat --project ./my-project --model MODEL_ID
 node ./bin/omni.mjs resume CONVERSATION_ID [--model MODEL_ID]
+node ./bin/omni.mjs mcp add --name local-fs --command npx --args-json '["-y","@modelcontextprotocol/server-filesystem","./"]' --cwd ./my-project
+node ./bin/omni.mjs mcp list --json
+node ./bin/omni.mjs mcp tools --server local-fs --conversation CONVERSATION_ID
+node ./bin/omni.mjs mcp call --server local-fs --tool TOOL_NAME --conversation CONVERSATION_ID --input-file ./tool-input.json
+node ./bin/omni.mjs mcp remove --server local-fs
 ```
+
+MCP utilise le SDK TypeScript officiel sur des serveurs locaux stdio. Omni persiste la commande, les modèles d’arguments, le répertoire de travail, les noms de variables d’environnement et les schémas d’outils dans SQLite; les valeurs d’environnement et arguments d’outils ne sont pas persistés. Le lancement pour découvrir le catalogue et chaque appel d’outil exigent une approbation interactive ponctuelle associée à une conversation. Sans TTY, l’opération est refusée. Gardez les secrets dans l’environnement et référez-vous-y dans `--args-json` avec `{{env:NAME}}`, en ajoutant `NAME` à `--env-names`; Omni ne transmet au processus enfant que ces valeurs explicitement listées et l’environnement limité fourni par le SDK. `mcp tools` rafraîchit le catalogue avant les appels. Cette première version est manuelle, locale stdio uniquement, et n’est pas encore reliée aux boucles d’outils des modèles/harnesses, à Auto ou à Harness Swap. Vérifiez la commande et le serveur avant approbation.
 
 `omni run ... --json` writes versioned JSON Lines to stdout (`version: 1`): `routing.decision`/`routing.fallback`, `run.started`, streamed `message.delta`, sanitized tool and one-time permission events, then `run.completed`, `run.interrupted`, or `run.failed`. Prompts and raw tool inputs are not included. Interactive permission questions go to stderr; without a TTY, permissions remain denied. A successful run exits 0, failures 1, and an interrupted run 130. This is Omni’s process interface for ordinary terminals, including an Orca terminal; it is not Orca’s native Agent Session protocol.
 

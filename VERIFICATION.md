@@ -251,3 +251,12 @@ Commandes/résultats de cette investigation : `agy --help` (CLI présent), `agy 
 - [x] Le parcours CLI set/list/use/status/remove a utilisé le trousseau réel avec des valeurs temporaires. Aucune requête réseau OpenAI n’a été envoyée.
 - [ ] Aucun catalogue, modèle ou endpoint OpenAI n’a été appelé; les profils sont validés localement seulement.
 - [x] `npm test` : 82 découverts, 62 réussis, 0 échec, 20 opt-in ignorés; lint, format, syntaxe, build, audit dépendances (0 vulnérabilité) et diff-check réussis.
+## Registre d’outils MCP stdio
+
+- [x] Dépendance `@modelcontextprotocol/sdk` 1.32.2 (MIT) vérifiée avec documentation Context7; transport utilisé : SDK TypeScript officiel `StdioClientTransport` / `Client`.
+- [x] Migration SQLite v4 stocke la commande et arguments sans valeurs de secrets, le dossier, les noms de variables autorisées et les schémas découverts.
+- [x] CLI `mcp add|list|tools|call|remove`; commandes de découverte et d’appel requièrent un TTY et un identifiant de conversation, demandent une approbation ponctuelle avant lancement, et refusent en mode non interactif avant démarrage du serveur.
+- [x] Test d’intégration local démarre un vrai serveur fixture via le SDK officiel, découvre son outil, confirme qu’aucun démarrage n’a lieu sans callback d’approbation, puis exécute une mutation réelle après approbation. Un second test vérifie le refus CLI non interactif en découverte et appel, l’absence d’exécution et l’absence des valeurs sensibles dans le journal SQLite.
+- [x] `node --test test/mcp.test.mjs`: 2/2 réussis. `npm test`: 84 découverts, 64 réussis, 0 échec, 20 opt-in ignorés. `npm run lint`, `npm run format:check`, `npm run check`, `npm run build` et `npm audit --omit=dev` (0 vulnérabilité) réussis; aucun accès modèle/OpenAI effectué.
+- [ ] Parcours TTY interactif accepté et refusé non exécuté dans cette phase; refus non interactif et callback d’approbation dans le test SDK vérifiés.
+- [ ] Transport MCP distant, intégration dans une boucle de tool-calling de modèle/harness, routage Auto et Harness Swap non implémentés.
