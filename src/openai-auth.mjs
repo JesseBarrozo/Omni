@@ -33,6 +33,8 @@ const requiredScopes = [
 ];
 const serviceName = "Omni OpenAI ChatGPT OAuth";
 const accountName = "default";
+const apiKeyServiceName = "Omni OpenAI API Key";
+const apiKeyAccountName = "default";
 
 function safeKeyringError() {
   return new Error(
@@ -196,6 +198,41 @@ export class OpenAIAuth {
 
   hasCredentials() {
     return this.#readCredential() !== null;
+  }
+
+  hasApiKey() {
+    return this.getApiKey() !== null;
+  }
+
+  getApiKey() {
+    try {
+      return this.secretStore.get(apiKeyServiceName, apiKeyAccountName);
+    } catch {
+      throw safeKeyringError();
+    }
+  }
+
+  setApiKey(apiKey) {
+    if (
+      typeof apiKey !== "string" ||
+      apiKey.length === 0 ||
+      apiKey.length > 16384 ||
+      /[\r\n\0-\x1f\x7f]/.test(apiKey)
+    )
+      throw new TypeError("La clé API doit être une seule ligne non vide.");
+    try {
+      this.secretStore.set(apiKeyServiceName, apiKeyAccountName, apiKey);
+    } catch {
+      throw safeKeyringError();
+    }
+  }
+
+  deleteApiKey() {
+    try {
+      return this.secretStore.delete(apiKeyServiceName, apiKeyAccountName);
+    } catch {
+      throw safeKeyringError();
+    }
   }
 
   async login() {

@@ -389,6 +389,38 @@ test("OpenAI stream failure and incomplete responses are never reported as succe
   );
 });
 
+test("OpenAI API errors redact the configured key before reaching callers", async () => {
+  const apiKey = "arbitrary-private-key-value";
+  const provider = new OpenAIChat({
+    apiKey,
+    clientFactory: (key) => ({
+      apiKey: key,
+      models: {
+        list: async () => {
+          throw new Error(`rejected ${key}`);
+        },
+      },
+      responses: {
+        create: async () => {
+          throw new Error(`rejected ${key}`);
+        },
+      },
+    }),
+  });
+  await assert.rejects(provider.listModels(), (error) => {
+    assert.equal(error.message, "rejected [REDACTED]");
+    return true;
+  });
+  await assert.rejects(
+    provider.stream({
+      model: "model",
+      messages: [{ role: "user", content: "prompt" }],
+      onDelta() {},
+    }),
+    /rejected \[REDACTED\]/,
+  );
+});
+
 test("restart recovery marks streaming turns interrupted and keeps partial text", async () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-recover-"));
   const file = join(dir, "db.sqlite");

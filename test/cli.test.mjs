@@ -38,6 +38,51 @@ test("CLI refuses to present Antigravity chat as an Omni harness run", () => {
   }
 });
 
+test("CLI rejects malformed API-key stdin without echoing it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-api-key-cli-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (input, ...args) =>
+    spawnSync(process.execPath, [cli, ...args], {
+      env,
+      input,
+      encoding: "utf8",
+    });
+  try {
+    const key = "test-key-must-not-appear-in-output";
+    const result = run(
+      `${key}\nsecond-line`,
+      "auth",
+      "key",
+      "set",
+      "openai",
+      "--stdin",
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /une seule ligne/);
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, new RegExp(key));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI rejects API keys in arguments and requires explicit noninteractive removal", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-api-key-cli-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const argumentKey = run("auth", "key", "set", "openai", "unsafe-key");
+    assert.equal(argumentKey.status, 1);
+    assert.match(argumentKey.stderr, /uniquement avec --stdin/);
+    assert.doesNotMatch(argumentKey.stderr, /unsafe-key/);
+    const removal = run("auth", "key", "remove", "openai");
+    assert.equal(removal.status, 1);
+    assert.match(removal.stderr, /Confirmez la suppression avec --yes/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("CLI persists projects and resumes with the saved or explicitly changed model", () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-cli-"));
   const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };

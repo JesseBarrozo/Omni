@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Clé API OpenAI : stockage et suppression via une entrée distincte du trousseau système; entrée stdin bornée, masquée, statut sans valeur, confirmation de suppression, et résolution OAuth → environnement → trousseau. Les appels API avec cette clé ne sont pas validés dans cette phase.
 - Sécurité credentials : extraction d'un `SecretStore` partagé autour de `@napi-rs/keyring`, avec validation des identifiants, erreurs système masquées et backend Linux Secret Service forcé. OpenAI OAuth conserve son entrée existante; les credentials des CLIs restent gérés par ces outils.
 - Antigravity : ajout d'un provider de chat expérimental via le CLI officiel `agy`, avec catalogue de modèles, flux JSONL, reprise par identifiant de conversation, interruption et espace Omni privé sandboxé. L'exécution échoue en mode fail-closed si des règles globales `allow` peuvent contourner le contrôle headless. Pas d'outil Antigravity dans le Harness Registry, Auto ou Swap. Parcours de génération réel non testé sur demande; ne pas annoncer l'intégration comme validée de bout en bout.
 - CLI Orca niveau 1 : `omni run --json` expose un flux JSONL versionné avec streaming, décision/fallback Auto, événements outils/permissions assainis et fins explicites; les questions de permission restent sur stderr et les sessions persistent. Cela ne crée pas un Agent Session natif Orca, dont le CLI installé ne documente pas de protocole d’agent externe.

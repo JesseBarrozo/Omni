@@ -12,6 +12,7 @@ export class OpenAIChat {
       throw new Error(
         "Connectez OpenAI avec `omni auth login openai` ou configurez OPENAI_API_KEY.",
       );
+    this.apiKey = apiKey;
     this.client = client ?? (apiKey ? clientFactory(apiKey) : null);
     this.oauth = oauth;
     this.fetch = fetchImpl;
@@ -35,22 +36,39 @@ export class OpenAIChat {
         .filter((model) => model.visibility === "list" && model.slug)
         .map(({ slug }) => slug);
     }
-    const response = await this.client.models.list();
-    return response.data.map(({ id }) => id).sort();
+    try {
+      const response = await this.client.models.list();
+      return response.data.map(({ id }) => id).sort();
+    } catch (error) {
+      throw this.#safeApiError(error);
+    }
+  }
+  #safeApiError(error) {
+    const message =
+      error instanceof Error ? error.message : "Erreur OpenAI inconnue.";
+    const apiKey = this.apiKey;
+    return new Error(
+      apiKey ? message.replaceAll(apiKey, "[REDACTED]") : message,
+    );
   }
   async stream({ model, messages, signal, onDelta }) {
     const client = this.oauth
       ? this.clientFactory(await this.oauth.getAccessToken())
       : this.client;
-    const stream = await client.responses.create(
-      {
-        model,
-        input: messages.map(({ role, content }) => ({ role, content })),
-        stream: true,
-        ...(this.oauth ? { store: false } : {}),
-      },
-      { signal },
-    );
+    let stream;
+    try {
+      stream = await client.responses.create(
+        {
+          model,
+          input: messages.map(({ role, content }) => ({ role, content })),
+          stream: true,
+          ...(this.oauth ? { store: false } : {}),
+        },
+        { signal },
+      );
+    } catch (error) {
+      throw this.#safeApiError(error);
+    }
     let text = "";
     let completed = false;
     try {
@@ -75,6 +93,8 @@ export class OpenAIChat {
           "Le flux Responses s’est terminé sans réponse complète",
         );
       return text;
+    } catch (error) {
+      throw this.#safeApiError(error);
     } finally {
       stream.controller.abort();
     }

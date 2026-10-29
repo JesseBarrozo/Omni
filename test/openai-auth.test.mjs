@@ -172,6 +172,34 @@ test("OpenAI OAuth refresh rotates credentials and avoids duplicate concurrent r
   }
 });
 
+test("OpenAI API key is isolated from OAuth and passed to the official client", () => {
+  const values = new Map();
+  const dataDir = mkdtempSync(join(tmpdir(), "omni-openai-api-key-"));
+  const secretStore = {
+    get: (service, account) => values.get(`${service}/${account}`) ?? null,
+    set: (service, account, value) =>
+      values.set(`${service}/${account}`, value),
+    delete: (service, account) => values.delete(`${service}/${account}`),
+  };
+  const auth = new OpenAIAuth({ dataDir, secretStore });
+  const apiKey = "unit-api-key-value-without-prefix";
+  const clientFactory = (received) => ({ apiKey: received });
+  try {
+    auth.setApiKey(apiKey);
+    assert.equal(auth.hasApiKey(), true);
+    assert.equal(auth.getApiKey(), apiKey);
+    assert.equal(auth.hasCredentials(), false);
+    const chat = new OpenAIChat({ apiKey: auth.getApiKey(), clientFactory });
+    assert.equal(chat.client.apiKey, apiKey);
+    assert.throws(() => auth.setApiKey("two\nlines"), /une seule ligne/);
+    assert.throws(() => auth.setApiKey(""), /une seule ligne/);
+    assert.equal(auth.deleteApiKey(), true);
+    assert.equal(auth.getApiKey(), null);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("OpenAI reauthorization reuses the registered client and stable host identifier", async () => {
   const flow = await createFlow();
   try {

@@ -230,4 +230,13 @@ Commandes/résultats de cette investigation : `agy --help` (CLI présent), `agy 
 - [x] `OpenAIAuth` utilise le nouveau store et garde exactement son service/compte historique; tests PKCE, refresh, réauthentification et suppression de l'ancien ID token passent avec ce contrat.
 - [x] Test réel du trousseau système : `OMNI_LIVE_KEYRING_TESTS=1 node --test test/secret-store.test.mjs` — 3/3 réussis; secret aléatoire ajouté, relu et supprimé, puis absence confirmée. Aucun secret affiché.
 - [x] `npm test` : 75 tests découverts, 57 réussis, 0 échec, 18 intégrations live ignorées; `npm run lint`, `npm run format:check`, `npm run check`, `npm run build` (162,0 kB), `npm audit --omit=dev` (0 vulnérabilité) et `git diff --check` réussis.
-- [ ] Le trousseau a été validé sur l'OS courant seulement; macOS, Windows et Linux Secret Service doivent être exercés sur leurs runners respectifs. Les clés API OpenAI continuent de venir de l'environnement et ne sont pas enregistrées par Omni.
+- [ ] Le trousseau a été validé sur l'OS courant seulement; macOS, Windows et Linux Secret Service doivent être exercés sur leurs runners respectifs.
+
+## Clé API OpenAI dans le trousseau
+
+- [x] `omni auth key set openai --stdin` lit une seule ligne bornée à 16 KiB, ne prend pas de clé en argument et n'affiche jamais sa valeur. La clé est stockée sous l'identité `Omni OpenAI API Key`, séparée des credentials OAuth.
+- [x] Sélection vérifiée dans le code: OAuth ChatGPT, puis `OPENAI_API_KEY`, puis clé du trousseau. `auth status --json` ne rapporte que l'état et la source; la suppression interactive exige confirmation et le mode non interactif exige `--yes`.
+- [x] Tests locaux: gestion injectée de la clé, passage au client OpenAI officiel, absence de fuite dans le statut CLI et refus des entrées malformées/arguments. Ces tests n'envoient aucune requête réseau.
+- [x] `OMNI_LIVE_KEYRING_TESTS=1 node --test test/secret-store.test.mjs` : 3/3 tests réussis; écriture, lecture et suppression d'un secret temporaire avec un compte isolé du compte API par défaut.
+- [ ] Aucun test d'appel modèle/catalogue ou d'authentification OpenAI API-key n'a été effectué dans cette phase. Le comportement réseau avec une clé stockée reste à valider avec un compte de test dédié.
+- [ ] Les vérifications présentes ne prouvent pas encore la sélection runtime par un appel API réel; la clé API de l'utilisateur n'a pas été lue, remplacée ni supprimée pendant les tests.

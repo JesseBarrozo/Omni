@@ -32,12 +32,46 @@ import { AutoRouter, ModelRegistry, redactSecrets } from "../src/core.mjs";
 const dataDir = process.env.OMNI_DATA_DIR || join(homedir(), ".omni");
 const store = new ChatStore(join(dataDir, "omni.sqlite"));
 const openAIAuth = () => new OpenAIAuth({ dataDir });
+const redactError = (value) => {
+  const safe = redactSecrets(value);
+  try {
+    const key = openAIAuth().getApiKey();
+    if (key && typeof safe === "string")
+      return safe.replaceAll(key, "[REDACTED]");
+  } catch {}
+  return safe;
+};
 const createOpenAIChat = () => {
   const auth = openAIAuth();
-  return auth.hasCredentials()
-    ? new OpenAIChat({ oauth: auth })
-    : new OpenAIChat();
+  if (auth.hasCredentials()) return new OpenAIChat({ oauth: auth });
+  if (process.env.OPENAI_API_KEY) return new OpenAIChat();
+  const apiKey = auth.getApiKey();
+  return new OpenAIChat({ apiKey: apiKey ?? undefined });
 };
+async function readApiKeyFromStdin() {
+  if (stdin.isTTY)
+    throw new Error(
+      "stdin est un terminal visible; redirigez une source sécurisée non interactive.",
+    );
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of stdin) {
+    size += chunk.length;
+    if (size > 16384)
+      throw new Error("Entrée trop volumineuse (limite 16 KiB).");
+    chunks.push(chunk);
+  }
+  let value = Buffer.concat(chunks).toString("utf8");
+  if (!Buffer.from(value, "utf8").equals(Buffer.concat(chunks)))
+    throw new Error("L’entrée doit être du texte UTF-8 valide.");
+  if (value.endsWith("\r\n")) value = value.slice(0, -2);
+  else if (value.endsWith("\n")) value = value.slice(0, -1);
+  if (!value.trim() || /[\r\n\0-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value))
+    throw new Error(
+      "Fournissez une clé API non vide sur une seule ligne via stdin.",
+    );
+  return value;
+}
 const print = (value) =>
   stdout.write(
     `${typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n`,
@@ -57,7 +91,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin\n  auth key remove openai [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project) {
@@ -165,7 +199,7 @@ async function autoRoute(prompt, project) {
         providerId: "codex",
         authenticated: true,
         available: false,
-        error: redactSecrets(error.message),
+        error: redactError(error.message),
       });
     }
   } else checkedProviders.push({ providerId: "codex", authenticated: false });
@@ -195,12 +229,16 @@ async function autoRoute(prompt, project) {
         providerId: "claude",
         authenticated: true,
         available: false,
-        error: redactSecrets(error.message),
+        error: redactError(error.message),
       });
     }
   } else checkedProviders.push({ providerId: "claude", authenticated: false });
 
-  if (process.env.OPENAI_API_KEY || openAIAuth().hasCredentials()) {
+  if (
+    process.env.OPENAI_API_KEY ||
+    openAIAuth().hasCredentials() ||
+    openAIAuth().hasApiKey()
+  ) {
     try {
       const models = await createOpenAIChat().listModels();
       if (models.length)
@@ -221,7 +259,7 @@ async function autoRoute(prompt, project) {
         providerId: "openai",
         authenticated: true,
         available: false,
-        error: redactSecrets(error.message),
+        error: redactError(error.message),
       });
     }
   } else checkedProviders.push({ providerId: "openai", authenticated: false });
@@ -381,11 +419,10 @@ async function refreshProvider(providerId) {
     const auth = openAIAuth();
     const oauthConnected = auth.hasCredentials();
     name = oauthConnected ? "OpenAI ChatGPT OAuth" : "OpenAI API key";
-    authenticated = oauthConnected || Boolean(process.env.OPENAI_API_KEY);
-    if (authenticated)
-      provider = oauthConnected
-        ? new OpenAIChat({ oauth: auth })
-        : new OpenAIChat();
+    const storedApiKey = auth.hasApiKey();
+    authenticated =
+      oauthConnected || Boolean(process.env.OPENAI_API_KEY) || storedApiKey;
+    if (authenticated) provider = createOpenAIChat();
   } else if (providerId === "antigravity") {
     name = "Google Antigravity CLI OAuth";
     authenticated = antigravityCliStatus().cliInstalled;
@@ -426,7 +463,7 @@ async function refreshProvider(providerId) {
       name,
       authStatus: "unavailable",
       modelCount: 0,
-      error: redactSecrets(error.message),
+      error: redactError(error.message),
     };
   }
 }
@@ -534,7 +571,7 @@ async function prepareAutoCandidate(decision, conversation) {
       } catch (error) {
         failures.push({
           candidate,
-          error: redactSecrets(error.message),
+          error: redactError(error.message),
         });
         continue;
       }
@@ -546,7 +583,7 @@ async function prepareAutoCandidate(decision, conversation) {
     } catch (error) {
       failures.push({
         candidate,
-        error: redactSecrets(error.message),
+        error: redactError(error.message),
       });
       try {
         await run.adapter.dispose();
@@ -922,12 +959,17 @@ try {
       claudeAuthStatus(),
       {
         provider: "openai",
-        authenticated: oauthConnected || Boolean(process.env.OPENAI_API_KEY),
+        authenticated:
+          oauthConnected ||
+          Boolean(process.env.OPENAI_API_KEY) ||
+          openAIAuth().hasApiKey(),
         source: oauthConnected
           ? "chatgpt-oauth"
           : process.env.OPENAI_API_KEY
             ? "api-key"
-            : null,
+            : openAIAuth().hasApiKey()
+              ? "keyring-api-key"
+              : null,
       },
       antigravityCliStatus(),
     ];
@@ -947,6 +989,51 @@ try {
     print(
       "Connexion ChatGPT OpenAI vérifiée et enregistrée dans le trousseau système.",
     );
+  } else if (
+    command === "auth" &&
+    args[0] === "key" &&
+    args[1] === "set" &&
+    args[2] === "openai"
+  ) {
+    if (!hasFlag("--stdin"))
+      throw new Error("Fournissez la clé uniquement avec --stdin.");
+    openAIAuth().setApiKey(await readApiKeyFromStdin());
+    print("Clé API OpenAI enregistrée dans le trousseau système.");
+  } else if (
+    command === "auth" &&
+    args[0] === "key" &&
+    args[1] === "remove" &&
+    args[2] === "openai"
+  ) {
+    if (!hasFlag("--yes")) {
+      if (!stdin.isTTY || !stdout.isTTY)
+        throw new Error(
+          "Confirmez la suppression avec --yes en mode non interactif.",
+        );
+      const rl = createInterface({ input: stdin, output: stdout });
+      const answer = await rl.question(
+        "Supprimer la clé API OpenAI du trousseau ? [y/N] ",
+      );
+      rl.close();
+      if (!/^y(es)?$/i.test(answer.trim())) {
+        print("Suppression annulée.");
+        process.exitCode = 1;
+      } else {
+        const removed = openAIAuth().deleteApiKey();
+        print(
+          removed
+            ? "Clé API OpenAI supprimée."
+            : "Aucune clé API OpenAI enregistrée.",
+        );
+      }
+    } else {
+      const removed = openAIAuth().deleteApiKey();
+      print(
+        removed
+          ? "Clé API OpenAI supprimée."
+          : "Aucune clé API OpenAI enregistrée.",
+      );
+    }
   } else if (command === "auth" && args[0] === "login" && args[1] === "codex") {
     const result = startCodexLogin();
     if (result.error)
@@ -1355,7 +1442,7 @@ try {
           harnessId: executionCandidate.harnessId,
           outcome: "failed",
           latencyMs: Date.now() - routingStartedAt,
-          error: redactSecrets(error.message),
+          error: redactError(error.message),
           preflightFailures: error.preflightFailures ?? [],
           automaticallyRetried: false,
         });
@@ -1369,7 +1456,7 @@ try {
     );
   } else help();
 } catch (error) {
-  let safe = redactSecrets(error.message);
+  let safe = redactError(error.message);
   if (process.env.OPENAI_API_KEY)
     safe = safe.replaceAll(process.env.OPENAI_API_KEY, "[REDACTED]");
   safe = safe
