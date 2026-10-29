@@ -627,7 +627,7 @@ async function prepareAutoCandidate(decision, conversation) {
         await run.adapter.dispose();
       } catch {}
       run.rl.close();
-      if (requiredMcpServers.length) throw error;
+      if (error.code === "OMNI_REQUIRED_MCP_DENIED") throw error;
     }
   }
   const error = new Error(

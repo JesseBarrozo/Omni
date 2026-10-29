@@ -282,10 +282,13 @@ export class ClaudeCodeHarness {
       const missing = requiredMcpServers.filter(
         (name) => !Object.hasOwn(cached, name),
       );
-      if (missing.length)
-        throw new Error(
+      if (missing.length) {
+        const error = new Error(
           `Préflight MCP Claude refusé ou indisponible pour: ${missing.join(", ")}`,
         );
+        error.code = "OMNI_REQUIRED_MCP_DENIED";
+        throw error;
+      }
       return cached;
     }
 
@@ -335,10 +338,13 @@ export class ClaudeCodeHarness {
     const missing = requiredMcpServers.filter(
       (name) => !Object.hasOwn(mcpServers, name),
     );
-    if (missing.length)
-      throw new Error(
+    if (missing.length) {
+      const error = new Error(
         `Préflight MCP Claude refusé ou indisponible pour: ${missing.join(", ")}`,
       );
+      error.code = "OMNI_REQUIRED_MCP_DENIED";
+      throw error;
+    }
     this.preparedMcpServers.set(cacheKey, mcpServers);
     return mcpServers;
   }

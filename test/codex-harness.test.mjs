@@ -43,6 +43,52 @@ test("CodexHarness satisfies the adapter contract and reports real capabilities"
   await harness.dispose();
 });
 
+test("required MCP denial is typed and stops Codex before app-server launch", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-codex-mcp-denied-"));
+  const store = new ChatStore(join(dir, "omni.sqlite"));
+  let harness;
+  try {
+    const project = store.createProject("MCP denial", dir);
+    const conversation = store.createConversation(
+      project.id,
+      "denied",
+      "codex",
+    );
+    const registry = new McpRegistry({ store, env: {} });
+    registry.addServer({
+      name: "required-mcp",
+      command: process.execPath,
+      args: ["-e", "process.exit(9)"],
+      cwd: dir,
+      envKeys: [],
+    });
+    harness = new CodexHarness({
+      store,
+      cwd: dir,
+      executable: join(dir, "codex-must-not-start"),
+      mcpRegistry: registry,
+      requestPermission: async () => false,
+    });
+    await assert.rejects(
+      harness.initialize({
+        conversationId: conversation.id,
+        requiredMcpServers: ["required-mcp"],
+      }),
+      (error) => error.code === "OMNI_REQUIRED_MCP_DENIED",
+    );
+    assert.equal(Boolean(harness.server), false);
+    assert.ok(
+      store
+        .listEvents(conversation.id)
+        .some((event) => event.type === "permission.denied"),
+    );
+  } finally {
+    await harness?.dispose();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("Codex MCP approval accepts one call while event storage omits its parameters", async () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-codex-mcp-protocol-"));
   const dbPath = join(dir, "omni.sqlite");

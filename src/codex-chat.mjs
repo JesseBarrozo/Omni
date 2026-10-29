@@ -459,10 +459,13 @@ export class CodexHarness {
       const missingRequired = requiredMcpServers.filter(
         (name) => !configuredNames.has(name),
       );
-      if (missingRequired.length)
-        throw safeError(
+      if (missingRequired.length) {
+        const error = safeError(
           `Préflight MCP Codex refusé ou indisponible pour: ${missingRequired.join(", ")}`,
         );
+        error.code = "OMNI_REQUIRED_MCP_DENIED";
+        throw error;
+      }
       this.mcpServers = configured;
       this.mcpConfigured = true;
     }
