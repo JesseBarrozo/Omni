@@ -18,8 +18,8 @@
 - Le premier harness Codex app-server est intégré via l’interface JSON-RPC officielle : sandbox initiale lecture seule, streaming, interruption, checkpoint/reprise et approbations interactives. Le test réel d’écriture approuvée puis reprise après redémarrage et le parcours CLI interactif ont réussi. Les refus explicites CLI, les demandes d’approbation de commande/profil et l’interruption réelle pendant un tour restent à vérifier; voir `VERIFICATION.md`.
 - Harness Swap est disponible par CLI entre Codex et Claude : checkpoint avec résumé portable/historique/Git, garde de frontière sûre et création de session par le SDK réel. Le test Codex → Claude → Codex a réussi sur un dépôt Git temporaire. `omni run --auto` route de façon déterministe uniquement parmi les modèles des catalogues OAuth réels Codex/Claude et conserve décisions/résultats; les limitations des métadonnées de prix et de confidentialité sont documentées. La CLI Orca permet de lancer Omni comme commande ordinaire dans un terminal d’espace de travail existant, mais ne reconnaît pas Omni comme agent TUI et n’expose aucun contrat public d’enregistrement d’un agent externe dans la version vérifiée (`ORCA_COMPATIBILITY.md`). Antigravity dispose désormais d'un provider de chat expérimental reposant sur le CLI officiel et un workspace scratch isolé; le parcours Omni réel reste à valider et cette intégration n'est ni un harness ni disponible dans Auto/Swap. Le gestionnaire général de secrets n'est pas validé.
 - `SecretStore` encapsule le trousseau système. OpenAI OAuth conserve son entrée historique; les clés API ont des profils nommés, un profil actif persistant et un profil `default` rétrocompatible. Leur stockage/gestion locale est implémenté; aucun appel OpenAI par clé API n’a été lancé lors de ces phases. Les profils multi-comptes génériques entre fournisseurs restent à concevoir. Les tokens des CLIs tiers ne sont pas importés.
-- MCP local stdio : registre persistant, découverte via SDK TypeScript officiel, exécution manuelle et approbation interactive ponctuelle du démarrage serveur et des appels outils; tests réels du protocole stdio avec serveur fixture SDK et refus non interactif. La passerelle n’est pas connectée aux boucles de conversation modèle/harness, à Auto ou à Swap; transports MCP distants non implémentés.
-- Harness Claude MCP : les serveurs du registre local sont transmis au SDK Agent officiel après accord de lancement; chaque appel outil traverse le callback de permission et les événements n’enregistrent ni arguments ni résultats. Le tour Claude OAuth réel a démarré un serveur MCP local et écrit un fichier temporaire exactement une fois. L’API SDK ne permet pas un `cwd` distinct par serveur; ces configurations sont refusées. Intégration Codex/Auto/Swap encore absente.
+- MCP local stdio : registre persistant, découverte via SDK TypeScript officiel, exécution manuelle et approbation interactive ponctuelle du démarrage serveur et des appels outils; tests réels du protocole stdio avec serveur fixture SDK et refus non interactif. La passerelle est connectée aux harnesses réels Claude Code et Codex; `omni run --auto --require-mcp SERVER[,SERVER]` filtre les candidats déterministement et arrête le run si le démarrage requis est refusé. Harness Swap avec MCP et transports MCP distants non implémentés/validés.
+- Harness Claude MCP : les serveurs du registre local sont transmis au SDK Agent officiel après accord de lancement; chaque appel outil traverse le callback de permission et les événements n’enregistrent ni arguments ni résultats. Le tour Claude OAuth réel a démarré un serveur MCP local et écrit un fichier temporaire exactement une fois. L’API SDK ne permet pas un `cwd` distinct par serveur; ces configurations sont refusées. Intégration Codex et filtrage Auto par serveurs requis disponibles; le parcours Swap combinant MCP doit encore être validé en live.
 
 ---
 
@@ -199,14 +199,14 @@ Le mode Auto sélectionne une combinaison autorisée selon :
 
 Profils initiaux :
 
-| Profil | Priorité |
-|---|---|
-| Efficiency | coût et rapidité |
-| Balance | compromis qualité/coût/latence |
-| Intelligence | qualité et capacité maximale |
-| Local First | modèles locaux avant le cloud |
-| Privacy | exclusion de certains fournisseurs |
-| Custom | règles avancées de l’utilisateur |
+| Profil       | Priorité                           |
+| ------------ | ---------------------------------- |
+| Efficiency   | coût et rapidité                   |
+| Balance      | compromis qualité/coût/latence     |
+| Intelligence | qualité et capacité maximale       |
+| Local First  | modèles locaux avant le cloud      |
+| Privacy      | exclusion de certains fournisseurs |
+| Custom       | règles avancées de l’utilisateur   |
 
 Le système affiche une explication courte : modèle choisi, harness choisi, contraintes appliquées et éventuel fallback prévu.
 
@@ -667,17 +667,17 @@ Le MVP est accepté si :
 
 ## 18. Risques et réponses
 
-| Risque | Réponse |
-|---|---|
-| SDK non réellement embarquable | isoler l’adaptateur et documenter le mode d’exécution |
-| incompatibilité de protocole | utiliser un adaptateur officiel ou déclarer la combinaison indisponible |
-| quotas d’abonnement non vérifiables | distinguer mesure, estimation et inconnue |
-| perte de contexte au swap | journal canonique, résumé et checkpoints |
-| répétition d’actions | événements idempotents et frontières sûres |
-| dépendance à Orca | contrat CLI/protocole indépendant |
-| évolution des APIs | versions d’adaptateurs et tests de compatibilité |
-| fuite de secrets | trousseau système, logs filtrés et permissions minimales |
-| complexité excessive du routeur | règles déterministes d’abord, apprentissage ensuite |
+| Risque                              | Réponse                                                                 |
+| ----------------------------------- | ----------------------------------------------------------------------- |
+| SDK non réellement embarquable      | isoler l’adaptateur et documenter le mode d’exécution                   |
+| incompatibilité de protocole        | utiliser un adaptateur officiel ou déclarer la combinaison indisponible |
+| quotas d’abonnement non vérifiables | distinguer mesure, estimation et inconnue                               |
+| perte de contexte au swap           | journal canonique, résumé et checkpoints                                |
+| répétition d’actions                | événements idempotents et frontières sûres                              |
+| dépendance à Orca                   | contrat CLI/protocole indépendant                                       |
+| évolution des APIs                  | versions d’adaptateurs et tests de compatibilité                        |
+| fuite de secrets                    | trousseau système, logs filtrés et permissions minimales                |
+| complexité excessive du routeur     | règles déterministes d’abord, apprentissage ensuite                     |
 
 ---
 

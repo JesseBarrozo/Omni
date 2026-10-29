@@ -26,6 +26,7 @@ test("Claude harness satisfies the adapter contract and denies tools by default"
   assert.equal(assertHarnessAdapter(harness), harness);
   assert.deepEqual(await harness.capabilities(), {
     tools: true,
+    mcpTransports: ["stdio"],
     streaming: true,
     checkpoint: true,
     permissions: true,

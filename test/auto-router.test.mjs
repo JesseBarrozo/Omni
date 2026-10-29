@@ -19,13 +19,13 @@ function registryFixture() {
   registry.registerHarness({
     id: "codex-harness",
     providerIds: ["codex"],
-    capabilities: { tools: true },
+    capabilities: { tools: true, mcpServers: ["local-fs"] },
     privacyApproved: false,
   });
   registry.registerHarness({
     id: "claude-harness",
     providerIds: ["claude"],
-    capabilities: { tools: true },
+    capabilities: { tools: true, mcpServers: ["local-fs"] },
     privacyApproved: true,
   });
   registry.registerHarness({
@@ -92,6 +92,46 @@ test("AutoRouter records the next real eligible candidate as fallback", () => {
         candidate.modelId === decision.fallback.modelId &&
         candidate.harnessId === decision.fallback.harnessId,
     ),
+  );
+});
+
+test("AutoRouter requires a registered MCP server and filters harness compatibility", () => {
+  const router = new AutoRouter(registryFixture(), {
+    availableMcpServers: ["local-fs"],
+  });
+  const decision = router.select({
+    prompt: "Use the registered filesystem tool",
+    requiredMcpServers: ["local-fs"],
+  });
+  assert.equal(decision.criteria.task.needsTools, true);
+  assert.deepEqual(decision.criteria.task.requiredMcpServers, ["local-fs"]);
+  assert.ok(
+    ["codex-harness", "claude-harness"].includes(decision.selected.harnessId),
+  );
+  assert.ok(decision.selected.harnessId.endsWith("harness"));
+  assert.ok(
+    decision.evaluatedCandidates.some((candidate) =>
+      candidate.exclusions.includes("required-mcp-unsupported"),
+    ),
+  );
+  assert.throws(
+    () =>
+      new AutoRouter(registryFixture()).select({
+        prompt: "Use filesystem",
+        requiredMcpServers: ["local-fs"],
+      }),
+    /local-fs/,
+  );
+});
+
+test("AutoRouter rejects malformed required MCP names", () => {
+  assert.throws(
+    () =>
+      new AutoRouter(registryFixture()).select({
+        prompt: "Use MCP",
+        requiredMcpServers: ["../secret"],
+      }),
+    /Nom de serveur MCP requis invalide/,
   );
 });
 

@@ -406,7 +406,7 @@ export class CodexHarness {
     assertHarnessAdapter(this);
   }
 
-  async initialize({ conversationId } = {}) {
+  async initialize({ conversationId, requiredMcpServers = [] } = {}) {
     if (this.server) return;
     if (!this.mcpConfigured) {
       const configured = [];
@@ -450,6 +450,14 @@ export class CodexHarness {
         );
         if (allowed) configured.push(config);
       }
+      const configuredNames = new Set(configured.map(({ name }) => name));
+      const missingRequired = requiredMcpServers.filter(
+        (name) => !configuredNames.has(name),
+      );
+      if (missingRequired.length)
+        throw safeError(
+          `Préflight MCP Codex refusé ou indisponible pour: ${missingRequired.join(", ")}`,
+        );
       this.mcpServers = configured;
       this.mcpConfigured = true;
     }
@@ -465,11 +473,16 @@ export class CodexHarness {
   async capabilities() {
     return {
       tools: true,
+      mcpTransports: ["stdio"],
       streaming: true,
       checkpoint: true,
       permissions: true,
       resume: true,
     };
+  }
+
+  activeMcpServers() {
+    return this.mcpServers.map(({ name }) => name);
   }
 
   async createSession({

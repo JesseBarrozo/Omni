@@ -243,22 +243,110 @@ export class ClaudeCodeHarness {
     this.sdk = sdk;
     this.queries = new Map();
     this.sessions = new Map();
+    this.preparedMcpServers = new Map();
     this.id = "claude-code";
     this.name = "Claude Code Agent SDK";
     assertHarnessAdapter(this);
   }
 
-  async initialize() {
+  async initialize(options = {}) {
     this.sdk ??= await loadSdk();
+    if (options.conversationId) await this.prepareMcpServers(options);
   }
   async capabilities() {
     return {
       tools: true,
+      mcpTransports: ["stdio"],
       streaming: true,
       checkpoint: true,
       permissions: true,
       resume: true,
     };
+  }
+
+  async prepareMcpServers({
+    conversationId,
+    cwd = this.cwd,
+    sessionId = null,
+    signal,
+    requiredMcpServers = [],
+  } = {}) {
+    const registeredMcpServers = this.mcpRegistry?.listServers() ?? [];
+    if (registeredMcpServers.length && !conversationId)
+      throw new Error(
+        "conversationId Omni requis pour approuver les serveurs MCP Claude",
+      );
+    const cacheKey = `${conversationId ?? ""}\0${cwd}`;
+    const cached = this.preparedMcpServers.get(cacheKey);
+    if (cached) {
+      const missing = requiredMcpServers.filter(
+        (name) => !Object.hasOwn(cached, name),
+      );
+      if (missing.length)
+        throw new Error(
+          `Préflight MCP Claude refusé ou indisponible pour: ${missing.join(", ")}`,
+        );
+      return cached;
+    }
+
+    const mcpServers = {};
+    for (const server of registeredMcpServers) {
+      const request = {
+        toolName: "mcp-server-start",
+        server: server.name,
+        action: "start",
+        conversationId,
+        ...(sessionId ? { sessionId } : {}),
+      };
+      this.store?.appendEvent(conversationId, "permission.requested", request);
+      let allowed = false;
+      if (!signal?.aborted) {
+        try {
+          allowed = await this.requestPermission(request, signal);
+        } catch {}
+      }
+      this.store?.appendEvent(
+        conversationId,
+        allowed ? "permission.granted" : "permission.denied",
+        {
+          toolName: request.toolName,
+          server: server.name,
+          action: "start",
+          ...(sessionId ? { sessionId } : {}),
+        },
+      );
+      if (!allowed) continue;
+      try {
+        mcpServers[server.name] = this.mcpRegistry.claudeServerConfig(
+          server.name,
+          { cwd },
+        );
+      } catch (error) {
+        this.store?.appendEvent(conversationId, "mcp.server.rejected", {
+          harnessId: this.id,
+          server: server.name,
+          reason: redactSecrets(error.message),
+        });
+        throw safeError(
+          `Configuration du serveur MCP Claude refusée (${server.name}): ${error.message}`,
+        );
+      }
+    }
+    const missing = requiredMcpServers.filter(
+      (name) => !Object.hasOwn(mcpServers, name),
+    );
+    if (missing.length)
+      throw new Error(
+        `Préflight MCP Claude refusé ou indisponible pour: ${missing.join(", ")}`,
+      );
+    this.preparedMcpServers.set(cacheKey, mcpServers);
+    return mcpServers;
+  }
+
+  activeMcpServers({ conversationId, cwd = this.cwd } = {}) {
+    return Object.keys(
+      this.preparedMcpServers.get(`${conversationId ?? ""}\0${cwd}`) ?? {},
+    );
   }
   async createSession(input = {}) {
     const session = {
@@ -357,43 +445,14 @@ export class ClaudeCodeHarness {
       registeredMcpServers.find((server) =>
         toolName.startsWith(`mcp__${server.name}__`),
       )?.name;
-    const mcpServers = {};
+    let mcpServers;
     try {
-      for (const server of registeredMcpServers) {
-        const request = {
-          toolName: "mcp-server-start",
-          server: server.name,
-          action: "start",
-          conversationId,
-          sessionId: session.id,
-        };
-        this.store?.appendEvent(
-          conversationId,
-          "permission.requested",
-          request,
-        );
-        let allowed = false;
-        if (!signal?.aborted) {
-          try {
-            allowed = await this.requestPermission(request, signal);
-          } catch {}
-        }
-        this.store?.appendEvent(
-          conversationId,
-          allowed ? "permission.granted" : "permission.denied",
-          {
-            toolName: request.toolName,
-            server: server.name,
-            action: "start",
-            sessionId: session.id,
-          },
-        );
-        if (allowed)
-          mcpServers[server.name] = this.mcpRegistry.claudeServerConfig(
-            server.name,
-            { cwd: session.cwd },
-          );
-      }
+      mcpServers = await this.prepareMcpServers({
+        conversationId,
+        cwd: session.cwd,
+        sessionId: session.id,
+        signal,
+      });
       const canUseTool = async (
         toolName,
         input,
@@ -589,5 +648,6 @@ export class ClaudeCodeHarness {
       await query.interrupt().catch(() => {});
     this.queries.clear();
     this.sessions.clear();
+    this.preparedMcpServers.clear();
   }
 }

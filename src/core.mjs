@@ -333,6 +333,7 @@ export class AutoRouter {
       maxInputPerMillion = null,
       privacyMode = false,
       previousResults = {},
+      availableMcpServers = [],
     } = {},
   ) {
     this.registry = registry;
@@ -342,13 +343,24 @@ export class AutoRouter {
     this.maxInputPerMillion = maxInputPerMillion;
     this.privacyMode = privacyMode;
     this.previousResults = previousResults;
+    this.availableMcpServers = new Set(availableMcpServers);
   }
   analyze(input) {
     const text =
       `${input.prompt ?? ""} ${input.projectLanguage ?? ""}`.toLowerCase();
-    const needsTools =
+    const requiredMcpServers = [...new Set(input.requiredMcpServers ?? [])];
+    if (
+      requiredMcpServers.some(
+        (name) =>
+          typeof name !== "string" ||
+          !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name),
+      )
+    )
+      throw new TypeError("Nom de serveur MCP requis invalide");
+    const inferredTools =
       input.needsTools ??
       /\b(run|execute|terminal|file|debug|test|implement|write)\b/.test(text);
+    const needsTools = inferredTools || requiredMcpServers.length > 0;
     const complexity =
       input.complexity ??
       (text.length > 500 || /architecture|refactor|migration/.test(text)
@@ -357,6 +369,7 @@ export class AutoRouter {
     return {
       type: needsTools ? "agentic" : "chat",
       needsTools,
+      requiredMcpServers,
       complexity,
       privacy: input.privacy ?? this.privacyMode,
     };
@@ -384,6 +397,18 @@ export class AutoRouter {
         if (harness.available === false) exclusions.push("harness-unavailable");
         if (task.needsTools && harness.capabilities?.tools !== true)
           exclusions.push("required-tools-unsupported");
+        if (
+          task.requiredMcpServers.some(
+            (name) => !this.availableMcpServers.has(name),
+          )
+        )
+          exclusions.push("required-mcp-server-unavailable");
+        if (
+          task.requiredMcpServers.some(
+            (name) => !harness.capabilities?.mcpServers?.includes(name),
+          )
+        )
+          exclusions.push("required-mcp-unsupported");
         if (task.privacy && harness.privacyApproved !== true)
           exclusions.push("privacy-not-approved");
         const price = model.pricing?.inputPerMillion;
@@ -471,12 +496,20 @@ export class AutoRouter {
   select(input) {
     const { task, evaluated, eligible } = this.evaluate(input);
     const candidates = eligible;
-    if (!candidates.length)
+    if (!candidates.length) {
+      if (task.requiredMcpServers.length)
+        throw new Error(
+          `No compatible enabled model/harness candidate supports required MCP server(s): ${task.requiredMcpServers.join(", ")}`,
+        );
       throw new Error("No compatible enabled model/harness candidate");
+    }
     const selected = candidates[0];
     const ranking = [
       "preferredProviders (configured order)",
       "least-privilege capability fit (tools only when required)",
+      ...(task.requiredMcpServers.length
+        ? ["registered MCP stdio servers required by the task"]
+        : []),
       "recorded success rate (only when available)",
       ...(this.profile === "intelligence"
         ? ["explicit model quality (only when available)"]
@@ -523,7 +556,7 @@ export class AutoRouter {
         providerId: c.model.providerId,
         harnessId: c.harness.id,
       })),
-      explanation: `Mode Auto · ${selected.harness.name ?? selected.harness.id} · ${selected.model.name ?? selected.model.id} · tâche ${task.type}, profil ${this.profile}${task.needsTools ? ", outils requis" : ""}`,
+      explanation: `Mode Auto · ${selected.harness.name ?? selected.harness.id} · ${selected.model.name ?? selected.model.id} · tâche ${task.type}, profil ${this.profile}${task.needsTools ? ", outils requis" : ""}${task.requiredMcpServers.length ? `, MCP requis: ${task.requiredMcpServers.join(", ")}` : ""}`,
     };
   }
 }

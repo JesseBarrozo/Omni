@@ -38,6 +38,32 @@ test("CLI refuses to present Antigravity chat as an Omni harness run", () => {
   }
 });
 
+test("CLI only accepts required MCP capabilities with Auto routing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-required-mcp-cli-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [
+        cli,
+        "run",
+        "--project",
+        dir,
+        "--model",
+        "codex",
+        "--require-mcp",
+        "local-fs",
+        "Inspect files",
+      ],
+      { env, encoding: "utf8" },
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--require-mcp nécessite/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("CLI rejects malformed API-key stdin without echoing it", () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-api-key-cli-"));
   const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };

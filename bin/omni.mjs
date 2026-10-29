@@ -93,11 +93,25 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
-async function autoRoute(prompt, project) {
+async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
   const registry = new ModelRegistry();
+  const mcp = mcpRegistry();
+  const availableMcpServers = mcp.listServers().map(({ name }) => name);
+  const cwd = project.rootPath ?? process.cwd();
+  const compatibleMcpServers = (providerId) =>
+    requiredMcpServers.filter((name) => {
+      if (!availableMcpServers.includes(name)) return false;
+      try {
+        if (providerId === "codex") mcp.codexServerConfig(name, { cwd });
+        else mcp.claudeServerConfig(name, { cwd });
+        return true;
+      } catch {
+        return false;
+      }
+    });
   const checkedProviders = [];
   const disabledProviders = new Set(
     (process.env.OMNI_DISABLED_PROVIDERS ?? "")
@@ -156,7 +170,11 @@ async function autoRoute(prompt, project) {
         enabled: true,
         available: true,
         providerIds: [providerId],
-        capabilities: { tools: harness.tools },
+        capabilities: {
+          tools: harness.tools,
+          mcpServers:
+            harness.tools === true ? compatibleMcpServers(providerId) : [],
+        },
         privacyApproved: false,
         ...(storedHarnesses.has(harness.id)
           ? { enabled: storedHarnesses.get(harness.id).enabled }
@@ -300,8 +318,9 @@ async function autoRoute(prompt, project) {
     maxInputPerMillion,
     privacyMode,
     previousResults,
+    availableMcpServers,
   });
-  const decision = router.select({ prompt });
+  const decision = router.select({ prompt, requiredMcpServers });
   return { ...decision, checkedProviders };
 }
 
@@ -555,6 +574,7 @@ async function refreshHarness(harnessId) {
 
 async function prepareAutoCandidate(decision, conversation) {
   const failures = [];
+  const requiredMcpServers = decision.criteria.task.requiredMcpServers ?? [];
   const checkedHarnesses = new Set();
   for (const candidate of decision.candidates) {
     if (checkedHarnesses.has(candidate.harnessId)) continue;
@@ -582,7 +602,21 @@ async function prepareAutoCandidate(decision, conversation) {
     }
     const run = createHarnessRun(candidate.harnessId, conversation, modelId);
     try {
-      await run.adapter.initialize();
+      await run.adapter.initialize({
+        conversationId: conversation.id,
+        requiredMcpServers,
+      });
+      const activeMcpServers =
+        run.adapter.activeMcpServers?.({
+          conversationId: conversation.id,
+        }) ?? [];
+      const missingMcpServers = requiredMcpServers.filter(
+        (name) => !activeMcpServers.includes(name),
+      );
+      if (missingMcpServers.length)
+        throw new Error(
+          `Préflight MCP incomplet: ${missingMcpServers.join(", ")}`,
+        );
       return { candidate, run, failures };
     } catch (error) {
       failures.push({
@@ -593,6 +627,7 @@ async function prepareAutoCandidate(decision, conversation) {
         await run.adapter.dispose();
       } catch {}
       run.rl.close();
+      if (requiredMcpServers.length) throw error;
     }
   }
   const error = new Error(
@@ -1522,6 +1557,18 @@ try {
     jsonRunOutput = hasFlag("--json");
     let harness = option("--harness");
     const autoMode = hasFlag("--auto");
+    const requiredMcpValue = option("--require-mcp");
+    const requiredMcpServers = requiredMcpValue
+      ? [...new Set(requiredMcpValue.split(",").map((name) => name.trim()))]
+      : [];
+    if (requiredMcpValue && !autoMode)
+      throw new Error("--require-mcp nécessite `omni run --auto`.");
+    if (
+      requiredMcpServers.some(
+        (name) => !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(name),
+      )
+    )
+      throw new Error("Nom de serveur MCP requis invalide.");
     if (harness && !["claude", "codex"].includes(harness))
       throw new Error(`Harness non pris en charge: ${harness}`);
     if (autoMode && (harness || option("--model")))
@@ -1548,6 +1595,7 @@ try {
       "--project",
       "--harness",
       "--conversation",
+      "--require-mcp",
     ]
       .map((name) => args.indexOf(name) + 1)
       .filter((index) => index > 0);
@@ -1567,7 +1615,7 @@ try {
       );
     let autoDecision = null;
     if (autoMode) {
-      autoDecision = await autoRoute(prompt, project);
+      autoDecision = await autoRoute(prompt, project, { requiredMcpServers });
       const selected = autoDecision.selected;
       harness =
         selected.harnessId === "claude-code"

@@ -16,6 +16,7 @@ import { ChatStore } from "../src/chat-store.mjs";
 import { CodexHarness, codexAuthStatus } from "../src/codex-chat.mjs";
 import { McpRegistry } from "../src/mcp-registry.mjs";
 import { assertHarnessAdapter } from "../src/adapters.mjs";
+import { AutoRouter, ModelRegistry } from "../src/core.mjs";
 
 const cli = fileURLToPath(new URL("../bin/omni.mjs", import.meta.url));
 const sdkServerPath = new URL(
@@ -32,6 +33,7 @@ test("CodexHarness satisfies the adapter contract and reports real capabilities"
   assert.equal(assertHarnessAdapter(harness), harness);
   assert.deepEqual(await harness.capabilities(), {
     tools: true,
+    mcpTransports: ["stdio"],
     streaming: true,
     checkpoint: true,
     permissions: true,
@@ -312,6 +314,29 @@ await server.connect(new StdioServerTransport());
         cwd: dir,
         envKeys: ["MCP_OUTPUT_FILE"],
       });
+      const modelRegistry = new ModelRegistry();
+      modelRegistry.registerProvider({ id: "codex", enabled: true });
+      modelRegistry.registerModel({
+        id: "codex-oauth-live",
+        providerId: "codex",
+        enabled: true,
+        autoEnabled: true,
+      });
+      modelRegistry.registerHarness({
+        id: "codex",
+        providerIds: ["codex"],
+        enabled: true,
+        available: true,
+        capabilities: { tools: true, mcpServers: ["live-codex-mcp"] },
+      });
+      const route = new AutoRouter(modelRegistry, {
+        availableMcpServers: registry.listServers().map(({ name }) => name),
+      }).select({
+        prompt: "Use the approved MCP tool",
+        requiredMcpServers: ["live-codex-mcp"],
+      });
+      assert.equal(route.selected.harnessId, "codex");
+      assert.equal(route.selected.modelId, "codex-oauth-live");
       const permissions = [];
       harness = new CodexHarness({
         store,
