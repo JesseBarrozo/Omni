@@ -202,6 +202,74 @@ function permissionPrompt(rl, provider) {
   };
 }
 
+function createHarnessRun(harnessId, conversation, modelId) {
+  const project = store.project(conversation.projectId);
+  const rl = createInterface({
+    input: stdin,
+    output: stdout,
+    terminal: Boolean(stdin.isTTY),
+  });
+  const requestPermission = permissionPrompt(rl, harnessId);
+  const adapter =
+    harnessId === "claude-code"
+      ? new ClaudeCodeHarness({
+          store,
+          cwd: project.rootPath ?? process.cwd(),
+          model: modelId?.startsWith("claude:")
+            ? modelId.slice("claude:".length)
+            : modelId === "claude"
+              ? undefined
+              : modelId,
+          requestPermission,
+        })
+      : harnessId === "codex"
+        ? new CodexHarness({
+            store,
+            executable: process.env.OMNI_CODEX_HARNESS_EXECUTABLE ?? "codex",
+            cwd: project.rootPath ?? process.cwd(),
+            model: modelId === "codex" ? undefined : modelId,
+            requestPermission,
+          })
+        : null;
+  if (!adapter) {
+    rl.close();
+    throw new Error(`Harness Auto non pris en charge: ${harnessId}`);
+  }
+  return { adapter, rl };
+}
+
+async function prepareAutoCandidate(decision, conversation) {
+  const failures = [];
+  const checkedHarnesses = new Set();
+  for (const candidate of decision.candidates) {
+    if (checkedHarnesses.has(candidate.harnessId)) continue;
+    checkedHarnesses.add(candidate.harnessId);
+    const modelId =
+      candidate.providerId === "claude"
+        ? `claude:${candidate.modelId}`
+        : candidate.modelId;
+    const run = createHarnessRun(candidate.harnessId, conversation, modelId);
+    try {
+      await run.adapter.initialize();
+      return { candidate, run, failures };
+    } catch (error) {
+      failures.push({
+        candidate,
+        error: redactSecrets(error.message),
+      });
+      try {
+        await run.adapter.dispose();
+      } catch {}
+      run.rl.close();
+    }
+  }
+  const error = new Error(
+    `Aucun candidat Auto n’a passé le préflight avant le démarrage du tour (${failures.map((failure) => failure.error).join("; ")})`,
+  );
+  error.preflightFailures = failures;
+  throw error;
+}
+
 async function swapHarness(conversationId, harnessId, requestedModel) {
   if (!conversationId || !["claude", "codex"].includes(harnessId))
     throw new Error(
@@ -325,50 +393,10 @@ async function chat(conversation, model, initialPrompt = null) {
   }
 }
 
-async function runClaudeHarness(conversation, prompt) {
-  const project = store.project(conversation.projectId);
-  const rl = createInterface({
-    input: stdin,
-    output: stdout,
-    terminal: Boolean(stdin.isTTY),
-  });
-  const adapter = new ClaudeCodeHarness({
-    store,
-    cwd: project.rootPath ?? process.cwd(),
-    model:
-      conversation.modelId === "claude"
-        ? undefined
-        : conversation.modelId.startsWith("claude:")
-          ? conversation.modelId.slice("claude:".length)
-          : conversation.modelId,
-    requestPermission: async ({ toolName, input }, permissionSignal) => {
-      if (!stdin.isTTY) {
-        stdout.write(
-          `Permission refusée (session non interactive): ${toolName}\n`,
-        );
-        return false;
-      }
-      return new Promise((resolve) => {
-        if (permissionSignal?.aborted) return resolve(false);
-        let settled = false;
-        const finish = (allowed) => {
-          if (settled) return;
-          settled = true;
-          resolve(allowed);
-        };
-        const onAbort = () => finish(false);
-        permissionSignal?.addEventListener("abort", onAbort, { once: true });
-        rl.question(
-          `Claude demande ${toolName}: ${JSON.stringify(input)}\nAutoriser cette action une fois ? [y/N] `,
-        )
-          .then((answer) => {
-            permissionSignal?.removeEventListener("abort", onAbort);
-            finish(answer.trim().toLowerCase() === "y");
-          })
-          .catch(() => finish(false));
-      });
-    },
-  });
+async function runClaudeHarness(conversation, prompt, preparedRun = null) {
+  const { adapter, rl } =
+    preparedRun ??
+    createHarnessRun("claude-code", conversation, conversation.modelId);
   const controller = new AbortController();
   const interrupt = () => controller.abort();
   process.on("SIGINT", interrupt);
@@ -441,47 +469,13 @@ async function runClaudeHarness(conversation, prompt) {
   }
 }
 
-async function runCodexHarness(conversation, prompt) {
+async function runCodexHarness(conversation, prompt, preparedRun = null) {
   const project = store.project(conversation.projectId);
-  const rl = createInterface({
-    input: stdin,
-    output: stdout,
-    terminal: Boolean(stdin.isTTY),
-  });
+  const { adapter, rl } =
+    preparedRun ??
+    createHarnessRun("codex", conversation, conversation.modelId);
   const model =
     conversation.modelId === "codex" ? undefined : conversation.modelId;
-  const adapter = new CodexHarness({
-    store,
-    cwd: project.rootPath ?? process.cwd(),
-    model,
-    requestPermission: async ({ method, params }, permissionSignal) => {
-      if (!stdin.isTTY) {
-        stdout.write(
-          `Permission Codex refusée (session non interactive): ${method}\n`,
-        );
-        return false;
-      }
-      return new Promise((resolve) => {
-        if (permissionSignal?.aborted) return resolve(false);
-        let settled = false;
-        const finish = (allowed) => {
-          if (settled) return;
-          settled = true;
-          resolve(allowed);
-        };
-        const onAbort = () => finish(false);
-        permissionSignal?.addEventListener("abort", onAbort, { once: true });
-        rl.question(
-          `Codex demande une permission (${method}): ${JSON.stringify(params)}\nAutoriser cette action pour ce tour uniquement ? [y/N] `,
-        )
-          .then((answer) => {
-            permissionSignal?.removeEventListener("abort", onAbort);
-            finish(answer.trim().toLowerCase() === "y");
-          })
-          .catch(() => finish(false));
-      });
-    },
-  });
   const controller = new AbortController();
   const interrupt = () => controller.abort();
   process.on("SIGINT", interrupt);
@@ -716,31 +710,67 @@ try {
     } else {
       conversation = store.createConversation(
         project.id,
-        prompt.slice(0, 80),
+        autoDecision
+          ? `Auto · ${autoDecision.selected.providerId}/${autoDecision.selected.modelId}`
+          : prompt.slice(0, 80),
         model,
       );
     }
     if (autoDecision) {
       store.appendEvent(conversation.id, "routing.decision", {
         ...autoDecision,
-        prompt: redactSecrets(prompt),
       });
-      print(
-        `Auto: ${autoDecision.explanation} · secours ${autoDecision.fallback ? `${autoDecision.fallback.providerId}/${autoDecision.fallback.modelId}` : "aucun"}`,
-      );
     }
     const routingStartedAt = Date.now();
+    let executionCandidate = autoDecision?.selected ?? null;
     try {
-      if (harness === "claude") await runClaudeHarness(conversation, prompt);
-      else if (harness === "codex") await runCodexHarness(conversation, prompt);
+      let preparedRun = null;
+      if (autoDecision) {
+        const prepared = await prepareAutoCandidate(autoDecision, conversation);
+        executionCandidate = prepared.candidate;
+        preparedRun = prepared.run;
+        const usedFallback =
+          prepared.candidate.providerId !== autoDecision.selected.providerId ||
+          prepared.candidate.modelId !== autoDecision.selected.modelId ||
+          prepared.candidate.harnessId !== autoDecision.selected.harnessId;
+        if (usedFallback) {
+          const from = autoDecision.selected;
+          const to = prepared.candidate;
+          model =
+            to.providerId === "claude" ? `claude:${to.modelId}` : to.modelId;
+          harness = to.harnessId === "claude-code" ? "claude" : "codex";
+          conversation = store.setModel(conversation.id, model);
+          store.appendEvent(conversation.id, "routing.fallback", {
+            decisionId: autoDecision.id,
+            from,
+            to,
+            reason: "selected-harness-preflight-failed-before-turn-start",
+            failures: prepared.failures,
+            promptPersisted: false,
+            taskStarted: false,
+            automaticallyRetried: false,
+          });
+          print(
+            `Auto: préflight ${from.providerId}/${from.modelId} indisponible; choix de secours ${to.providerId}/${to.modelId} avant le démarrage du tour.`,
+          );
+        } else {
+          print(
+            `Auto: ${autoDecision.explanation} · secours ${autoDecision.fallback ? `${autoDecision.fallback.providerId}/${autoDecision.fallback.modelId}` : "aucun"}`,
+          );
+        }
+      }
+      if (harness === "claude")
+        await runClaudeHarness(conversation, prompt, preparedRun);
+      else if (harness === "codex")
+        await runCodexHarness(conversation, prompt, preparedRun);
       else await chat(conversation, model, prompt);
       if (autoDecision)
         store.appendEvent(conversation.id, "routing.result", {
           decisionId: autoDecision.id,
-          candidateKey: `${autoDecision.selected.providerId}/${autoDecision.selected.modelId}/${autoDecision.selected.harnessId}`,
-          providerId: autoDecision.selected.providerId,
-          modelId: autoDecision.selected.modelId,
-          harnessId: autoDecision.selected.harnessId,
+          candidateKey: `${executionCandidate.providerId}/${executionCandidate.modelId}/${executionCandidate.harnessId}`,
+          providerId: executionCandidate.providerId,
+          modelId: executionCandidate.modelId,
+          harnessId: executionCandidate.harnessId,
           outcome: "completed",
           latencyMs: Date.now() - routingStartedAt,
         });
@@ -748,13 +778,14 @@ try {
       if (autoDecision)
         store.appendEvent(conversation.id, "routing.result", {
           decisionId: autoDecision.id,
-          candidateKey: `${autoDecision.selected.providerId}/${autoDecision.selected.modelId}/${autoDecision.selected.harnessId}`,
-          providerId: autoDecision.selected.providerId,
-          modelId: autoDecision.selected.modelId,
-          harnessId: autoDecision.selected.harnessId,
+          candidateKey: `${executionCandidate.providerId}/${executionCandidate.modelId}/${executionCandidate.harnessId}`,
+          providerId: executionCandidate.providerId,
+          modelId: executionCandidate.modelId,
+          harnessId: executionCandidate.harnessId,
           outcome: "failed",
           latencyMs: Date.now() - routingStartedAt,
           error: redactSecrets(error.message),
+          preflightFailures: error.preflightFailures ?? [],
           automaticallyRetried: false,
         });
       throw error;

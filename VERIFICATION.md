@@ -78,7 +78,10 @@ Le test réel crée un dépôt Git jetable, demande au vrai app-server Codex de 
 - [x] Le test réel `OMNI_LIVE_AUTO_TESTS=1 node --test test/auto-router.test.mjs` a interrogé un compte OAuth, restreint le choix à un modèle concret trouvé dans son catalogue, lancé `omni run --auto`, reçu une réponse modèle, puis vérifié la décision et l’issue `completed` dans SQLite après le sous-processus.
 - [x] Les journaux du parcours réel ont été contrôlés pour l’absence de clé API/token Bearer.
 - [x] Aucune relance automatique n’a lieu après le démarrage d’une tâche. Le candidat de secours est conservé dans la décision mais n’est pas exécuté après une panne, afin de ne pas rejouer un outil non idempotent.
-- [ ] Le fallback après un échec de préflight avant tout effet de bord n’est pas encore implémenté; aucun fallback d’exécution post-démarrage n’est autorisé.
+- [x] En mode Auto, Omni initialise le harness sélectionné avant d’enregistrer le prompt ou de lancer un tour; si cette initialisation échoue, il tente les candidats classés suivants et consigne `routing.fallback` avec le candidat, l’échec et la raison. Les erreurs après l’entrée dans `run()` ne déclenchent aucun secours.
+- [x] Test réel `OMNI_LIVE_AUTO_FALLBACK_TESTS=1 node --test test/auto-router.test.mjs` : le CLI a sélectionné Codex, son exécutable harness configuré comme absent a échoué au préflight, puis Omni a appelé un vrai modèle Claude OAuth et persisté l’événement de secours ainsi qu’un seul résultat terminé; aucun deuxième prompt n’a été créé.
+- [x] Exécution combinée après le changement : `OMNI_LIVE_AUTO_TESTS=1 OMNI_LIVE_AUTO_FALLBACK_TESTS=1 node --test test/auto-router.test.mjs` : 7/7 réussis, sans test ignoré; le parcours normal Auto et le fallback réel sont passés.
+- [ ] Le parcours réel de fallback de préflight n’a été vérifié qu’avec Claude comme candidat de secours; vérifier Codex comme candidat de secours avec deux comptes connectés.
 
 ### Limites réelles de routage
 
@@ -96,9 +99,12 @@ npm run format:check
 npm run check
 npm run build
 OMNI_LIVE_AUTO_TESTS=1 node --test test/auto-router.test.mjs
+OMNI_LIVE_AUTO_FALLBACK_TESTS=1 node --test test/auto-router.test.mjs
 ```
 
 Résultats du commit Auto : `npm test` : 40 tests, 32 réussis, 0 échec, 8 intégrations conditionnelles ignorées; `npm run lint`, `npm run format:check`, `npm run check`, `npm run build` et `git diff --check` réussis. Avec `OMNI_LIVE_AUTO_TESTS=1`, le test Auto réel passe 6/6, y compris l’appel OAuth et la vérification du journal SQLite après le sous-processus CLI.
+
+Résultats après le fallback de préflight : `npm test` : 41 tests, 32 réussis, 0 échec, 9 intégrations conditionnelles ignorées; lint, format:check, check, build et diff-check réussis. `OMNI_LIVE_AUTO_TESTS=1 OMNI_LIVE_AUTO_FALLBACK_TESTS=1 node --test test/auto-router.test.mjs` : 7/7 réussis, dont une vraie réponse Auto et le parcours réel Codex indisponible → Claude OAuth. Un premier contrôle d’assertion du parcours fallback avait compté un événement `session.started` de statut sans harness; le contrôle a été corrigé pour ne regarder que les événements de session qui nomment le harness, puis le parcours réel a réussi.
 
 ## Vérification de compatibilité Orca
 
@@ -115,7 +121,7 @@ Résultats du commit Auto : `npm test` : 40 tests, 32 réussis, 0 échec, 8 int�
 - [x] Documentation officielle du CLI Antigravity consultée via Context7 : `https://antigravity.google/docs/cli/headless` et `https://antigravity.google/docs/cli/modes`.
 - [x] CLI officiel `agy` 1.4.9 installé en cache local pour l’essai, sans exécuter son installateur ni modifier les réglages d’autres outils.
 - [x] `agy models` a retourné le catalogue réellement disponible, dont `gemini-4-argon-medium`, les variantes Gemini 3.8 Flash, Claude Opus/Sonnet 5.5 et GPT-OSS 120B.
-- [x] Exécution réelle avec les identifiants locaux Antigravity et sans variables d’environnement de clé API/ADC : `agy -p 'Reply with ANTIGRAVITY_OMNI_READONLY_OK only. Do not inspect files.' --mode plan --output-format stream-json --model gemini-4-argon-medium --print-timeout 60s`. Le modèle a renvoyé `ANTIGRAVITY_OMNI_READONLY_OK` avec `status: SUCCESS`.
+- [x] Exécution réelle sans variable de clé API/ADC transmise au processus : `agy -p 'Reply with ANTIGRAVITY_OMNI_READONLY_OK only. Do not inspect files.' --mode plan --output-format stream-json --model gemini-4-argon-medium --print-timeout 60s`. Le modèle a renvoyé `ANTIGRAVITY_OMNI_READONLY_OK` avec `status: SUCCESS` via l’authentification locale du CLI; le compte OAuth actif n’a pas été confirmé séparément.
 - [x] Le flux `init` réel en `--mode plan` a annoncé `permission_mode: request-review` et des outils mutateurs/externes, dont `write_to_file`, `run_command`, outils navigateur, MCP et `send_message`.
 - [x] La documentation officielle indique qu’en mode headless il n’existe pas de prompt interactif : les demandes de permission non accordées sont refusées en douceur, mais les lectures et écritures dans l’espace de travail actif sont autorisées par défaut. Aucune API documentée ne permet à Omni d’intercepter les demandes et de rendre une approbation ponctuelle.
 - [ ] Intégration Omni Antigravity OAuth/chat/harness : non implémentée. La CLI possède une vraie authentification OAuth et le modèle répond, mais son interface headless ne permet pas à Omni de respecter son contrat d’approbation et pourrait modifier le projet sans demander l’autorisation Omni. Le mode `plan` n’a pas été considéré comme barrière de sécurité, car le flux réel déclare quand même les outils mutateurs et externes.

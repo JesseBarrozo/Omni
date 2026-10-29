@@ -236,3 +236,120 @@ test(
     }
   },
 );
+
+test(
+  "real omni run --auto falls back after a Codex preflight failure and executes Claude once",
+  { skip: process.env.OMNI_LIVE_AUTO_FALLBACK_TESTS !== "1" },
+  async () => {
+    assert.equal(
+      codexAuthStatus().authenticated,
+      true,
+      "The Codex OAuth account must be connected for this fallback test",
+    );
+    assert.equal(
+      claudeAuthStatus().authenticated,
+      true,
+      "The Claude OAuth account must be connected for this fallback test",
+    );
+    const dir = mkdtempSync(join(tmpdir(), "omni-live-auto-fallback-"));
+    const dataDir = join(dir, "omni-data");
+    const dbPath = join(dataDir, "omni.sqlite");
+    let store;
+    try {
+      store = new ChatStore(dbPath);
+      store.createProject("Live Auto Fallback", dir);
+      const claudeModels = await new ClaudeCodeChat({
+        store,
+        cwd: dir,
+      }).listModels();
+      const codexModels = await new CodexChat({ store, cwd: dir }).listModels();
+      const claudeModel = claudeModels.find((model) =>
+        /^claude-(?:haiku|sonnet|opus)-\d/.test(model),
+      );
+      const codexModel = codexModels.find((model) => model !== "default");
+      assert.ok(claudeModel, "A concrete Claude model must be available");
+      assert.ok(codexModel, "A concrete Codex model must be available");
+      store.close();
+      store = null;
+      const cli = fileURLToPath(new URL("../bin/omni.mjs", import.meta.url));
+      const result = spawnSync(
+        process.execPath,
+        [
+          cli,
+          "run",
+          "--auto",
+          "--project",
+          dir,
+          "Reply with AUTO_PREFLIGHT_FALLBACK_OK only.",
+        ],
+        {
+          cwd: dir,
+          encoding: "utf8",
+          timeout: 120_000,
+          env: {
+            ...process.env,
+            OMNI_DATA_DIR: dataDir,
+            OMNI_AUTO_MODELS: "codex:" + codexModel + ",claude:" + claudeModel,
+            OMNI_AUTO_PREFERRED_PROVIDERS: "codex,claude",
+            OMNI_CODEX_HARNESS_EXECUTABLE: join(dir, "missing-codex-cli"),
+          },
+        },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /choix de secours claude\//);
+      assert.match(result.stdout, /AUTO_PREFLIGHT_FALLBACK_OK/);
+      assert.doesNotMatch(
+        result.stdout + result.stderr,
+        /sk-[A-Za-z0-9_-]{12,}|Bearer\s+\S+/,
+      );
+      store = new ChatStore(dbPath);
+      const conversation = store.conversations(store.projects()[0].id)[0];
+      const events = store.listEvents(conversation.id);
+      const decision = events.find(
+        (event) => event.type === "routing.decision",
+      );
+      const fallback = events.find(
+        (event) => event.type === "routing.fallback",
+      );
+      const outcome = events.find((event) => event.type === "routing.result");
+      assert.equal(decision.payload.selected.providerId, "codex");
+      assert.equal("prompt" in decision.payload, false);
+      assert.equal(fallback.payload.from.providerId, "codex");
+      assert.equal(fallback.payload.to.providerId, "claude");
+      assert.match(
+        fallback.payload.reason,
+        /preflight-failed-before-turn-start/,
+      );
+      assert.equal(fallback.payload.promptPersisted, false);
+      assert.equal(fallback.payload.taskStarted, false);
+      assert.equal(fallback.payload.automaticallyRetried, false);
+      assert.equal(outcome.payload.providerId, "claude");
+      assert.equal(outcome.payload.outcome, "completed");
+      assert.equal(
+        events.filter((event) => event.type === "message.created").length,
+        2,
+      );
+      assert.equal(
+        events.filter((event) => event.type === "routing.fallback").length,
+        1,
+      );
+      assert.equal(
+        events.filter((event) => event.type === "tool.started").length,
+        0,
+      );
+      const startedSessions = events.filter(
+        (event) => event.type === "session.started" && event.payload.harnessId,
+      );
+      assert.ok(startedSessions.length > 0, "The Claude session must start");
+      assert.ok(
+        startedSessions.every(
+          (event) => event.payload.harnessId === "claude-code",
+        ),
+        JSON.stringify(startedSessions),
+      );
+    } finally {
+      store?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
