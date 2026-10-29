@@ -371,6 +371,7 @@ function createHarnessRun(harnessId, conversation, modelId) {
               ? undefined
               : modelId,
           requestPermission,
+          mcpRegistry: mcpRegistry(),
         })
       : harnessId === "codex"
         ? new CodexHarness({
@@ -629,6 +630,7 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
           cwd: project.rootPath ?? process.cwd(),
           model: model === "claude" ? undefined : model.replace(/^claude:/, ""),
           requestPermission,
+          mcpRegistry: mcpRegistry(),
         })
       : new CodexHarness({
           store,

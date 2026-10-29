@@ -84,6 +84,36 @@ export class McpRegistry {
     return this.store.mcpServers();
   }
 
+  claudeServerConfig(name, { cwd } = {}) {
+    const server = this.store.mcpServer(name);
+    if (!server) throw new Error("Serveur MCP introuvable.");
+    if (server.cwd && cwd && server.cwd !== cwd)
+      throw new Error(
+        `Le SDK Claude ne permet pas de définir un cwd MCP distinct du projet (${name}).`,
+      );
+    const args = server.args.map((arg) => {
+      for (const match of arg.matchAll(envReferencePattern)) {
+        const key = match[1];
+        if (!server.envKeys.includes(key) || typeof this.env[key] !== "string")
+          throw new Error(
+            "Une variable d’environnement MCP autorisée n’est pas définie.",
+          );
+      }
+      return arg.replace(envReferencePattern, (_, key) => this.env[key]);
+    });
+    const env = Object.fromEntries(
+      server.envKeys
+        .filter((key) => typeof this.env[key] === "string")
+        .map((key) => [key, this.env[key]]),
+    );
+    return {
+      type: "stdio",
+      command: server.command,
+      args,
+      env,
+    };
+  }
+
   removeServer(name) {
     return this.store.removeMcpServer(name);
   }

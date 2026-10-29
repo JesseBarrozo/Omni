@@ -56,7 +56,15 @@ function createSessionId() {
   return randomUUID();
 }
 
-function queryOptions({ cwd, model, sessionId, resume, tools, canUseTool }) {
+function queryOptions({
+  cwd,
+  model,
+  sessionId,
+  resume,
+  tools,
+  canUseTool,
+  mcpServers = {},
+}) {
   return {
     cwd,
     ...(model ? { model } : {}),
@@ -67,7 +75,7 @@ function queryOptions({ cwd, model, sessionId, resume, tools, canUseTool }) {
     ...(canUseTool ? { canUseTool } : {}),
     settingSources: [],
     strictMcpConfig: true,
-    mcpServers: {},
+    mcpServers,
     env: {
       ...process.env,
       ANTHROPIC_API_KEY: undefined,
@@ -224,11 +232,15 @@ export class ClaudeCodeHarness {
     cwd = process.cwd(),
     model,
     requestPermission = async () => false,
+    mcpRegistry = null,
+    sdk = null,
   } = {}) {
     this.store = store;
     this.cwd = cwd;
     this.model = model;
     this.requestPermission = requestPermission;
+    this.mcpRegistry = mcpRegistry;
+    this.sdk = sdk;
     this.queries = new Map();
     this.sessions = new Map();
     this.id = "claude-code";
@@ -237,7 +249,7 @@ export class ClaudeCodeHarness {
   }
 
   async initialize() {
-    this.sdk = await loadSdk();
+    this.sdk ??= await loadSdk();
   }
   async capabilities() {
     return {
@@ -340,32 +352,84 @@ export class ClaudeCodeHarness {
     let query;
     const queryKey = session.id;
     const activeTools = new Map();
-    const canUseTool = async (
-      toolName,
-      input,
-      { signal: permissionSignal },
-    ) => {
-      const request = {
-        toolName,
-        input: redactSecrets(input),
-        conversationId,
-        sessionId: session.id,
-      };
-      this.store?.appendEvent(conversationId, "permission.requested", request);
-      let allowed = false;
-      try {
-        allowed = await this.requestPermission(request, permissionSignal);
-      } catch {}
-      const eventType = allowed ? "permission.granted" : "permission.denied";
-      this.store?.appendEvent(conversationId, eventType, {
-        toolName,
-        sessionId: session.id,
-      });
-      return allowed
-        ? { behavior: "allow", updatedInput: input }
-        : { behavior: "deny", message: "Permission refusée par l’utilisateur" };
-    };
+    const registeredMcpServers = this.mcpRegistry?.listServers() ?? [];
+    const mcpServerForTool = (toolName) =>
+      registeredMcpServers.find((server) =>
+        toolName.startsWith(`mcp__${server.name}__`),
+      )?.name;
+    const mcpServers = {};
     try {
+      for (const server of registeredMcpServers) {
+        const request = {
+          toolName: "mcp-server-start",
+          server: server.name,
+          action: "start",
+          conversationId,
+          sessionId: session.id,
+        };
+        this.store?.appendEvent(
+          conversationId,
+          "permission.requested",
+          request,
+        );
+        let allowed = false;
+        if (!signal?.aborted) {
+          try {
+            allowed = await this.requestPermission(request, signal);
+          } catch {}
+        }
+        this.store?.appendEvent(
+          conversationId,
+          allowed ? "permission.granted" : "permission.denied",
+          {
+            toolName: request.toolName,
+            server: server.name,
+            action: "start",
+            sessionId: session.id,
+          },
+        );
+        if (allowed)
+          mcpServers[server.name] = this.mcpRegistry.claudeServerConfig(
+            server.name,
+            { cwd: session.cwd },
+          );
+      }
+      const canUseTool = async (
+        toolName,
+        input,
+        { signal: permissionSignal },
+      ) => {
+        const mcpServer = mcpServerForTool(toolName);
+        const request = {
+          toolName,
+          ...(mcpServer
+            ? { server: mcpServer }
+            : { input: redactSecrets(input) }),
+          conversationId,
+          sessionId: session.id,
+        };
+        this.store?.appendEvent(
+          conversationId,
+          "permission.requested",
+          request,
+        );
+        let allowed = false;
+        try {
+          allowed = await this.requestPermission(request, permissionSignal);
+        } catch {}
+        const eventType = allowed ? "permission.granted" : "permission.denied";
+        this.store?.appendEvent(conversationId, eventType, {
+          toolName,
+          ...(mcpServer ? { server: mcpServer } : {}),
+          sessionId: session.id,
+        });
+        return allowed
+          ? { behavior: "allow", updatedInput: input }
+          : {
+              behavior: "deny",
+              message: "Permission refusée par l’utilisateur",
+            };
+      };
       query = this.sdk.query({
         prompt,
         options: {
@@ -376,6 +440,7 @@ export class ClaudeCodeHarness {
             resume: newSession ? undefined : session.id,
             tools: toolNames,
             canUseTool,
+            mcpServers,
           }),
           abortController: controller,
         },
@@ -413,7 +478,9 @@ export class ClaudeCodeHarness {
                 sessionId: session.id,
                 toolUseId: block.id,
                 toolName: tool.toolName,
-                input: redactSecrets(tool.input),
+                ...(mcpServerForTool(tool.toolName)
+                  ? { server: mcpServerForTool(tool.toolName) }
+                  : { input: redactSecrets(tool.input) }),
               };
               this.store?.appendEvent(conversationId, "tool.started", payload);
               if (tool.toolName === "Bash")

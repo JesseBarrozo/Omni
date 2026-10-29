@@ -81,6 +81,18 @@ test("MCP stdio discovery and approved tool call use the official SDK lifecycle"
       tools.map(({ name }) => name),
       ["mutate-file"],
     );
+    assert.throws(
+      () =>
+        registry.claudeServerConfig("local-fixture", {
+          cwd: join(dir, "other"),
+        }),
+      /ne permet pas de définir un cwd MCP distinct/,
+    );
+    const claudeConfig = registry.claudeServerConfig("local-fixture", {
+      cwd: dir,
+    });
+    assert.equal(claudeConfig.type, "stdio");
+    assert.equal(claudeConfig.env.MCP_TEST_SECRET, "transient-test-only-value");
     const rawConfig = store.db.prepare("SELECT * FROM mcp_servers").get();
     assert.equal(
       JSON.stringify(rawConfig).includes("transient-test-only-value"),

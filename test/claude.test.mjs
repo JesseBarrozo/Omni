@@ -6,10 +6,11 @@ import {
   claudeAuthStatus,
 } from "../src/claude-code.mjs";
 import { assertHarnessAdapter } from "../src/adapters.mjs";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ChatStore } from "../src/chat-store.mjs";
+import { McpRegistry } from "../src/mcp-registry.mjs";
 
 test("Claude auth status hides CLI output and handles missing CLI", () => {
   assert.deepEqual(claudeAuthStatus({ executable: "/missing/omni-claude" }), {
@@ -58,6 +59,122 @@ test("Claude sessions are not recorded as started before the SDK initializes", a
       conversationId: conversation.id,
     });
     assert.equal(resumed.newSession, false);
+  } finally {
+    await harness.dispose();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Claude harness passes approved MCP servers to the SDK and omits tool inputs from events", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-claude-mcp-"));
+  const store = new ChatStore(join(dir, "omni.sqlite"));
+  const project = store.createProject("Claude MCP", dir);
+  const conversation = store.createConversation(
+    project.id,
+    "MCP tools",
+    "claude",
+  );
+  const registry = new McpRegistry({
+    store,
+    env: {
+      PATH: process.env.PATH ?? "",
+      MCP_TEST_SECRET: "transient-claude-secret",
+    },
+  });
+  registry.addServer({
+    name: "local-fs",
+    command: process.execPath,
+    args: ["--version"],
+    cwd: dir,
+    envKeys: ["MCP_TEST_SECRET"],
+  });
+  let queryOptions;
+  const sdk = {
+    query({ options }) {
+      queryOptions = options;
+      return {
+        async *[Symbol.asyncIterator]() {
+          const permission = await options.canUseTool(
+            "mcp__local-fs__mutate-file",
+            { secretArgument: "transient-tool-input" },
+            { signal: new AbortController().signal },
+          );
+          assert.equal(permission.behavior, "allow");
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: "claude-mcp-session",
+            apiKeySource: "oauth",
+          };
+          yield {
+            type: "assistant",
+            message: {
+              content: [
+                {
+                  type: "tool_use",
+                  id: "mcp-tool-use-1",
+                  name: "mcp__local-fs__mutate-file",
+                  input: { secretArgument: "transient-tool-input" },
+                },
+              ],
+            },
+          };
+          yield {
+            type: "user",
+            message: {
+              content: [
+                {
+                  type: "tool_result",
+                  tool_use_id: "mcp-tool-use-1",
+                  content: "secret-tool-result",
+                },
+              ],
+            },
+          };
+          yield { type: "result", subtype: "success", is_error: false };
+        },
+        async close() {},
+      };
+    },
+  };
+  const permissionRequests = [];
+  const harness = new ClaudeCodeHarness({
+    store,
+    cwd: dir,
+    mcpRegistry: registry,
+    sdk,
+    requestPermission: async (request) => {
+      permissionRequests.push(request);
+      return true;
+    },
+  });
+  try {
+    const output = [];
+    for await (const event of harness.run({
+      conversationId: conversation.id,
+      prompt: "Use the configured tool",
+    }))
+      output.push(event);
+    assert.deepEqual(Object.keys(queryOptions.mcpServers), ["local-fs"]);
+    assert.equal(
+      queryOptions.mcpServers["local-fs"].env.MCP_TEST_SECRET,
+      "transient-claude-secret",
+    );
+    assert.equal(permissionRequests[0].action, "start");
+    assert.equal(permissionRequests[1].toolName, "mcp__local-fs__mutate-file");
+    assert.equal("input" in permissionRequests[1], false);
+    assert.ok(output.some((event) => event.type === "tool.started"));
+    const events = store.listEvents(conversation.id);
+    assert.equal(
+      JSON.stringify(events).includes("transient-tool-input"),
+      false,
+    );
+    assert.equal(JSON.stringify(events).includes("secret-tool-result"), false);
+    assert.equal(
+      JSON.stringify(events).includes("transient-claude-secret"),
+      false,
+    );
   } finally {
     await harness.dispose();
     store.close();
@@ -220,6 +337,95 @@ test(
           (event) =>
             event.type === "tool.started" && event.payload.toolName === "Write",
         ),
+      );
+      assert.ok(events.some((event) => event.type === "session.completed"));
+    } finally {
+      await harness.dispose();
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "real Claude OAuth harness starts an approved MCP server and executes its tool once",
+  { skip: process.env.OMNI_LIVE_CLAUDE_MCP_TESTS !== "1" },
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "omni-claude-mcp-live-"));
+    const store = new ChatStore(join(dir, "omni.sqlite"));
+    const project = store.createProject("Claude MCP integration", dir);
+    const conversation = store.createConversation(
+      project.id,
+      "Approved MCP call",
+      "claude",
+    );
+    const marker = join(dir, "mcp-tool-called.txt");
+    const mcpModule = new URL(
+      "../node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js",
+      import.meta.url,
+    ).href;
+    const stdioModule = new URL(
+      "../node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js",
+      import.meta.url,
+    ).href;
+    const serverSource = `
+      import { writeFileSync } from 'node:fs';
+      import { McpServer } from '${mcpModule}';
+      import { StdioServerTransport } from '${stdioModule}';
+      const server = new McpServer({ name: 'omni-live-claude-mcp', version: '1.0.0' });
+      server.registerTool('write_marker', { description: 'Write the temporary integration marker exactly once' }, async () => {
+        writeFileSync(process.env.OMNI_TEST_MARKER, 'called');
+        return { content: [{ type: 'text', text: 'marker written' }] };
+      });
+      await server.connect(new StdioServerTransport());
+    `;
+    const registry = new McpRegistry({
+      store,
+      env: { ...process.env, OMNI_TEST_MARKER: marker },
+    });
+    registry.addServer({
+      name: "live-fs",
+      command: process.execPath,
+      args: ["--input-type=module", "-e", serverSource],
+      cwd: dir,
+      envKeys: ["OMNI_TEST_MARKER"],
+    });
+    const approvals = [];
+    const harness = new ClaudeCodeHarness({
+      store,
+      cwd: dir,
+      mcpRegistry: registry,
+      requestPermission: async (request) => {
+        approvals.push(request);
+        return (
+          request.action === "start" ||
+          request.toolName === "mcp__live-fs__write_marker"
+        );
+      },
+    });
+    try {
+      await harness.initialize();
+      const events = [];
+      for await (const event of harness.run({
+        conversationId: conversation.id,
+        prompt:
+          "Call mcp__live-fs__write_marker exactly once, then confirm it is done. Do not use any other tool.",
+        signal: new AbortController().signal,
+      }))
+        events.push(event);
+      assert.equal(approvals.length, 2);
+      assert.equal(approvals[0].action, "start");
+      assert.equal(approvals[1].toolName, "mcp__live-fs__write_marker");
+      assert.equal(existsSync(marker), true);
+      assert.equal(readFileSync(marker, "utf8"), "called");
+      const persistedEvents = store.listEvents(conversation.id);
+      assert.equal(
+        persistedEvents.filter((event) => event.type === "tool.started").length,
+        1,
+      );
+      assert.equal(
+        JSON.stringify(persistedEvents).includes(serverSource),
+        false,
       );
       assert.ok(events.some((event) => event.type === "session.completed"));
     } finally {
