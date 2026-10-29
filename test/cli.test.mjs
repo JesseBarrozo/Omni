@@ -265,6 +265,63 @@ test("CLI exposes persisted tool and permission history without raw tool inputs"
   }
 });
 
+test("CLI searches persisted conversation titles and messages with project filtering", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-search-cli-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const store = new ChatStore(join(dir, "data", "omni.sqlite"));
+    const project = store.createProject("search-cli", dir);
+    const conversation = store.createConversation(
+      project.id,
+      "title with a 100%_ token",
+      "codex",
+    );
+    store.addMessage(conversation.id, "user", "Persisted unique phrase");
+    const otherProject = store.createProject("other-project");
+    const other = store.createConversation(
+      otherProject.id,
+      "elsewhere",
+      "codex",
+    );
+    store.addMessage(other.id, "user", "Persisted unique phrase");
+    store.close();
+
+    const results = run(
+      "conversation",
+      "search",
+      "--query",
+      "unique phrase",
+      "--project",
+      dir,
+      "--json",
+    );
+    assert.equal(results.status, 0, results.stderr);
+    assert.deepEqual(
+      JSON.parse(results.stdout).map((result) => result.id),
+      [conversation.id],
+    );
+    assert.equal(JSON.parse(results.stdout)[0].match, "message");
+    const literalWildcard = run(
+      "conversation",
+      "search",
+      "--query",
+      "%_ token",
+      "--project",
+      dir,
+      "--json",
+    );
+    assert.equal(literalWildcard.status, 0, literalWildcard.stderr);
+    assert.equal(JSON.parse(literalWildcard.stdout)[0].id, conversation.id);
+    const missingQuery = run("conversation", "search", "--project", dir);
+    assert.notEqual(missingQuery.status, 0);
+    assert.match(missingQuery.stderr, /--query TEXT/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test(
   "real provider registry refreshes OAuth catalogs and Auto excludes a disabled model",
   { skip: process.env.OMNI_LIVE_PROVIDER_REGISTRY_TESTS !== "1" },

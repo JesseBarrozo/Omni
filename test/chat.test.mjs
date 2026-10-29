@@ -268,6 +268,38 @@ test("execution history filters canonical tool and permission events by project 
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("conversation search reads persisted titles/messages and treats SQL wildcards literally", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-search-"));
+  const file = join(dir, "db.sqlite");
+  let store = new ChatStore(file);
+  const project = store.createProject("searchable", dir);
+  const conversation = store.createConversation(
+    project.id,
+    "Literal 100%_match",
+    "codex",
+  );
+  store.addMessage(conversation.id, "user", "needle from persistent history");
+  const otherProject = store.createProject("separate");
+  const other = store.createConversation(otherProject.id, "separate", "claude");
+  store.addMessage(other.id, "user", "needle from another project");
+  store.close();
+
+  store = new ChatStore(file);
+  assert.deepEqual(
+    store.searchConversations("needle", dir).map((result) => result.id),
+    [conversation.id],
+  );
+  assert.equal(store.searchConversations("%_match", dir)[0].match, "title");
+  assert.equal(
+    store.searchConversations("PERSISTENT", dir)[0].match,
+    "message",
+  );
+  assert.deepEqual(store.searchConversations("absent", dir), []);
+  assert.throws(() => store.searchConversations("  "), /1 à 500 caractères/);
+  store.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("SQLite event store rejects non-canonical Omni event types", () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-event-types-"));
   const store = new ChatStore(join(dir, "db.sqlite"));

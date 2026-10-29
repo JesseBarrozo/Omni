@@ -395,6 +395,59 @@ export class ChatStore {
         createdAt: row.createdAt,
       }));
   }
+  searchConversations(query, projectId = null) {
+    if (typeof query !== "string" || !query.trim() || query.length > 500)
+      throw new TypeError("La recherche exige un texte de 1 à 500 caractères");
+    const project = projectId ? this.project(projectId) : null;
+    const normalizedQuery = query.trim();
+    const rows = this.db
+      .prepare(
+        `
+        SELECT c.id, c.project_id AS projectId, c.title, c.status, c.model_id AS modelId,
+          c.created_at AS createdAt, c.updated_at AS updatedAt,
+          instr(lower(c.title), lower(?)) > 0 AS titleMatch,
+          (SELECT m.content FROM messages m
+           WHERE m.conversation_id = c.id AND instr(lower(m.content), lower(?)) > 0
+           ORDER BY m.rowid LIMIT 1) AS matchingContent
+        FROM conversations c
+        WHERE (instr(lower(c.title), lower(?)) > 0 OR EXISTS (
+          SELECT 1 FROM messages m
+          WHERE m.conversation_id = c.id AND instr(lower(m.content), lower(?)) > 0
+        ))
+        ${project ? "AND c.project_id = ?" : ""}
+        ORDER BY c.updated_at DESC, c.id
+      `,
+      )
+      .all(
+        normalizedQuery,
+        normalizedQuery,
+        normalizedQuery,
+        normalizedQuery,
+        ...(project ? [project.id] : []),
+      );
+    return rows.map((row) => {
+      const text = row.titleMatch ? row.title : row.matchingContent;
+      const matchIndex = text
+        .toLowerCase()
+        .indexOf(normalizedQuery.toLowerCase());
+      const start = Math.max(0, matchIndex - 70);
+      const end = Math.min(
+        text.length,
+        matchIndex + normalizedQuery.length + 110,
+      );
+      return {
+        id: row.id,
+        projectId: row.projectId,
+        title: row.title,
+        status: row.status,
+        modelId: row.modelId,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        match: row.titleMatch ? "title" : "message",
+        excerpt: `${start > 0 ? "…" : ""}${text.slice(start, end)}${end < text.length ? "…" : ""}`,
+      };
+    });
+  }
   conversation(id) {
     const c = this.db
       .prepare("SELECT * FROM conversations WHERE id = ?")

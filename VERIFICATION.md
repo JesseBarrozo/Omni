@@ -1,5 +1,12 @@
 # Vérification et tests à refaire
 
+## Recherche Universal Chat
+
+- [x] La recherche SQLite retrouve titres et messages persistés après redémarrage et peut limiter les résultats à un projet.
+- [x] Les caractères `%` et `_` sont traités littéralement, sans wildcard SQL.
+- [x] `omni conversation search --query TEXT [--project ID_OR_PATH] [--json]` a un parcours CLI couvert; les résultats donnent le type de correspondance et un extrait.
+- Validation : `npm test` (52 découverts, 41 réussis, 0 échec, 11 tests live opt-in ignorés); lint, format:check, check, build et diff-check réussis.
+
 ## Consultation des outils et permissions
 
 - [x] `ChatStore.executionEvents()` lit uniquement les types canoniques tool/permission et filtre par conversation ou projet; un couple conversation/projet incohérent est refusé.

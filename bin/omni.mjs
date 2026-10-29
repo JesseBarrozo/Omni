@@ -37,7 +37,7 @@ const option = (name, fallback = null) => {
 const hasFlag = (name) => args.includes(name);
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project) {
@@ -989,6 +989,20 @@ try {
         autoOnly: hasFlag("--auto-only"),
       }),
     );
+  } else if (command === "conversation" && args[0] === "search") {
+    const query = option("--query");
+    if (!query)
+      throw new Error(
+        "Usage: omni conversation search --query TEXT [--project ID_OR_PATH] [--json]",
+      );
+    const results = store.searchConversations(query, option("--project"));
+    hasFlag("--json")
+      ? print(results)
+      : results.forEach((result) =>
+          print(
+            `${result.id} · ${result.title} · ${result.match}: ${result.excerpt}`,
+          ),
+        );
   } else if (command === "conversation" && args[0] === "export") {
     print(store.exportConversation(args[1]));
   } else if (command === "conversation" && args[0] === "import") {
