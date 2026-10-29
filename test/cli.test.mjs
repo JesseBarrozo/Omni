@@ -529,6 +529,78 @@ test("CLI exposes persisted tool and permission history without raw tool inputs"
   }
 });
 
+test("CLI reports only persisted provider usage for a project or conversation", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-usage-report-cli-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const store = new ChatStore(join(dir, "data", "omni.sqlite"));
+    const project = store.createProject("usage-report", dir);
+    const conversation = store.createConversation(project.id, "first", "codex");
+    store.appendEvent(conversation.id, "usage.updated", {
+      providerId: "opencode",
+      harnessId: "opencode",
+      costUsd: 0.0042,
+      tokens: {
+        input: 1000,
+        output: 120,
+        reasoning: 20,
+        cache: { read: 30, write: 5 },
+      },
+    });
+    store.appendEvent(conversation.id, "usage.updated", {
+      providerId: "opencode",
+      costUsd: 0.001,
+      tokens: {
+        input: 200,
+        output: 40,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    });
+    const noUsage = store.createConversation(project.id, "no usage", "codex");
+    store.appendEvent(noUsage.id, "usage.updated", { providerId: "unknown" });
+    store.close();
+
+    const report = run("usage", "report", "--project", dir, "--json");
+    assert.equal(report.status, 0, report.stderr);
+    const result = JSON.parse(report.stdout);
+    assert.equal(result.summary.eventCount, 3);
+    assert.equal(result.summary.costReports, 2);
+    assert.ok(Math.abs(result.summary.costUsd - 0.0052) < 1e-12);
+    assert.equal(result.summary.tokenReports, 2);
+    assert.deepEqual(result.summary.tokens, {
+      input: 1200,
+      output: 160,
+      reasoning: 20,
+      cacheRead: 30,
+      cacheWrite: 5,
+    });
+    assert.equal(result.events[2].costUsd, null);
+    assert.equal(result.events[2].tokens, null);
+
+    const scoped = run(
+      "usage",
+      "report",
+      "--conversation",
+      conversation.id,
+      "--json",
+    );
+    assert.equal(scoped.status, 0, scoped.stderr);
+    assert.equal(JSON.parse(scoped.stdout).summary.eventCount, 2);
+    const readable = run("usage", "report", "--conversation", noUsage.id);
+    assert.equal(readable.status, 0, readable.stderr);
+    assert.match(readable.stdout, /Coût USD: non rapporté/);
+    assert.match(readable.stdout, /Tokens: non rapportés/);
+    const missingFilter = run("usage", "report");
+    assert.notEqual(missingFilter.status, 0);
+    assert.match(missingFilter.stderr, /--conversation ou --project/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("CLI searches persisted conversation titles and messages with project filtering", () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-search-cli-"));
   const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };

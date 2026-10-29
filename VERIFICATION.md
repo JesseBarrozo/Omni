@@ -1,3 +1,10 @@
+## Rapport d’usage CLI
+
+- [x] `omni usage report --project PATH_OR_ID [--json]` agrège les événements `usage.updated` persistés; `--conversation ID` isole une conversation.
+- [x] Les sommes USD n’incluent que les coûts rapportés et valides; les tokens ne sont agrégés que lorsque tous les compteurs requis sont valides. Les champs manquants restent `null`/« non rapportés », sans estimation.
+- [x] Test CLI sur une base SQLite temporaire avec plusieurs conversations, mesures présentes et absentes, filtres projet/conversation, rendu texte et JSON. Aucun fournisseur, modèle ou secret utilisé.
+- [ ] L’événement d’usage OpenCode continue d’être uniquement validé par contrat SDK; une génération live reste non exécutée conformément à la consigne de ne pas tester les clés API.
+
 # Vérification et tests à refaire
 
 ## Harness OpenCode (commit `9eaf0d9`)
@@ -9,7 +16,6 @@
 - [x] Test de contrat : erreur à la réponse permission n’accorde rien, inscrit `permission.requested`, puis demande l’interruption.
 - [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test test/opencode-harness.test.mjs` : 3/3; `npm test` : 115 tests, 88 passés, 0 échec, 27 opt-in ignorés; lint, format:check, check, build et `git diff --check` réussis.
 - [ ] Aucun appel modèle, streaming réel d’une génération, exécution outil réelle ou interaction permission issue d’un modèle n’a été testé. Cela reste à valider sans tester de clés API. OpenCode est intégré au swap manuel à frontière sûre et au routage déterministe Auto (prévisualisation live validée plus bas). Le parcours de modification réelle d’un fichier avec un modèle n’a pas été testé.
-
 
 ## Auto Router OpenCode (catalogue réel validé, sans génération)
 

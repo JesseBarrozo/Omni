@@ -127,7 +127,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter --stdin\n  auth key set anthropic --stdin\n  auth key set google --stdin\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  auth key remove openrouter|anthropic|google [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  auto plan --project ID_OR_PATH [--require-mcp SERVER[,SERVER]] [--json] PROMPT\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter --stdin\n  auth key set anthropic --stdin\n  auth key set google --stdin\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  auth key remove openrouter|anthropic|google [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  usage report --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  auto plan --project ID_OR_PATH [--require-mcp SERVER[,SERVER]] [--json] PROMPT\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
@@ -2008,6 +2008,101 @@ try {
               : `${entry.event}: ${entry.toolName ?? entry.action ?? "permission"}${entry.granted === null ? " · en attente" : entry.granted ? " · accordée" : " · refusée"}`,
           ),
         );
+  } else if (command === "usage" && args[0] === "report") {
+    const conversationId = option("--conversation");
+    const projectId = option("--project");
+    if (!conversationId && !projectId)
+      throw new Error("usage report exige --conversation ou --project");
+    const events = store.executionEvents("usage", {
+      conversationId,
+      projectId,
+    });
+    const totals = {
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    };
+    let costUsd = 0;
+    let costReports = 0;
+    let tokenReports = 0;
+    const records = events.map((event) => {
+      const payload = event.payload;
+      const reportedCost = payload.costUsd;
+      const validCost = Number.isFinite(reportedCost) && reportedCost >= 0;
+      if (validCost) {
+        costUsd += reportedCost;
+        costReports += 1;
+      }
+      const tokens = payload.tokens;
+      const values = [
+        tokens?.input,
+        tokens?.output,
+        tokens?.reasoning,
+        tokens?.cache?.read,
+        tokens?.cache?.write,
+      ];
+      const validTokens = values.every(
+        (value) => Number.isFinite(value) && value >= 0,
+      );
+      if (validTokens) {
+        totals.input += tokens.input;
+        totals.output += tokens.output;
+        totals.reasoning += tokens.reasoning;
+        totals.cacheRead += tokens.cache.read;
+        totals.cacheWrite += tokens.cache.write;
+        tokenReports += 1;
+      }
+      return {
+        conversationId: event.conversationId,
+        createdAt: event.createdAt,
+        providerId: payload.providerId ?? null,
+        harnessId: payload.harnessId ?? null,
+        costUsd: validCost ? reportedCost : null,
+        tokens: validTokens
+          ? {
+              input: tokens.input,
+              output: tokens.output,
+              reasoning: tokens.reasoning,
+              cache: {
+                read: tokens.cache.read,
+                write: tokens.cache.write,
+              },
+            }
+          : null,
+      };
+    });
+    const report = {
+      projectId: projectId ? store.project(projectId).id : null,
+      conversationId,
+      events: records,
+      summary: {
+        eventCount: records.length,
+        costReports,
+        costUsd: costReports ? costUsd : null,
+        tokenReports,
+        tokens: tokenReports ? totals : null,
+      },
+    };
+    if (hasFlag("--json")) print(report);
+    else {
+      print(`Mesures: ${report.summary.eventCount}`);
+      print(
+        report.summary.costUsd === null
+          ? "Coût USD: non rapporté"
+          : `Coût USD: ${report.summary.costUsd}`,
+      );
+      print(
+        report.summary.tokens
+          ? `Tokens · entrée ${totals.input} · sortie ${totals.output} · raisonnement ${totals.reasoning} · cache lecture ${totals.cacheRead} · cache écriture ${totals.cacheWrite}`
+          : "Tokens: non rapportés",
+      );
+      for (const record of records)
+        print(
+          `${record.createdAt} · ${record.providerId ?? record.harnessId ?? "provider inconnu"} · ${record.costUsd === null ? "coût inconnu" : `${record.costUsd} USD`}`,
+        );
+    }
   } else if (command === "project" && args[0] === "create") {
     const name = option("--name");
     if (!name) throw new Error("--name est requis");

@@ -488,8 +488,9 @@ export class ChatStore {
         "permission.granted",
         "permission.denied",
       ],
+      usage: ["usage.updated"],
     }[kind];
-    if (!eventTypes) throw new Error(`Historique d’exécution inconnu: ${kind}`);
+    if (!eventTypes) throw new Error(`Historique inconnu: ${kind}`);
     if (!conversationId && !projectId)
       throw new Error("Un filtre --conversation ou --project est requis");
     if (conversationId) {

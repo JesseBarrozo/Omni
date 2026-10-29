@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Usage report CLI : `omni usage report --project PATH_OR_ID` et `--conversation ID` résument les coûts USD et tokens réellement persistés, avec sortie texte ou `--json`; les mesures absentes ne sont pas estimées. Le calcul CLI est testé sur l’historique SQLite.
+
 - OpenCode usage events : Omni now consumes the official `session.next.step.ended` event and persists validated USD cost plus input/output/reasoning/cache token counts as `usage.updated`, deduplicated per assistant message. Contract-tested against the SDK event schema; a live model turn remains untested.
 
 - Auto OpenCode budget metadata : OpenCode model catalog input prices now flow into Auto in the documented USD-per-million-token unit. For context-tier catalogs Omni uses the maximum input price, so efficiency ranking and configured input ceilings are conservative; absent or invalid prices remain unknown and are filtered by a configured ceiling.
