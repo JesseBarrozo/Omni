@@ -37,7 +37,7 @@ const option = (name, fallback = null) => {
 const hasFlag = (name) => args.includes(name);
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project) {
@@ -908,6 +908,57 @@ try {
     ["enable", "disable"].includes(args[0])
   ) {
     print(store.setHarnessEnabled(option("--harness"), args[0] === "enable"));
+  } else if (["tools", "permissions"].includes(command) && args[0] === "list") {
+    const kind = command;
+    const events = store.executionEvents(kind, {
+      conversationId: option("--conversation"),
+      projectId: option("--project"),
+    });
+    const history = events.map((event) => {
+      const payload = event.payload;
+      return kind === "tools"
+        ? {
+            id: event.id,
+            conversationId: event.conversationId,
+            event: event.type,
+            toolName:
+              payload.toolName ??
+              payload.method ??
+              payload.itemType ??
+              "unknown",
+            harnessId: payload.harnessId ?? null,
+            sessionId: payload.sessionId ?? null,
+            toolUseId: payload.toolUseId ?? null,
+            createdAt: event.createdAt,
+          }
+        : {
+            id: event.id,
+            conversationId: event.conversationId,
+            event: event.type,
+            toolName: payload.toolName ?? payload.tool ?? null,
+            action: payload.action ?? payload.method ?? null,
+            granted:
+              event.type === "permission.granted"
+                ? true
+                : event.type === "permission.denied"
+                  ? false
+                  : null,
+            reason: payload.reason ?? null,
+            scope: payload.scope ?? null,
+            requestId: payload.id ?? payload.requestId ?? null,
+            expiresAt: payload.expiresAt ?? null,
+            createdAt: event.createdAt,
+          };
+    });
+    hasFlag("--json")
+      ? print(history)
+      : history.forEach((entry) =>
+          print(
+            kind === "tools"
+              ? `${entry.event}: ${entry.toolName}${entry.harnessId ? ` · ${entry.harnessId}` : ""}`
+              : `${entry.event}: ${entry.toolName ?? entry.action ?? "permission"}${entry.granted === null ? " · en attente" : entry.granted ? " · accordée" : " · refusée"}`,
+          ),
+        );
   } else if (command === "project" && args[0] === "create") {
     const name = option("--name");
     if (!name) throw new Error("--name est requis");

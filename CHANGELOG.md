@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Correctif migration SQLite : appliquer les migrations v2 (Provider/Model Registry) puis v3 (Harness Registry) dans l’ordre pour les bases neuves et les mises à niveau depuis v1.
+- Historique outils/permissions CLI : `tools list` et `permissions list` consultent les événements canoniques par conversation ou projet, en excluant les entrées brutes sensibles de l’affichage.
 
 - Phase 1 : ajout de l’audit initial du dépôt, de l’inventaire des projets voisins et des résultats de vérification du prototype existant.
 - Connexion du dossier autonome `Omni/` au dépôt GitHub `JesseBarrozo/Omni` sur la branche locale `main`.

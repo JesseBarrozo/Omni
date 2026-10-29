@@ -351,6 +351,50 @@ export class ChatStore {
         createdAt: row.createdAt,
       }));
   }
+  executionEvents(kind, { conversationId = null, projectId = null } = {}) {
+    const eventTypes = {
+      tools: ["tool.started", "tool.completed", "tool.failed"],
+      permissions: [
+        "permission.requested",
+        "permission.granted",
+        "permission.denied",
+      ],
+    }[kind];
+    if (!eventTypes) throw new Error(`Historique d’exécution inconnu: ${kind}`);
+    if (!conversationId && !projectId)
+      throw new Error("Un filtre --conversation ou --project est requis");
+    if (conversationId) {
+      const conversation = this.conversation(conversationId);
+      if (projectId && this.project(projectId).id !== conversation.projectId)
+        throw new Error("La conversation n’appartient pas au projet indiqué");
+    }
+    const clauses = [`type IN (${eventTypes.map(() => "?").join(", ")})`];
+    const parameters = [...eventTypes];
+    if (conversationId) {
+      clauses.push("conversation_id = ?");
+      parameters.push(conversationId);
+    } else if (projectId) {
+      clauses.push(
+        "conversation_id IN (SELECT id FROM conversations WHERE project_id = ?)",
+      );
+      parameters.push(this.project(projectId).id);
+    }
+    return this.db
+      .prepare(
+        `
+        SELECT id, conversation_id AS conversationId, type, payload_json, created_at AS createdAt
+        FROM conversation_events WHERE ${clauses.join(" AND ")} ORDER BY created_at, rowid
+      `,
+      )
+      .all(...parameters)
+      .map((row) => ({
+        id: row.id,
+        conversationId: row.conversationId,
+        type: row.type,
+        payload: JSON.parse(row.payload_json),
+        createdAt: row.createdAt,
+      }));
+  }
   conversation(id) {
     const c = this.db
       .prepare("SELECT * FROM conversations WHERE id = ?")

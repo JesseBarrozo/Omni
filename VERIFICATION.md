@@ -1,5 +1,13 @@
 # Vérification et tests à refaire
 
+## Consultation des outils et permissions
+
+- [x] `ChatStore.executionEvents()` lit uniquement les types canoniques tool/permission et filtre par conversation ou projet; un couple conversation/projet incohérent est refusé.
+- [x] `omni tools list` et `omni permissions list` affichent des résumés JSON/humains sans inclure les paramètres, contenus d’écriture ou chemins bruts.
+- [x] Le test réel Codex app-server a effectué une écriture temporaire après approbation, repris le thread, puis interrogé les deux commandes CLI sur le journal SQLite réel; les événements d’outil et de permission accordée sont présents et le chemin du fichier n’apparaît pas dans l’affichage.
+- [ ] Les tests réels d’interruption/refus CLI restent à refaire; les commandes de consultation ne modifient pas ces décisions.
+- Validation de phase : `npm test` (50 tests découverts, 39 réussis, 0 échec, 11 opt-in ignorés), lint, format:check, check, build et diff-check réussis. `OMNI_LIVE_CODEX_HARNESS_TESTS=1 node --test test/codex-harness.test.mjs` : 2/2 réussis avec le compte OAuth connecté.
+
 - [x] Ordre des migrations vérifié sur une base neuve : versions SQLite `[1, 2, 3]`.
 
 ## Harness Registry

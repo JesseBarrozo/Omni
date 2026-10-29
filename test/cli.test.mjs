@@ -205,6 +205,66 @@ test("CLI registry blocks disabled harnesses for run and harness swap", () => {
   }
 });
 
+test("CLI exposes persisted tool and permission history without raw tool inputs", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-execution-history-cli-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const store = new ChatStore(join(dir, "data", "omni.sqlite"));
+    const project = store.createProject("execution-history", dir);
+    const conversation = store.createConversation(
+      project.id,
+      "history",
+      "claude",
+    );
+    store.appendEvent(conversation.id, "tool.started", {
+      toolName: "Write",
+      harnessId: "claude-code",
+      input: { file_path: "/private/path", content: "hidden-tool-input" },
+    });
+    store.appendEvent(conversation.id, "permission.requested", {
+      id: "permission-1",
+      toolName: "Write",
+      action: "file-write",
+      input: { content: "hidden-permission-input" },
+    });
+    store.appendEvent(conversation.id, "permission.granted", {
+      id: "permission-1",
+      toolName: "Write",
+      reason: "approved once",
+      scope: "turn",
+    });
+    store.close();
+
+    const tools = run("tools", "list", "--project", dir, "--json");
+    assert.equal(tools.status, 0, tools.stderr);
+    assert.equal(JSON.parse(tools.stdout)[0].toolName, "Write");
+    assert.doesNotMatch(tools.stdout, /hidden-tool-input|\/private\/path/);
+    const permissions = run(
+      "permissions",
+      "list",
+      "--conversation",
+      conversation.id,
+      "--json",
+    );
+    assert.equal(permissions.status, 0, permissions.stderr);
+    const records = JSON.parse(permissions.stdout);
+    assert.deepEqual(
+      records.map((record) => record.event),
+      ["permission.requested", "permission.granted"],
+    );
+    assert.equal(records[1].granted, true);
+    assert.equal(records[1].scope, "turn");
+    assert.doesNotMatch(permissions.stdout, /hidden-permission-input/);
+    const missingScope = run("tools", "list", "--json");
+    assert.notEqual(missingScope.status, 0);
+    assert.match(missingScope.stderr, /filtre --conversation ou --project/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test(
   "real provider registry refreshes OAuth catalogs and Auto excludes a disabled model",
   { skip: process.env.OMNI_LIVE_PROVIDER_REGISTRY_TESTS !== "1" },

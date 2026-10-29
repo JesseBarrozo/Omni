@@ -210,6 +210,64 @@ test("harness registry persists real adapter metadata and enabled state", () => 
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("execution history filters canonical tool and permission events by project or conversation", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-execution-history-"));
+  const store = new ChatStore(join(dir, "db.sqlite"));
+  const project = store.createProject("history", dir);
+  const conversation = store.createConversation(project.id, "one", "codex");
+  const otherConversation = store.createConversation(
+    project.id,
+    "two",
+    "claude",
+  );
+  const otherProject = store.createProject("other");
+  const unrelated = store.createConversation(otherProject.id, "other", "codex");
+  store.appendEvent(conversation.id, "tool.started", {
+    toolName: "Write",
+    harnessId: "claude-code",
+  });
+  store.appendEvent(conversation.id, "permission.requested", {
+    id: "request-1",
+    toolName: "Write",
+    action: "file-write",
+  });
+  store.appendEvent(otherConversation.id, "tool.failed", { toolName: "Bash" });
+  store.appendEvent(unrelated.id, "tool.started", { toolName: "Read" });
+
+  assert.deepEqual(
+    store
+      .executionEvents("tools", { conversationId: conversation.id })
+      .map((event) => event.payload.toolName),
+    ["Write"],
+  );
+  assert.deepEqual(
+    store
+      .executionEvents("tools", { projectId: dir })
+      .map((event) => event.payload.toolName),
+    ["Write", "Bash"],
+  );
+  assert.deepEqual(
+    store
+      .executionEvents("permissions", { conversationId: conversation.id })
+      .map((event) => event.payload.id),
+    ["request-1"],
+  );
+  assert.throws(
+    () => store.executionEvents("tools"),
+    /filtre --conversation ou --project/,
+  );
+  assert.throws(
+    () =>
+      store.executionEvents("tools", {
+        conversationId: conversation.id,
+        projectId: otherProject.id,
+      }),
+    /n’appartient pas au projet/,
+  );
+  store.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("SQLite event store rejects non-canonical Omni event types", () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-event-types-"));
   const store = new ChatStore(join(dir, "db.sqlite"));

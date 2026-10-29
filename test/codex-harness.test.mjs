@@ -1,12 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ChatStore } from "../src/chat-store.mjs";
 import { CodexHarness } from "../src/codex-chat.mjs";
 import { assertHarnessAdapter } from "../src/adapters.mjs";
+
+const cli = fileURLToPath(new URL("../bin/omni.mjs", import.meta.url));
 
 test("CodexHarness satisfies the adapter contract and reports real capabilities", async () => {
   const harness = new CodexHarness({ store: {} });
@@ -138,6 +141,35 @@ test(
       assert.doesNotMatch(
         JSON.stringify(store.exportConversation(conversation.id)),
         /Bearer\s+\S+|sk-[A-Za-z0-9_-]{12,}/,
+      );
+      store.close();
+      store = null;
+      const historyEnv = { ...process.env, OMNI_DATA_DIR: dir };
+      const toolHistory = spawnSync(
+        process.execPath,
+        [cli, "tools", "list", "--conversation", conversation.id, "--json"],
+        { env: historyEnv, encoding: "utf8" },
+      );
+      assert.equal(toolHistory.status, 0, toolHistory.stderr);
+      assert.ok(JSON.parse(toolHistory.stdout).length > 0);
+      assert.doesNotMatch(toolHistory.stdout, /approved-by-omni\.txt/);
+      const permissionHistory = spawnSync(
+        process.execPath,
+        [
+          cli,
+          "permissions",
+          "list",
+          "--conversation",
+          conversation.id,
+          "--json",
+        ],
+        { env: historyEnv, encoding: "utf8" },
+      );
+      assert.equal(permissionHistory.status, 0, permissionHistory.stderr);
+      assert.ok(
+        JSON.parse(permissionHistory.stdout).some(
+          (entry) => entry.granted === true,
+        ),
       );
     } finally {
       await harness?.dispose();
