@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Provider OpenAI : ajout de profils de clés nommés, de la sélection du profil actif et des commandes CLI `auth key list|use`; l’index de profils ne contient aucun secret et l’identité `default` reste compatible.
+- Validation profils OpenAI : deux profils temporaires ont été créés, sélectionnés, listés et supprimés via le trousseau système réel. Aucun appel réseau OpenAI effectué.
 - Clé API OpenAI : stockage et suppression via une entrée distincte du trousseau système; entrée stdin bornée, masquée, statut sans valeur, confirmation de suppression, et résolution OAuth → environnement → trousseau. Les appels API avec cette clé ne sont pas validés dans cette phase.
 - Sécurité credentials : extraction d'un `SecretStore` partagé autour de `@napi-rs/keyring`, avec validation des identifiants, erreurs système masquées et backend Linux Secret Service forcé. OpenAI OAuth conserve son entrée existante; les credentials des CLIs restent gérés par ces outils.
 - Antigravity : ajout d'un provider de chat expérimental via le CLI officiel `agy`, avec catalogue de modèles, flux JSONL, reprise par identifiant de conversation, interruption et espace Omni privé sandboxé. L'exécution échoue en mode fail-closed si des règles globales `allow` peuvent contourner le contrôle headless. Pas d'outil Antigravity dans le Harness Registry, Auto ou Swap. Parcours de génération réel non testé sur demande; ne pas annoncer l'intégration comme validée de bout en bout.

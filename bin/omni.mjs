@@ -91,7 +91,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin\n  auth key remove openai [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project) {
@@ -997,8 +997,37 @@ try {
   ) {
     if (!hasFlag("--stdin"))
       throw new Error("Fournissez la clé uniquement avec --stdin.");
-    openAIAuth().setApiKey(await readApiKeyFromStdin());
-    print("Clé API OpenAI enregistrée dans le trousseau système.");
+    openAIAuth().setApiKey(
+      await readApiKeyFromStdin(),
+      option("--profile", "default"),
+    );
+    print(
+      `Profil OpenAI ${option("--profile", "default")} enregistré dans le trousseau système.`,
+    );
+  } else if (
+    command === "auth" &&
+    args[0] === "key" &&
+    args[1] === "list" &&
+    args[2] === "openai"
+  ) {
+    const profiles = openAIAuth().listApiKeyProfiles();
+    if (hasFlag("--json")) print(profiles);
+    else if (profiles.profiles.length === 0)
+      print("Aucun profil OpenAI enregistré.");
+    else
+      profiles.profiles.forEach((profile) =>
+        print(`${profile}${profile === profiles.active ? " (actif)" : ""}`),
+      );
+  } else if (
+    command === "auth" &&
+    args[0] === "key" &&
+    args[1] === "use" &&
+    args[2] === "openai"
+  ) {
+    const profile = option("--profile");
+    if (!profile) throw new Error("Indiquez le profil avec --profile NAME.");
+    openAIAuth().useApiKeyProfile(profile);
+    print(`Profil OpenAI ${profile} sélectionné.`);
   } else if (
     command === "auth" &&
     args[0] === "key" &&
@@ -1011,15 +1040,21 @@ try {
           "Confirmez la suppression avec --yes en mode non interactif.",
         );
       const rl = createInterface({ input: stdin, output: stdout });
+      const auth = openAIAuth();
+      const profile = option(
+        "--profile",
+        auth.listApiKeyProfiles().active ?? "default",
+      );
+      auth.getApiKey(profile);
       const answer = await rl.question(
-        "Supprimer la clé API OpenAI du trousseau ? [y/N] ",
+        `Supprimer le profil OpenAI ${profile} du trousseau ? [y/N] `,
       );
       rl.close();
       if (!/^y(es)?$/i.test(answer.trim())) {
         print("Suppression annulée.");
         process.exitCode = 1;
       } else {
-        const removed = openAIAuth().deleteApiKey();
+        const removed = auth.deleteApiKey(profile);
         print(
           removed
             ? "Clé API OpenAI supprimée."
@@ -1027,7 +1062,7 @@ try {
         );
       }
     } else {
-      const removed = openAIAuth().deleteApiKey();
+      const removed = openAIAuth().deleteApiKey(option("--profile"));
       print(
         removed
           ? "Clé API OpenAI supprimée."

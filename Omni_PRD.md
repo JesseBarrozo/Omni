@@ -10,14 +10,14 @@
 
 ---
 
-## État d’implémentation vérifié — 28 octobre 2026
+## État d’implémentation vérifié — 29 octobre 2026
 
 - Le socle chat SQLite de la phase 2 est commité (`93677d7`). Le test direct OpenAI par clé API n’a pas été exécuté.
 - Le parcours Codex OAuth via l’app-server officiel a répondu en réel, streamé les deltas et repris le même thread après redémarrage de la base Omni. L’authentification reste gérée par le CLI Codex; Omni n’importe ni n’extrait son jeton. Cette intégration est en lecture seule.
 - L’intégration Claude Code utilise le SDK Agent officiel, le login CLI et les callbacks de permission Omni. Après connexion OAuth Claude, les tests réels de streaming, reprise de session après redémarrage SQLite et écriture temporaire avec permission explicite ont réussi. Le test CLI interactif de refus et l’interruption réelle restent à vérifier; voir `VERIFICATION.md`.
 - Le premier harness Codex app-server est intégré via l’interface JSON-RPC officielle : sandbox initiale lecture seule, streaming, interruption, checkpoint/reprise et approbations interactives. Le test réel d’écriture approuvée puis reprise après redémarrage et le parcours CLI interactif ont réussi. Les refus explicites CLI, les demandes d’approbation de commande/profil et l’interruption réelle pendant un tour restent à vérifier; voir `VERIFICATION.md`.
 - Harness Swap est disponible par CLI entre Codex et Claude : checkpoint avec résumé portable/historique/Git, garde de frontière sûre et création de session par le SDK réel. Le test Codex → Claude → Codex a réussi sur un dépôt Git temporaire. `omni run --auto` route de façon déterministe uniquement parmi les modèles des catalogues OAuth réels Codex/Claude et conserve décisions/résultats; les limitations des métadonnées de prix et de confidentialité sont documentées. La CLI Orca permet de lancer Omni comme commande ordinaire dans un terminal d’espace de travail existant, mais ne reconnaît pas Omni comme agent TUI et n’expose aucun contrat public d’enregistrement d’un agent externe dans la version vérifiée (`ORCA_COMPATIBILITY.md`). Antigravity dispose désormais d'un provider de chat expérimental reposant sur le CLI officiel et un workspace scratch isolé; le parcours Omni réel reste à valider et cette intégration n'est ni un harness ni disponible dans Auto/Swap. Le gestionnaire général de secrets n'est pas validé.
-- La couche `SecretStore` encapsule désormais le trousseau système pour les credentials Omni et OpenAI OAuth conserve son entrée historique; elle n'importe pas les tokens des CLIs tiers. La gestion générique des comptes multiples et le stockage de clés API par Omni restent hors périmètre.
+- `SecretStore` encapsule le trousseau système. OpenAI OAuth conserve son entrée historique; les clés API ont des profils nommés, un profil actif persistant et un profil `default` rétrocompatible. Leur stockage/gestion locale est implémenté; aucun appel OpenAI par clé API n’a été lancé lors de ces phases. Les profils multi-comptes génériques entre fournisseurs restent à concevoir. Les tokens des CLIs tiers ne sont pas importés.
 
 ---
 

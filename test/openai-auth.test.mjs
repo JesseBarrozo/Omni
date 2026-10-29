@@ -200,6 +200,79 @@ test("OpenAI API key is isolated from OAuth and passed to the official client", 
   }
 });
 
+test("OpenAI API-key profiles keep secrets separate and preserve the default profile", () => {
+  const values = new Map([
+    ["Omni OpenAI API Key/default", "legacy-default-value"],
+  ]);
+  const secretStore = {
+    get: (service, account) => values.get(`${service}/${account}`) ?? null,
+    set: (service, account, value) =>
+      values.set(`${service}/${account}`, value),
+    delete: (service, account) => values.delete(`${service}/${account}`),
+  };
+  const dataDir = mkdtempSync(join(tmpdir(), "omni-openai-profiles-"));
+  const auth = new OpenAIAuth({ dataDir, secretStore });
+  try {
+    assert.deepEqual(auth.listApiKeyProfiles(), {
+      profiles: ["default"],
+      active: "default",
+    });
+    auth.setApiKey("work-profile-value", "work");
+    assert.equal(auth.getApiKey(), "legacy-default-value");
+    assert.equal(auth.useApiKeyProfile("work"), "work");
+    assert.equal(auth.getApiKey(), "work-profile-value");
+    assert.equal(auth.getApiKey("default"), "legacy-default-value");
+    assert.deepEqual(auth.listApiKeyProfiles(), {
+      profiles: ["default", "work"],
+      active: "work",
+    });
+    const index = values.get("Omni OpenAI API Key Profiles/registry");
+    assert.equal(index.includes("work-profile-value"), false);
+    assert.equal(auth.deleteApiKey("work"), true);
+    assert.equal(auth.getApiKey(), "legacy-default-value");
+    assert.throws(
+      () => auth.setApiKey("invalid-profile", "not a profile"),
+      /profil OpenAI/,
+    );
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test(
+  "system keyring stores and switches transient named OpenAI profiles",
+  { skip: process.env.OMNI_LIVE_KEYRING_TESTS !== "1", timeout: 30_000 },
+  () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "omni-openai-profiles-live-"));
+    const auth = new OpenAIAuth({ dataDir });
+    const suffix = `${process.pid}-${randomUUID()}`;
+    const first = `profile-a-${suffix}`;
+    const second = `profile-b-${suffix}`;
+    const originalActive = auth.listApiKeyProfiles().active;
+    try {
+      auth.setApiKey(`transient-${randomUUID()}`, first);
+      auth.setApiKey(`transient-${randomUUID()}`, second);
+      assert.deepEqual(auth.listApiKeyProfiles().profiles.slice(-2), [
+        first,
+        second,
+      ]);
+      assert.equal(auth.useApiKeyProfile(first), first);
+      assert.ok(auth.getApiKey().startsWith("transient-"));
+      assert.equal(auth.useApiKeyProfile(second), second);
+      assert.ok(auth.getApiKey().startsWith("transient-"));
+    } finally {
+      auth.deleteApiKey(first);
+      auth.deleteApiKey(second);
+      if (
+        originalActive &&
+        auth.listApiKeyProfiles().profiles.includes(originalActive)
+      )
+        auth.useApiKeyProfile(originalActive);
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  },
+);
+
 test("OpenAI reauthorization reuses the registered client and stable host identifier", async () => {
   const flow = await createFlow();
   try {

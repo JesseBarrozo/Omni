@@ -241,3 +241,13 @@ Commandes/résultats de cette investigation : `agy --help` (CLI présent), `agy 
 - [x] Parcours CLI réel avec une valeur temporaire non envoyée à OpenAI : `auth key set --stdin`, `auth status --json`, puis `auth key remove --yes`; valeur absente des sorties et supprimée du trousseau à la fin.
 - [ ] Aucun test d'appel modèle/catalogue ou d'authentification OpenAI API-key n'a été effectué dans cette phase. Le comportement réseau avec une clé stockée reste à valider avec un compte de test dédié.
 - [ ] Les vérifications présentes ne prouvent pas encore la sélection runtime par un appel API réel; la clé API de l'utilisateur n'a pas été lue, remplacée ni supprimée pendant les tests.
+
+## Profils OpenAI nommés
+
+- [x] Chaque nom de profil pointe vers un credential distinct dans le trousseau; l’index persistant contient uniquement les identifiants et le nom actif.
+- [x] Le profil historique `default` reste détectable avant création de l’index; OAuth et `OPENAI_API_KEY` gardent la priorité sur le profil actif.
+- [x] Les commandes CLI `auth key set|list|use|remove` gèrent les profils; les sorties ne révèlent que les noms et l’état, jamais la valeur des clés.
+- [x] `OMNI_LIVE_KEYRING_TESTS=1 node --test test/openai-auth.test.mjs test/cli.test.mjs test/secret-store.test.mjs` : 23 réussis, 0 échec, 5 intégrations non liées ignorées. Le test réel a créé deux profils temporaires, basculé le profil actif, listé les noms puis supprimé les deux profils.
+- [x] Le parcours CLI set/list/use/status/remove a utilisé le trousseau réel avec des valeurs temporaires. Aucune requête réseau OpenAI n’a été envoyée.
+- [ ] Aucun catalogue, modèle ou endpoint OpenAI n’a été appelé; les profils sont validés localement seulement.
+- [x] `npm test` : 82 découverts, 62 réussis, 0 échec, 20 opt-in ignorés; lint, format, syntaxe, build, audit dépendances (0 vulnérabilité) et diff-check réussis.

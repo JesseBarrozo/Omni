@@ -34,7 +34,10 @@ const requiredScopes = [
 const serviceName = "Omni OpenAI ChatGPT OAuth";
 const accountName = "default";
 const apiKeyServiceName = "Omni OpenAI API Key";
-const apiKeyAccountName = "default";
+const profileRegistryServiceName = "Omni OpenAI API Key Profiles";
+const profileRegistryAccountName = "registry";
+const defaultApiKeyProfile = "default";
+const profilePattern = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 function safeKeyringError() {
   return new Error(
@@ -200,19 +203,85 @@ export class OpenAIAuth {
     return this.#readCredential() !== null;
   }
 
-  hasApiKey() {
-    return this.getApiKey() !== null;
+  #readApiKeyProfiles() {
+    let raw;
+    try {
+      raw = this.secretStore.get(
+        profileRegistryServiceName,
+        profileRegistryAccountName,
+      );
+    } catch {
+      throw safeKeyringError();
+    }
+    if (raw === null) {
+      let hasLegacyDefault = false;
+      try {
+        hasLegacyDefault =
+          this.secretStore.get(apiKeyServiceName, defaultApiKeyProfile) !==
+          null;
+      } catch {
+        throw safeKeyringError();
+      }
+      return {
+        profiles: hasLegacyDefault ? [defaultApiKeyProfile] : [],
+        active: hasLegacyDefault ? defaultApiKeyProfile : null,
+      };
+    }
+    let registry;
+    try {
+      registry = JSON.parse(raw);
+    } catch {
+      throw new Error("Le registre des profils OpenAI est illisible.");
+    }
+    if (
+      registry?.version !== 1 ||
+      !Array.isArray(registry.profiles) ||
+      registry.profiles.some(
+        (profile) =>
+          typeof profile !== "string" || !profilePattern.test(profile),
+      ) ||
+      new Set(registry.profiles).size !== registry.profiles.length ||
+      (registry.active !== null &&
+        (typeof registry.active !== "string" ||
+          !registry.profiles.includes(registry.active)))
+    )
+      throw new Error("Le registre des profils OpenAI est invalide.");
+    return { profiles: registry.profiles, active: registry.active };
   }
 
-  getApiKey() {
+  #saveApiKeyProfiles(registry) {
     try {
-      return this.secretStore.get(apiKeyServiceName, apiKeyAccountName);
+      this.secretStore.set(
+        profileRegistryServiceName,
+        profileRegistryAccountName,
+        JSON.stringify({ version: 1, ...registry }),
+      );
     } catch {
       throw safeKeyringError();
     }
   }
 
-  setApiKey(apiKey) {
+  listApiKeyProfiles() {
+    return this.#readApiKeyProfiles();
+  }
+
+  hasApiKey(profile = undefined) {
+    return this.getApiKey(profile) !== null;
+  }
+
+  getApiKey(profile = undefined) {
+    const selected = profile ?? this.#readApiKeyProfiles().active;
+    if (selected === null) return null;
+    if (typeof selected !== "string" || !profilePattern.test(selected))
+      throw new TypeError("Profil de clé API OpenAI invalide.");
+    try {
+      return this.secretStore.get(apiKeyServiceName, selected);
+    } catch {
+      throw safeKeyringError();
+    }
+  }
+
+  setApiKey(apiKey, profile = defaultApiKeyProfile) {
     if (
       typeof apiKey !== "string" ||
       apiKey.length === 0 ||
@@ -220,17 +289,57 @@ export class OpenAIAuth {
       /[\r\n\0-\x1f\x7f]/.test(apiKey)
     )
       throw new TypeError("La clé API doit être une seule ligne non vide.");
+    if (typeof profile !== "string" || !profilePattern.test(profile))
+      throw new TypeError("Nom de profil OpenAI invalide.");
+    const registry = this.#readApiKeyProfiles();
+    const previous = this.getApiKey(profile);
     try {
-      this.secretStore.set(apiKeyServiceName, apiKeyAccountName, apiKey);
+      this.secretStore.set(apiKeyServiceName, profile, apiKey);
+      if (!registry.profiles.includes(profile)) registry.profiles.push(profile);
+      if (registry.active === null) registry.active = profile;
+      this.#saveApiKeyProfiles(registry);
     } catch {
+      try {
+        if (previous === null)
+          this.secretStore.delete(apiKeyServiceName, profile);
+        else this.secretStore.set(apiKeyServiceName, profile, previous);
+      } catch {}
       throw safeKeyringError();
     }
   }
 
-  deleteApiKey() {
+  useApiKeyProfile(profile) {
+    if (typeof profile !== "string" || !profilePattern.test(profile))
+      throw new TypeError("Nom de profil OpenAI invalide.");
+    const registry = this.#readApiKeyProfiles();
+    if (!registry.profiles.includes(profile) || !this.getApiKey(profile))
+      throw new Error("Ce profil de clé API OpenAI n’existe pas.");
+    registry.active = profile;
+    this.#saveApiKeyProfiles(registry);
+    return profile;
+  }
+
+  deleteApiKey(profile = undefined) {
+    const registry = this.#readApiKeyProfiles();
+    const selected = profile ?? registry.active;
+    if (selected === null) return false;
+    if (typeof selected !== "string" || !profilePattern.test(selected))
+      throw new TypeError("Nom de profil OpenAI invalide.");
+    const previous = this.getApiKey(selected);
     try {
-      return this.secretStore.delete(apiKeyServiceName, apiKeyAccountName);
+      const deleted = this.secretStore.delete(apiKeyServiceName, selected);
+      registry.profiles = registry.profiles.filter((name) => name !== selected);
+      if (registry.active === selected)
+        registry.active = registry.profiles.includes(defaultApiKeyProfile)
+          ? defaultApiKeyProfile
+          : (registry.profiles[0] ?? null);
+      this.#saveApiKeyProfiles(registry);
+      return deleted;
     } catch {
+      if (previous !== null)
+        try {
+          this.secretStore.set(apiKeyServiceName, selected, previous);
+        } catch {}
       throw safeKeyringError();
     }
   }

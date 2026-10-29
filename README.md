@@ -32,7 +32,10 @@ node ./bin/omni.mjs conversation search --query "permission denied" --project ./
 node ./bin/omni.mjs models disable --provider codex --model MODEL_ID --auto-only
 node ./bin/omni.mjs auth status --json
 node ./bin/omni.mjs auth login openai
-node ./bin/omni.mjs auth key set openai --stdin < /secure/path/openai-key
+node ./bin/omni.mjs auth key set openai --stdin --profile work < /secure/path/openai-key
+node ./bin/omni.mjs auth key list openai --json
+node ./bin/omni.mjs auth key use openai --profile work
+node ./bin/omni.mjs auth key remove openai --profile work
 node ./bin/omni.mjs auth login codex
 node ./bin/omni.mjs auth login claude
 node ./bin/omni.mjs project create --name "My project" --path ./my-project
@@ -66,7 +69,7 @@ The CLI stores projects, conversations, messages, streamed partial responses and
 
 Import an export into a project with `node ./bin/omni.mjs conversation import --project PROJECT_ID_OR_PATH ./conversation.json`. Imported session events are historical records; Omni gives the imported conversation and its messages fresh IDs, preserves the transcript, and never replays an action.
 
-Use `OMNI_DATA_DIR` to point local data to a different directory. SQLite data uses restrictive local file permissions but is not encrypted. OpenAI credentials are resolved in this order: ChatGPT OAuth, `OPENAI_API_KEY`, then the stored API key. `omni auth status --json` exposes only presence and source; `omni auth key remove openai` asks for confirmation (use `--yes` in automation). API keys are not copied into SQLite or logs.
+Use `OMNI_DATA_DIR` to point local data to a different directory. SQLite data uses restrictive local file permissions but is not encrypted. OpenAI credentials are resolved in this order: ChatGPT OAuth, `OPENAI_API_KEY`, then the active stored API-key profile. Manage profiles with `auth key set|list|use|remove openai`; set accepts a profile name and stdin only, list/status expose names and source but no key values, and remove asks for confirmation (use `--yes` in automation). The legacy `default` keyring identity remains supported. API keys are not copied into SQLite or logs.
 
 ## Project status
 

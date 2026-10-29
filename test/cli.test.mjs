@@ -83,6 +83,73 @@ test("CLI rejects API keys in arguments and requires explicit noninteractive rem
   }
 });
 
+test(
+  "CLI manages temporary named OpenAI key profiles using the real system keyring",
+  { skip: process.env.OMNI_LIVE_KEYRING_TESTS !== "1", timeout: 30_000 },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "omni-key-profiles-cli-"));
+    const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+    const run = (input, ...args) =>
+      spawnSync(process.execPath, [cli, ...args], {
+        env,
+        ...(input === null ? {} : { input }),
+        encoding: "utf8",
+      });
+    const suffix = `${process.pid}-${Date.now()}`;
+    const profiles = [`omni-test-a-${suffix}`, `omni-test-b-${suffix}`];
+    const original = run(null, "auth", "key", "list", "openai", "--json");
+    assert.equal(original.status, 0, original.stderr);
+    const originalActive = JSON.parse(original.stdout).active;
+    try {
+      for (const [index, profile] of profiles.entries()) {
+        const key = `temporary-profile-secret-${index}-${suffix}`;
+        const saved = run(
+          `${key}\n`,
+          "auth",
+          "key",
+          "set",
+          "openai",
+          "--stdin",
+          "--profile",
+          profile,
+        );
+        assert.equal(saved.status, 0, saved.stderr);
+        assert.doesNotMatch(`${saved.stdout}${saved.stderr}`, new RegExp(key));
+      }
+      const listed = run(null, "auth", "key", "list", "openai", "--json");
+      assert.deepEqual(JSON.parse(listed.stdout).profiles.slice(-2), profiles);
+      const selected = run(
+        null,
+        "auth",
+        "key",
+        "use",
+        "openai",
+        "--profile",
+        profiles[0],
+      );
+      assert.equal(selected.status, 0, selected.stderr);
+      const status = run(null, "auth", "status", "--json");
+      assert.equal(status.status, 0, status.stderr);
+      assert.doesNotMatch(status.stdout, /temporary-profile-secret/);
+    } finally {
+      for (const profile of profiles)
+        run(
+          null,
+          "auth",
+          "key",
+          "remove",
+          "openai",
+          "--profile",
+          profile,
+          "--yes",
+        );
+      if (originalActive)
+        run(null, "auth", "key", "use", "openai", "--profile", originalActive);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
 test("CLI persists projects and resumes with the saved or explicitly changed model", () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-cli-"));
   const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
