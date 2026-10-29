@@ -114,6 +114,34 @@ export class McpRegistry {
     };
   }
 
+  codexServerConfig(name, { cwd } = {}) {
+    const server = this.store.mcpServer(name);
+    if (!server) throw new Error("Serveur MCP introuvable.");
+    if (server.name.includes("."))
+      throw new Error(
+        "Codex n’accepte pas les points dans les noms de clé MCP; renommez ce serveur avant de l’utiliser.",
+      );
+    if (server.args.some((arg) => envReferencePattern.test(arg))) {
+      envReferencePattern.lastIndex = 0;
+      throw new Error(
+        "Codex ne peut pas résoudre de secrets dans les arguments MCP sans les exposer à la ligne de commande; transmettez-les par --env-names.",
+      );
+    }
+    envReferencePattern.lastIndex = 0;
+    for (const key of server.envKeys)
+      if (typeof this.env[key] !== "string")
+        throw new Error(
+          `Une variable d’environnement MCP autorisée n’est pas définie (${key}).`,
+        );
+    return {
+      name: server.name,
+      command: server.command,
+      args: server.args,
+      cwd: server.cwd ?? cwd ?? process.cwd(),
+      env_vars: server.envKeys,
+    };
+  }
+
   removeServer(name) {
     return this.store.removeMcpServer(name);
   }

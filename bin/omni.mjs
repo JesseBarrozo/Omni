@@ -380,6 +380,7 @@ function createHarnessRun(harnessId, conversation, modelId) {
             cwd: project.rootPath ?? process.cwd(),
             model: modelId === "codex" ? undefined : modelId,
             requestPermission,
+            mcpRegistry: mcpRegistry(),
           })
         : null;
   if (!adapter) {
@@ -637,6 +638,7 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
           cwd: project.rootPath ?? process.cwd(),
           model: model === "codex" ? undefined : model,
           requestPermission,
+          mcpRegistry: mcpRegistry(),
         });
   try {
     const service = new HarnessSwapService({
@@ -859,7 +861,7 @@ async function runCodexHarness(conversation, prompt, preparedRun = null) {
   let completed = false;
   try {
     store.setStatus(conversation.id, "running");
-    await adapter.initialize();
+    await adapter.initialize({ conversationId: conversation.id });
     const sessionRef = store
       .listEvents(conversation.id)
       .filter(

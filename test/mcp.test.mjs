@@ -93,6 +93,19 @@ test("MCP stdio discovery and approved tool call use the official SDK lifecycle"
     });
     assert.equal(claudeConfig.type, "stdio");
     assert.equal(claudeConfig.env.MCP_TEST_SECRET, "transient-test-only-value");
+    const codexConfig = registry.codexServerConfig("local-fixture", {
+      cwd: dir,
+    });
+    assert.deepEqual(codexConfig.env_vars, [
+      "MCP_TEST_SECRET",
+      "MCP_OUTPUT_FILE",
+      "MCP_START_FILE",
+    ]);
+    assert.equal(
+      JSON.stringify(codexConfig).includes("transient-test-only-value"),
+      false,
+    );
+    assert.equal(JSON.stringify(codexConfig).includes(outputFile), false);
     const rawConfig = store.db.prepare("SELECT * FROM mcp_servers").get();
     assert.equal(
       JSON.stringify(rawConfig).includes("transient-test-only-value"),
@@ -123,6 +136,31 @@ test("MCP stdio discovery and approved tool call use the official SDK lifecycle"
     assert.equal(approvalCount, 1);
     assert.equal(readFileSync(outputFile, "utf8"), "executed");
     assert.equal(readFileSync(startupFile, "utf8"), "2");
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex MCP configuration refuses secret interpolation into process arguments", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-codex-mcp-config-"));
+  const store = new ChatStore(join(dir, "omni.sqlite"));
+  try {
+    const registry = new McpRegistry({
+      store,
+      env: { PATH: process.env.PATH ?? "", MCP_SECRET: "do-not-expose" },
+    });
+    registry.addServer({
+      name: "unsafe-arg",
+      command: process.execPath,
+      args: ["{{env:MCP_SECRET}}"],
+      cwd: dir,
+      envKeys: ["MCP_SECRET"],
+    });
+    assert.throws(
+      () => registry.codexServerConfig("unsafe-arg", { cwd: dir }),
+      /sans les exposer à la ligne de commande/,
+    );
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

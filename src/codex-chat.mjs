@@ -26,9 +26,16 @@ export function startCodexLogin({
 }
 
 class CodexAppServer {
-  constructor({ executable = "codex", timeoutMs = 30_000 } = {}) {
+  constructor({
+    executable = "codex",
+    timeoutMs = 30_000,
+    mcpServers = [],
+    env = process.env,
+  } = {}) {
     this.executable = executable;
     this.timeoutMs = timeoutMs;
+    this.mcpServers = mcpServers;
+    this.env = env;
     this.sequence = 1;
     this.pending = new Map();
     this.notifications = [];
@@ -37,13 +44,26 @@ class CodexAppServer {
   }
 
   async start() {
-    this.child = spawn(
-      this.executable,
-      ["app-server", "--listen", "stdio://", "-c", "mcp_servers={}"],
-      {
-        stdio: ["pipe", "pipe", "ignore"],
-      },
-    );
+    const args = ["app-server", "--listen", "stdio://", "-c", "mcp_servers={}"];
+    for (const server of this.mcpServers) {
+      const prefix = `mcp_servers.${server.name}`;
+      args.push(
+        "-c",
+        `${prefix}.command=${JSON.stringify(server.command)}`,
+        "-c",
+        `${prefix}.args=${JSON.stringify(server.args)}`,
+        "-c",
+        `${prefix}.cwd=${JSON.stringify(server.cwd)}`,
+        "-c",
+        `${prefix}.env_vars=${JSON.stringify(server.env_vars)}`,
+        "-c",
+        `${prefix}.default_tools_approval_mode="prompt"`,
+      );
+    }
+    this.child = spawn(this.executable, args, {
+      stdio: ["pipe", "pipe", "ignore"],
+      env: this.env,
+    });
     this.child.stdout.on("data", (chunk) => this.#read(chunk));
     this.child.on("error", (error) => this.#fail(safeError(error.message)));
     this.child.on("exit", (code) => {
@@ -334,7 +354,22 @@ const codexApprovalMethods = new Set([
   "item/commandExecution/requestApproval",
   "item/fileChange/requestApproval",
   "item/permissions/requestApproval",
+  "mcpServer/elicitation/request",
 ]);
+
+const isCredentialEnv = (name) =>
+  /(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|AUTHORIZATION|CREDENTIAL)/i.test(name);
+
+function codexChildEnvironment(env, mcpServers) {
+  if (mcpServers.length === 0) return env;
+  const childEnv = Object.fromEntries(
+    Object.entries(env).filter(([name]) => !isCredentialEnv(name)),
+  );
+  for (const server of mcpServers)
+    for (const name of server.env_vars)
+      if (typeof env[name] === "string") childEnv[name] = env[name];
+  return childEnv;
+}
 
 function codexToolName(item) {
   if (item?.type === "commandExecution") return "Codex command";
@@ -350,6 +385,8 @@ export class CodexHarness {
     cwd = process.cwd(),
     model,
     requestPermission = async () => false,
+    mcpRegistry = null,
+    env = process.env,
   } = {}) {
     if (!store) throw new Error("CodexHarness requires the Omni event store");
     this.store = store;
@@ -357,6 +394,10 @@ export class CodexHarness {
     this.cwd = cwd;
     this.model = model;
     this.requestPermission = requestPermission;
+    this.mcpRegistry = mcpRegistry;
+    this.env = env;
+    this.mcpServers = [];
+    this.mcpConfigured = false;
     this.sessions = new Map();
     this.activeTurns = new Map();
     this.pendingFileChanges = new Map();
@@ -365,10 +406,59 @@ export class CodexHarness {
     assertHarnessAdapter(this);
   }
 
-  async initialize() {
+  async initialize({ conversationId } = {}) {
+    if (this.server) return;
+    if (!this.mcpConfigured) {
+      const configured = [];
+      const registeredServers = this.mcpRegistry?.listServers() ?? [];
+      if (registeredServers.length > 0 && !conversationId)
+        throw new Error(
+          "conversationId Omni requis pour approuver le démarrage des serveurs MCP Codex",
+        );
+      for (const entry of registeredServers) {
+        let config;
+        try {
+          config = this.mcpRegistry.codexServerConfig(entry.name, {
+            cwd: this.cwd,
+          });
+        } catch (error) {
+          if (conversationId)
+            this.store.appendEvent(conversationId, "mcp.server.rejected", {
+              harnessId: this.id,
+              server: entry.name,
+              reason: redactSecrets(error.message),
+            });
+          throw safeError(
+            `Configuration du serveur MCP Codex refusée (${entry.name}): ${error.message}`,
+          );
+        }
+        const request = {
+          method: "mcpServer/start",
+          server: entry.name,
+          toolName: "démarrer le serveur MCP",
+          conversationId,
+        };
+        this.store.appendEvent(conversationId, "permission.requested", request);
+        let allowed = false;
+        try {
+          allowed = Boolean(await this.requestPermission(request));
+        } catch {}
+        this.store.appendEvent(
+          conversationId,
+          allowed ? "permission.granted" : "permission.denied",
+          { method: request.method, server: entry.name },
+        );
+        if (allowed) configured.push(config);
+      }
+      this.mcpServers = configured;
+      this.mcpConfigured = true;
+    }
+    const env = codexChildEnvironment(this.env, this.mcpServers);
     if (!this.server)
       this.server = await new CodexAppServer({
         executable: this.executable,
+        mcpServers: this.mcpServers,
+        env,
       }).start();
   }
 
@@ -390,7 +480,7 @@ export class CodexHarness {
   } = {}) {
     if (!conversationId)
       throw new Error("conversationId Omni requis pour une session Codex");
-    await this.initialize();
+    await this.initialize({ conversationId });
     const response = await this.server.request("thread/start", {
       cwd,
       approvalPolicy: "on-request",
@@ -422,7 +512,7 @@ export class CodexHarness {
       throw new Error(
         "conversationId Omni requis pour reprendre une session Codex",
       );
-    await this.initialize();
+    await this.initialize({ conversationId });
     const resumeSummary = this.store
       .listEvents(conversationId)
       .filter(
@@ -481,27 +571,73 @@ export class CodexHarness {
 
   async #approval(request, session, signal) {
     const params = request.params ?? {};
-    const payload = {
-      method: request.method,
-      requestId: request.id,
-      params: redactSecrets({
-        ...params,
-        ...(request.method === "item/fileChange/requestApproval"
-          ? {
-              changes: this.pendingFileChanges.get(params.itemId) ?? [],
-            }
-          : {}),
-      }),
-      conversationId: session.conversationId,
-      sessionId: session.id,
-    };
+    const mcpApproval = request.method === "mcpServer/elicitation/request";
+    const meta = params._meta ?? {};
+    let toolParams = meta.tool_params;
+    if (typeof toolParams === "string") {
+      try {
+        toolParams = JSON.parse(toolParams);
+      } catch {
+        toolParams = null;
+      }
+    }
+    const candidateToolName =
+      (typeof meta.tool_name === "string" && meta.tool_name) ||
+      (toolParams &&
+      typeof toolParams === "object" &&
+      typeof toolParams.name === "string"
+        ? toolParams.name
+        : null);
+    const toolName =
+      typeof candidateToolName === "string" &&
+      /^[^\0-\x1f\x7f]{1,256}$/.test(candidateToolName)
+        ? candidateToolName
+        : null;
+    const validMcpApproval =
+      mcpApproval &&
+      params.mode === "form" &&
+      meta.codex_approval_kind === "mcp_tool_call" &&
+      typeof params.serverName === "string";
+    const payload = mcpApproval
+      ? {
+          method: request.method,
+          server:
+            typeof params.serverName === "string"
+              ? params.serverName
+              : "unknown",
+          toolName:
+            typeof toolName === "string"
+              ? toolName
+              : "outil MCP (nom non fourni par Codex)",
+          action: "mcp-tool-call",
+          conversationId: session.conversationId,
+          sessionId: session.id,
+        }
+      : {
+          method: request.method,
+          requestId: request.id,
+          params: redactSecrets({
+            ...params,
+            ...(request.method === "item/fileChange/requestApproval"
+              ? {
+                  changes: this.pendingFileChanges.get(params.itemId) ?? [],
+                }
+              : {}),
+          }),
+          conversationId: session.conversationId,
+          sessionId: session.id,
+        };
     this.store.appendEvent(
       session.conversationId,
       "permission.requested",
       payload,
     );
     let allowed = false;
-    if (codexApprovalMethods.has(request.method) && !signal?.aborted) {
+    if (
+      codexApprovalMethods.has(request.method) &&
+      (!mcpApproval || validMcpApproval) &&
+      !signal?.aborted
+    ) {
       try {
         allowed = await this.requestPermission(payload, signal);
       } catch {
@@ -529,6 +665,12 @@ export class CodexHarness {
         permissions: allowed ? (params.permissions ?? {}) : {},
         scope: "turn",
       });
+    else if (mcpApproval)
+      this.server.respond(request.id, {
+        action: allowed ? "accept" : "decline",
+        content: allowed ? {} : null,
+        _meta: null,
+      });
     else
       this.server.respondError(
         request.id,
@@ -545,6 +687,7 @@ export class CodexHarness {
       );
     if (!prompt?.trim())
       throw new Error("Le prompt Codex ne peut pas être vide");
+    await this.initialize({ conversationId });
     let session = sessionId ? this.sessions.get(sessionId) : null;
     if (!session && sessionId)
       session = await this.resumeSession(sessionId, { conversationId });
@@ -594,7 +737,13 @@ export class CodexHarness {
               sessionId: session.id,
               toolUseId: params.item.id,
               toolName,
-              input: redactSecrets(params.item),
+              input:
+                params.item?.type === "mcpToolCall"
+                  ? {
+                      server: params.item.server,
+                      tool: params.item.tool,
+                    }
+                  : redactSecrets(params.item),
             };
             this.store.appendEvent(conversationId, "tool.started", payload);
             if (params.item?.type === "commandExecution")
