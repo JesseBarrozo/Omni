@@ -166,11 +166,14 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
     harnessName,
     chatHarnessId,
   ) => {
+    const modelDescriptors = models.map((model) =>
+      typeof model === "string" ? { id: model, name: model } : model,
+    );
     store.saveProviderCatalog({
       providerId,
       name: providerId,
       authStatus: "connected",
-      models,
+      models: modelDescriptors.map((model) => model.id),
     });
     const storedProvider = store
       .providerRegistry()
@@ -211,17 +214,16 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
           ? { enabled: storedHarnesses.get(harness.id).enabled }
           : {}),
       });
-    for (const modelId of models)
+    for (const descriptor of modelDescriptors)
       registry.registerModel({
-        id: modelId,
+        ...descriptor,
         providerId,
-        name: modelId,
-        available: true,
-        enabled: storedModels.get(modelId)?.enabled ?? true,
+        available: descriptor.available ?? true,
+        enabled: storedModels.get(descriptor.id)?.enabled ?? true,
         enabledForAuto:
-          (storedModels.get(modelId)?.enabledForAuto ?? true) &&
+          (storedModels.get(descriptor.id)?.enabledForAuto ?? true) &&
           (!autoModelAllowlist ||
-            autoModelAllowlist.has(`${providerId}:${modelId}`)),
+            autoModelAllowlist.has(`${providerId}:${descriptor.id}`)),
       });
     checkedProviders.push({
       providerId,
@@ -446,7 +448,7 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
       executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode",
     });
     try {
-      const models = await openCode.listModels();
+      const models = await openCode.listModelCatalog();
       const capabilities = await openCode.capabilities();
       store.saveHarnessRegistry({
         id: openCode.id,

@@ -99,6 +99,14 @@ test("AutoRouter includes enabled OpenCode models for agentic tasks without inve
   const registry = registryFixture();
   registry.registerProvider({ id: "opencode", name: "OpenCode" });
   registry.registerModel({
+    id: "text-only",
+    providerId: "opencode",
+    enabled: true,
+    enabledForAuto: true,
+    available: true,
+    capabilities: { tools: false },
+  });
+  registry.registerModel({
     id: "provider/model-x",
     providerId: "opencode",
     enabled: true,
@@ -119,6 +127,13 @@ test("AutoRouter includes enabled OpenCode models for agentic tasks without inve
   assert.equal(decision.selected.providerId, "opencode");
   assert.equal(decision.selected.modelId, "provider/model-x");
   assert.equal(decision.selected.harnessId, "opencode");
+  assert.ok(
+    decision.evaluatedCandidates
+      .find((candidate) =>
+        candidate.key.includes("opencode/text-only/opencode"),
+      )
+      .exclusions.includes("model-tools-unsupported"),
+  );
 
   const mcpDecision = new AutoRouter(registry, {
     preferredProviders: ["opencode"],
@@ -141,6 +156,76 @@ test("AutoRouter includes enabled OpenCode models for agentic tasks without inve
         (candidate) => candidate.key === "opencode/provider/model-x/opencode",
       )
       .exclusions.includes("privacy-not-approved"),
+  );
+});
+
+test("local-first ranks only explicitly local models before preferred cloud providers", () => {
+  const registry = registryFixture();
+  registry.registerProvider({
+    id: "ollama-custom",
+    name: "Custom local endpoint",
+  });
+  registry.registerModel({
+    id: "local-agent",
+    providerId: "ollama-custom",
+    local: true,
+    capabilities: { tools: true },
+  });
+  registry.registerHarness({
+    id: "local-harness",
+    providerIds: ["ollama-custom"],
+    capabilities: { tools: true },
+    privacyApproved: true,
+  });
+
+  const decision = new AutoRouter(registry, {
+    profile: "local-first",
+    preferredProviders: ["codex"],
+  }).select({ prompt: "Implement a fix", needsTools: true });
+  assert.equal(decision.selected.providerId, "ollama-custom");
+  assert.equal(
+    decision.evaluatedCandidates.find((candidate) =>
+      candidate.key.includes("ollama-custom/local-agent"),
+    ).local,
+    true,
+  );
+  assert.ok(decision.criteria.ranking[0].includes("loopback"));
+
+  const cloudOnly = new ModelRegistry();
+  cloudOnly.registerProvider({ id: "remote", name: "Remote" });
+  cloudOnly.registerModel({ id: "remote-model", providerId: "remote" });
+  cloudOnly.registerHarness({
+    id: "remote-agent",
+    providerIds: ["remote"],
+    capabilities: { tools: true },
+  });
+  assert.equal(
+    new AutoRouter(cloudOnly, { profile: "local-first" }).select({
+      prompt: "Implement a fix",
+      needsTools: true,
+    }).selected.providerId,
+    "remote",
+  );
+});
+
+test("privacy profile enforces approved harnesses and rejects unknown profile names", () => {
+  const decision = new AutoRouter(registryFixture(), {
+    profile: "privacy",
+  }).select({
+    prompt: "Implement a fix",
+    needsTools: true,
+  });
+  assert.equal(decision.selected.providerId, "claude");
+  assert.equal(decision.criteria.privacyMode, true);
+  assert.equal(
+    new AutoRouter(registryFixture(), { profile: "privacy" }).analyze({
+      privacy: false,
+    }).privacy,
+    true,
+  );
+  assert.throws(
+    () => new AutoRouter(registryFixture(), { profile: "fastest" }),
+    /Unsupported Auto profile/,
   );
 });
 

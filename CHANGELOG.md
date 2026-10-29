@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Auto capability profiles : OpenCode model catalog now preserves tool-call support and classifies providers as local only when the official provider registry exposes a loopback API URL. Auto filters models explicitly lacking tool calls, `local-first` ranks explicitly local models before preferred remote providers, `privacy` enforces an approved harness, and unsupported profile names fail validation. Model generation and tool calls remain untested for OpenCode.
+
 - Auto Router OpenCode : le routeur déterministe consulte le catalogue réel du serveur OpenCode local et peut choisir ses modèles pour les tâches avec outils; les autres fournisseurs peuvent être exclus explicitement sans interroger leurs credentials ou APIs. `omni auto plan` affiche les candidats, exclusions, critères et secours sans créer de conversation ni lancer de modèle. Le catalogue et le choix réel sont validés par un test opt-in contre le CLI/serveur OpenCode; aucune génération de modèle n’est incluse.
 
 - OpenCode Harness Swap : `omni swap --conversation ID --harness opencode` now uses the existing safe-boundary checkpoint service; it records a persistent resume summary and injects it only once, with consumption tracked in the canonical event store. The official local-server CLI swap and SQLite restart/resume test pass without a model call. A full file-writing Harness A → OpenCode → Harness A model run remains untested.

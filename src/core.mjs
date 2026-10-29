@@ -337,12 +337,22 @@ export class AutoRouter {
       availableMcpServers = [],
     } = {},
   ) {
+    const supportedProfiles = new Set([
+      "balance",
+      "efficiency",
+      "intelligence",
+      "local-first",
+      "privacy",
+      "custom",
+    ]);
+    if (!supportedProfiles.has(profile))
+      throw new TypeError(`Unsupported Auto profile: ${profile}`);
     this.registry = registry;
     this.profile = profile;
     this.excludedProviders = new Set(excludedProviders);
     this.preferredProviders = preferredProviders;
     this.maxInputPerMillion = maxInputPerMillion;
-    this.privacyMode = privacyMode;
+    this.privacyMode = privacyMode || profile === "privacy";
     this.previousResults = previousResults;
     this.availableMcpServers = new Set(availableMcpServers);
   }
@@ -372,7 +382,8 @@ export class AutoRouter {
       needsTools,
       requiredMcpServers,
       complexity,
-      privacy: input.privacy ?? this.privacyMode,
+      privacy:
+        this.profile === "privacy" || (input.privacy ?? this.privacyMode),
     };
   }
   evaluate(input) {
@@ -398,6 +409,8 @@ export class AutoRouter {
         if (harness.available === false) exclusions.push("harness-unavailable");
         if (task.needsTools && harness.capabilities?.tools !== true)
           exclusions.push("required-tools-unsupported");
+        if (task.needsTools && model.capabilities?.tools === false)
+          exclusions.push("model-tools-unsupported");
         if (
           task.requiredMcpServers.some(
             (name) => !this.availableMcpServers.has(name),
@@ -435,11 +448,14 @@ export class AutoRouter {
           latencyMs: this.previousResults[key]?.averageLatencyMs ?? null,
           inputPerMillion: price ?? null,
           quality: Number.isFinite(model.quality) ? model.quality : null,
+          local: model.local === true || provider?.local === true,
         });
       }
     }
     const eligible = evaluated.filter((item) => item.eligible);
     eligible.sort((a, b) => {
+      if (this.profile === "local-first" && a.local !== b.local)
+        return a.local ? -1 : 1;
       const preferredA = a.preferredRank < 0 ? Infinity : a.preferredRank;
       const preferredB = b.preferredRank < 0 ? Infinity : b.preferredRank;
       if (preferredA !== preferredB) return preferredA - preferredB;
@@ -506,6 +522,9 @@ export class AutoRouter {
     }
     const selected = candidates[0];
     const ranking = [
+      ...(this.profile === "local-first"
+        ? ["explicit loopback provider endpoints before remote providers"]
+        : []),
       "preferredProviders (configured order)",
       "least-privilege capability fit (tools only when required)",
       ...(task.requiredMcpServers.length
@@ -543,6 +562,7 @@ export class AutoRouter {
         previous: candidate.previous,
         observedLatencyMs: candidate.latencyMs,
         knownInputPricePerMillion: candidate.inputPerMillion,
+        local: candidate.local,
       })),
       criteria: {
         task,

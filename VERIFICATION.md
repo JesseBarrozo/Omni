@@ -11,13 +11,16 @@
 - [ ] Aucun appel modèle, streaming réel d’une génération, exécution outil réelle ou interaction permission issue d’un modèle n’a été testé. Cela reste à valider sans tester de clés API. OpenCode est intégré au swap manuel à frontière sûre et au routage déterministe Auto (prévisualisation live validée plus bas). Le parcours de modification réelle d’un fichier avec un modèle n’a pas été testé.
 
 
-## Auto Router OpenCode (en cours)
+## Auto Router OpenCode (catalogue réel validé, sans génération)
 
 - [x] `omni auto plan --project PATH --json PROMPT` construit une décision déterministe à partir des catalogues en direct et affiche sélection, candidats filtrés, raisons, critères, fallback et statut des fournisseurs sans créer de conversation ni soumettre le prompt à un modèle.
 - [x] Les fournisseurs de `OMNI_DISABLED_PROVIDERS` sont exclus avant toute lecture de credentials ou requête catalogue; le parcours isolé peut cibler uniquement le serveur OpenCode local.
 - [x] Tests unitaires : modèle OpenCode retenu pour une tâche avec outils, MCP non supporté explicitement exclu, et harness sans approbation de confidentialité exclu en mode strict.
 - [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test --test-name-pattern='Auto plan reads a real OpenCode catalog' test/opencode-harness.test.mjs` : 1/1 réussi avec le CLI/serveur installé; la décision a sélectionné un vrai ID `provider/model` et aucune conversation n’a été créée. Aucun appel génération ni clé API.
-- [ ] Le streaming d’une génération OpenCode, les outils pilotés par modèle, fallback live Auto et coût/latence réels ne sont pas validés.
+- [x] Contrat OpenCode du catalogue modèle/provider : capacités d’appel d’outils lues depuis `ModelV2Info`; seule une URL API HTTP(S) explicitement loopback (`localhost`, `127/8`, `::1`) marque le provider local. Un modèle sans outils est exclu des tâches agentiques.
+- [x] Profils `balance`, `efficiency`, `intelligence`, `local-first`, `privacy` et `custom` validés; `local-first` préfère le loopback puis retombe sur les candidats distants, `privacy` ne peut pas être désactivé par une entrée de tâche et les profils inconnus sont rejetés.
+- [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test test/opencode-harness.test.mjs` : 6/6 réussis, dont la sélection Auto depuis le catalogue officiel; aucun appel à un modèle ou à une clé API. Tests globaux après changements : 118 tests, 91 réussis, 0 échec, 27 opt-in ignorés; lint, format:check, check, build, audit et diff-check réussis.
+- [ ] Le streaming d’une génération OpenCode, les outils pilotés par modèle, fallback live Auto et coût/latence réels ne sont pas validés. Aucun provider loopback local n’est configuré sur l’environnement de test; le profil `local-first` est vérifié avec les métadonnées de catalogue contrat et le routeur unitaire.
 
 ## Harness Swap OpenCode (en cours)
 

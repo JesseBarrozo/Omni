@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { once } from "node:events";
+import { isIP } from "node:net";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { assertHarnessAdapter } from "./adapters.mjs";
 import { redactSecrets } from "./core.mjs";
@@ -98,6 +99,23 @@ export function parseOpenCodeModel(value) {
     id: raw.slice(separator + 1),
     providerID: raw.slice(0, separator),
   };
+}
+
+function isLoopbackProviderUrl(value) {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) return false;
+    const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return (
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      (isIP(hostname) === 4 && hostname.startsWith("127.")) ||
+      (isIP(hostname) === 6 && hostname === "::1")
+    );
+  } catch {
+    return false;
+  }
 }
 
 function childEnvironment(env, password) {
@@ -269,6 +287,48 @@ export class OpenCodeHarness {
         .filter((entry) => entry.enabled && entry.status === "active")
         .map((entry) => `${entry.providerID}/${entry.id}`)
         .sort();
+    } catch (error) {
+      throw safeError(error, this.password);
+    }
+  }
+
+  async listModelCatalog() {
+    await this.initialize();
+    try {
+      const [modelResult, providerResult] = await Promise.all([
+        this.client.v2.model.list({
+          location: { directory: this.cwd },
+        }),
+        this.client.v2.provider.list({
+          location: { directory: this.cwd },
+        }),
+      ]);
+      const models = resultData(modelResult, "model registry", this.password);
+      const providers = resultData(
+        providerResult,
+        "provider registry",
+        this.password,
+      );
+      const localProviders = new Set(
+        (providers ?? [])
+          .filter((provider) => isLoopbackProviderUrl(provider.api?.url))
+          .map((provider) => provider.id),
+      );
+      return (models ?? [])
+        .filter((entry) => entry.enabled && entry.status === "active")
+        .map((entry) => ({
+          id: `${entry.providerID}/${entry.id}`,
+          providerId: entry.providerID,
+          name: entry.name,
+          available: true,
+          local: localProviders.has(entry.providerID),
+          capabilities: {
+            tools: entry.capabilities?.tools === true,
+            input: entry.capabilities?.input ?? [],
+            output: entry.capabilities?.output ?? [],
+          },
+        }))
+        .sort((a, b) => a.id.localeCompare(b.id));
     } catch (error) {
       throw safeError(error, this.password);
     }

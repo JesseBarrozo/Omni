@@ -26,6 +26,114 @@ test("OpenCode model IDs use provider/model pairs", () => {
   assert.throws(() => parseOpenCodeModel("gemini-test"), /provider\/model/);
 });
 
+test("OpenCode catalog keeps model tool capability and only marks explicit loopback provider URLs local", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "omni-opencode-model-catalog-"));
+  temporaryDirectories.add(directory);
+  const store = new ChatStore(join(directory, "omni.sqlite"));
+  const client = {
+    v2: {
+      model: {
+        list: async () => ({
+          data: {
+            data: [
+              {
+                id: "llama",
+                providerID: "ollama-custom",
+                name: "Llama local",
+                enabled: true,
+                status: "active",
+                capabilities: {
+                  tools: true,
+                  input: ["text"],
+                  output: ["text"],
+                },
+              },
+              {
+                id: "text-model",
+                providerID: "remote",
+                name: "Remote text model",
+                enabled: true,
+                status: "active",
+                capabilities: {
+                  tools: false,
+                  input: ["text"],
+                  output: ["text"],
+                },
+              },
+            ],
+          },
+        }),
+      },
+      provider: {
+        list: async () => ({
+          data: {
+            data: [
+              {
+                id: "ollama-custom",
+                api: { type: "native", url: "http://127.0.0.1:11434" },
+              },
+              {
+                id: "remote",
+                api: { type: "aisdk", url: "https://api.example.test/v1" },
+              },
+            ],
+          },
+        }),
+      },
+    },
+  };
+  const harness = new OpenCodeHarness({
+    store,
+    cwd: directory,
+    serverFactory: async () => ({
+      url: "http://127.0.0.1:9000",
+      password: "catalog-test-password",
+      close: async () => {},
+    }),
+    clientFactory: () => client,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          paths: {
+            "/api/session/{sessionID}/permission/{requestID}/reply": {
+              post: {
+                requestBody: {
+                  content: {
+                    "application/json": {
+                      schema: {
+                        properties: {
+                          decision: { enum: ["once", "always", "reject"] },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  try {
+    const models = await harness.listModelCatalog();
+    assert.deepEqual(
+      models.map(({ id, local, capabilities }) => ({
+        id,
+        local,
+        tools: capabilities.tools,
+      })),
+      [
+        { id: "ollama-custom/llama", local: true, tools: true },
+        { id: "remote/text-model", local: false, tools: false },
+      ],
+    );
+  } finally {
+    await harness.dispose();
+    store.close();
+  }
+});
+
 test("OpenCode adapter fails closed when its permission reply is rejected", async () => {
   const directory = mkdtempSync(join(tmpdir(), "omni-opencode-contract-"));
   temporaryDirectories.add(directory);
