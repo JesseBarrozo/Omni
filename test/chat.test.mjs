@@ -106,9 +106,56 @@ test("projects and partial/completed conversation messages survive database reop
   assert.equal(
     db.db.prepare("SELECT count(*) AS count FROM schema_migrations").get()
       .count,
-    1,
+    2,
   );
   db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("provider and model catalogs persist preferences and mark stale models unavailable", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-registry-"));
+  const file = join(dir, "db.sqlite");
+  let store = new ChatStore(file);
+  assert.equal(
+    store.db.prepare("SELECT max(version) version FROM schema_migrations").get()
+      .version,
+    2,
+  );
+  store.saveProviderCatalog({
+    providerId: "codex",
+    name: "Codex OAuth",
+    authStatus: "connected",
+    models: ["model-a", "model-b"],
+  });
+  store.setProviderEnabled("codex", false);
+  store.setModelEnabled("codex", "model-a", false, { autoOnly: true });
+  store.close();
+
+  store = new ChatStore(file);
+  assert.equal(store.providerRegistry()[0].enabled, false);
+  assert.equal(store.modelRegistry("codex")[0].enabledForAuto, false);
+  store.saveProviderCatalog({
+    providerId: "codex",
+    name: "Codex OAuth",
+    authStatus: "connected",
+    models: ["model-a"],
+  });
+  const models = store.modelRegistry("codex");
+  assert.equal(models.find((model) => model.id === "model-a").available, true);
+  assert.equal(
+    models.find((model) => model.id === "model-a").enabledForAuto,
+    false,
+  );
+  assert.equal(models.find((model) => model.id === "model-b").available, false);
+  assert.throws(
+    () => store.setProviderEnabled("unknown", false),
+    /Fournisseur inconnu/,
+  );
+  assert.throws(
+    () => store.setModelEnabled("codex", "unknown", false),
+    /Modèle inconnu/,
+  );
+  store.close();
   rmSync(dir, { recursive: true, force: true });
 });
 

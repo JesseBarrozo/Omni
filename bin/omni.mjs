@@ -37,7 +37,7 @@ const option = (name, fallback = null) => {
 const hasFlag = (name) => args.includes(name);
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai] [--json]\n  providers enable|disable --provider ID\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project) {
@@ -61,7 +61,20 @@ async function autoRoute(prompt, project) {
     harnessName,
     chatHarnessId,
   ) => {
-    const enabled = !disabledProviders.has(providerId);
+    store.saveProviderCatalog({
+      providerId,
+      name: providerId,
+      authStatus: "connected",
+      models,
+    });
+    const storedProvider = store
+      .providerRegistry()
+      .find((entry) => entry.id === providerId);
+    const storedModels = new Map(
+      store.modelRegistry(providerId).map((entry) => [entry.id, entry]),
+    );
+    const enabled =
+      storedProvider.enabled && !disabledProviders.has(providerId);
     registry.registerProvider({ id: providerId, name: providerId, enabled });
     for (const harness of [
       {
@@ -93,10 +106,11 @@ async function autoRoute(prompt, project) {
         providerId,
         name: modelId,
         available: true,
-        enabled,
+        enabled: storedModels.get(modelId)?.enabled ?? true,
         enabledForAuto:
-          !autoModelAllowlist ||
-          autoModelAllowlist.has(`${providerId}:${modelId}`),
+          (storedModels.get(modelId)?.enabledForAuto ?? true) &&
+          (!autoModelAllowlist ||
+            autoModelAllowlist.has(`${providerId}:${modelId}`)),
       });
     checkedProviders.push({
       providerId,
@@ -159,6 +173,32 @@ async function autoRoute(prompt, project) {
       });
     }
   } else checkedProviders.push({ providerId: "claude", authenticated: false });
+
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const models = await new OpenAIChat().listModels();
+      if (models.length)
+        addProvider(
+          "openai",
+          models,
+          "openai-chat",
+          "OpenAI Responses API",
+          "openai-chat",
+        );
+      checkedProviders.push({
+        providerId: "openai",
+        authenticated: true,
+        modelCount: models.length,
+      });
+    } catch (error) {
+      checkedProviders.push({
+        providerId: "openai",
+        authenticated: true,
+        available: false,
+        error: redactSecrets(error.message),
+      });
+    }
+  } else checkedProviders.push({ providerId: "openai", authenticated: false });
 
   const previousResults = {};
   for (const event of store.routingResults(200)) {
@@ -276,9 +316,93 @@ function createAutoChatProvider(candidate, conversation) {
     });
   if (candidate.providerId === "codex")
     return new CodexChat({ store, cwd, model: candidate.modelId });
+  if (candidate.providerId === "openai") return new OpenAIChat();
   throw new Error(
     `Fournisseur de chat Auto non pris en charge: ${candidate.providerId}`,
   );
+}
+
+async function refreshProvider(providerId) {
+  let name = providerId;
+  let authenticated = false;
+  let provider;
+  if (providerId === "codex") {
+    name = "Codex OAuth";
+    authenticated = codexAuthStatus().authenticated;
+    if (authenticated) provider = new CodexChat({ store });
+  } else if (providerId === "claude") {
+    name = "Claude Code OAuth";
+    authenticated = claudeAuthStatus().authenticated;
+    if (authenticated) provider = new ClaudeCodeChat({ store });
+  } else if (providerId === "openai") {
+    name = "OpenAI API key";
+    authenticated = Boolean(process.env.OPENAI_API_KEY);
+    if (authenticated) provider = new OpenAIChat();
+  } else throw new Error(`Fournisseur non pris en charge: ${providerId}`);
+  if (!authenticated) {
+    store.saveProviderCatalog({
+      providerId,
+      name,
+      authStatus: "disconnected",
+      models: [],
+    });
+    return { providerId, name, authStatus: "disconnected", modelCount: 0 };
+  }
+  try {
+    const models = await provider.listModels();
+    store.saveProviderCatalog({
+      providerId,
+      name,
+      authStatus: "connected",
+      models,
+    });
+    return {
+      providerId,
+      name,
+      authStatus: "connected",
+      modelCount: models.length,
+    };
+  } catch (error) {
+    store.saveProviderCatalog({
+      providerId,
+      name,
+      authStatus: "unavailable",
+      models: [],
+    });
+    return {
+      providerId,
+      name,
+      authStatus: "unavailable",
+      modelCount: 0,
+      error: redactSecrets(error.message),
+    };
+  }
+}
+
+function assertManualSelectionEnabled(modelId, harness = null) {
+  const providerId =
+    harness ??
+    (modelId === "codex" || modelId.startsWith("codex:")
+      ? "codex"
+      : modelId === "claude" || modelId.startsWith("claude:")
+        ? "claude"
+        : "openai");
+  const provider = store
+    .providerRegistry()
+    .find((entry) => entry.id === providerId);
+  if (provider && !provider.enabled)
+    throw new Error(`Fournisseur désactivé: ${providerId}`);
+  const modelName = modelId.includes(":")
+    ? modelId.slice(modelId.indexOf(":") + 1)
+    : modelId;
+  if (modelName === providerId) return;
+  const registered = store
+    .modelRegistry(providerId)
+    .find((model) => model.id === modelName);
+  if (registered && (!registered.enabled || !registered.available))
+    throw new Error(
+      `Modèle désactivé ou indisponible: ${providerId}/${modelName}`,
+    );
 }
 
 async function prepareAutoCandidate(decision, conversation) {
@@ -673,6 +797,35 @@ try {
     if (result.status !== 0)
       throw new Error("La connexion Claude a échoué ou a été annulée");
     print("Connexion Claude terminée.");
+  } else if (command === "providers" && args[0] === "list") {
+    const result = store.providerRegistry();
+    hasFlag("--json")
+      ? print(result)
+      : result.forEach((provider) =>
+          print(
+            `${provider.id}: ${provider.authStatus}, ${provider.enabled ? "activé" : "désactivé"}, ${provider.modelCount} modèles`,
+          ),
+        );
+  } else if (command === "providers" && args[0] === "refresh") {
+    const requested = option("--provider");
+    const providers = requested ? [requested] : ["codex", "claude", "openai"];
+    const results = await Promise.all(providers.map(refreshProvider));
+    hasFlag("--json")
+      ? print(results)
+      : results.forEach((result) =>
+          print(
+            `${result.providerId}: ${result.authStatus}, ${result.modelCount} modèles${result.error ? ` · ${result.error}` : ""}`,
+          ),
+        );
+  } else if (
+    command === "providers" &&
+    ["enable", "disable"].includes(args[0])
+  ) {
+    const result = store.setProviderEnabled(
+      option("--provider"),
+      args[0] === "enable",
+    );
+    print(result);
   } else if (command === "project" && args[0] === "create") {
     const name = option("--name");
     if (!name) throw new Error("--name est requis");
@@ -683,19 +836,26 @@ try {
       ),
     );
   } else if (command === "models" && args[0] === "list") {
-    const providerName = option("--provider");
-    const provider =
-      providerName === "codex"
-        ? new CodexChat({ store })
-        : providerName === "claude" || providerName?.startsWith("claude:")
-          ? new ClaudeCodeChat({
-              store,
-              model: providerName.startsWith("claude:")
-                ? providerName.slice("claude:".length)
-                : undefined,
-            })
-          : new OpenAIChat();
-    for (const model of await provider.listModels()) print(model);
+    const providerId = (option("--provider") ?? "openai").split(":")[0];
+    const result = await refreshProvider(providerId);
+    const models = store.modelRegistry(providerId, { availableOnly: true });
+    if (result.authStatus !== "connected")
+      throw new Error(
+        `${providerId} indisponible: ${result.authStatus}${result.error ? ` · ${result.error}` : ""}`,
+      );
+    hasFlag("--json")
+      ? print(models)
+      : models.forEach((model) => print(model.id));
+  } else if (command === "models" && ["enable", "disable"].includes(args[0])) {
+    const providerId = option("--provider");
+    const modelId = option("--model");
+    if (!providerId || !modelId)
+      throw new Error("--provider et --model sont requis");
+    print(
+      store.setModelEnabled(providerId, modelId, args[0] === "enable", {
+        autoOnly: hasFlag("--auto-only"),
+      }),
+    );
   } else if (command === "conversation" && args[0] === "export") {
     print(store.exportConversation(args[1]));
   } else if (command === "conversation" && args[0] === "import") {
@@ -716,6 +876,7 @@ try {
     const model = option("--model", conversation?.modelId ?? null);
     if (!model)
       throw new Error("--model est requis pour une nouvelle conversation");
+    assertManualSelectionEnabled(model);
     if (conversation) conversation = store.setModel(conversation.id, model);
     else
       conversation = store.createConversation(
@@ -784,6 +945,7 @@ try {
             ? `codex:${selected.modelId}`
             : selected.modelId;
     }
+    if (!autoMode) assertManualSelectionEnabled(model, harness);
     if (conversation) {
       conversation = store.setModel(conversation.id, model);
     } else {

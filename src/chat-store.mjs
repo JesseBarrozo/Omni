@@ -37,6 +37,32 @@ export class ChatStore {
           )
           .run(new Date().toISOString());
       })();
+    if (version < 2)
+      this.db.transaction(() => {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS providers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+            auth_status TEXT NOT NULL DEFAULT 'unknown' CHECK (auth_status IN ('connected', 'disconnected', 'unavailable', 'unknown')),
+            catalog_checked_at TEXT
+          );
+          CREATE TABLE IF NOT EXISTS models (
+            provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+            id TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+            enabled_for_auto INTEGER NOT NULL DEFAULT 1 CHECK (enabled_for_auto IN (0, 1)),
+            available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0, 1)),
+            PRIMARY KEY (provider_id, id)
+          );
+          CREATE INDEX IF NOT EXISTS models_available ON models(provider_id, available, enabled);
+        `);
+        this.db
+          .prepare(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (2, ?)",
+          )
+          .run(new Date().toISOString());
+      })();
     try {
       chmodSync(file, 0o600);
     } catch {}
@@ -52,6 +78,103 @@ export class ChatStore {
       .prepare("INSERT INTO projects VALUES (?, ?, ?, ?)")
       .run(project.id, project.name, project.rootPath, project.createdAt);
     return project;
+  }
+  saveProviderCatalog({ providerId, name = providerId, authStatus, models }) {
+    if (!providerId || !Array.isArray(models))
+      throw new TypeError(
+        "providerId et models sont requis pour enregistrer un catalogue",
+      );
+    if (
+      !["connected", "disconnected", "unavailable", "unknown"].includes(
+        authStatus,
+      )
+    )
+      throw new TypeError(`Statut provider invalide: ${authStatus}`);
+    const timestamp = new Date().toISOString();
+    const save = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `
+        INSERT INTO providers (id, name, auth_status, catalog_checked_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET name = excluded.name, auth_status = excluded.auth_status, catalog_checked_at = excluded.catalog_checked_at
+      `,
+        )
+        .run(providerId, name, authStatus, timestamp);
+      this.db
+        .prepare("UPDATE models SET available = 0 WHERE provider_id = ?")
+        .run(providerId);
+      const upsert = this.db.prepare(`
+        INSERT INTO models (provider_id, id, available) VALUES (?, ?, 1)
+        ON CONFLICT(provider_id, id) DO UPDATE SET available = 1
+      `);
+      for (const modelId of new Set(models)) {
+        if (typeof modelId !== "string" || !modelId.trim())
+          throw new TypeError("Identifiant de modèle invalide");
+        upsert.run(providerId, modelId);
+      }
+    });
+    save();
+    return this.providerRegistry();
+  }
+  providerRegistry() {
+    return this.db
+      .prepare(
+        `
+      SELECT p.id, p.name, p.enabled, p.auth_status AS authStatus,
+        p.catalog_checked_at AS catalogCheckedAt,
+        (SELECT count(*) FROM models m WHERE m.provider_id = p.id AND m.available = 1) AS modelCount
+      FROM providers p ORDER BY p.id
+    `,
+      )
+      .all()
+      .map((row) => ({ ...row, enabled: Boolean(row.enabled) }));
+  }
+  modelRegistry(providerId = null, { availableOnly = false } = {}) {
+    const clauses = [];
+    const params = [];
+    if (providerId) {
+      clauses.push("m.provider_id = ?");
+      params.push(providerId);
+    }
+    if (availableOnly) clauses.push("m.available = 1");
+    return this.db
+      .prepare(
+        `
+      SELECT m.provider_id AS providerId, m.id, m.enabled, m.enabled_for_auto AS enabledForAuto,
+        m.available, p.auth_status AS authStatus
+      FROM models m JOIN providers p ON p.id = m.provider_id
+      ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+      ORDER BY m.provider_id, m.id
+    `,
+      )
+      .all(...params)
+      .map((row) => ({
+        ...row,
+        enabled: Boolean(row.enabled),
+        enabledForAuto: Boolean(row.enabledForAuto),
+        available: Boolean(row.available),
+      }));
+  }
+  setProviderEnabled(providerId, enabled) {
+    const result = this.db
+      .prepare("UPDATE providers SET enabled = ? WHERE id = ?")
+      .run(Number(Boolean(enabled)), providerId);
+    if (!result.changes) throw new Error(`Fournisseur inconnu: ${providerId}`);
+    return this.providerRegistry().find(
+      (provider) => provider.id === providerId,
+    );
+  }
+  setModelEnabled(providerId, modelId, enabled, { autoOnly = false } = {}) {
+    const field = autoOnly ? "enabled_for_auto" : "enabled";
+    const result = this.db
+      .prepare(
+        `UPDATE models SET ${field} = ? WHERE provider_id = ? AND id = ?`,
+      )
+      .run(Number(Boolean(enabled)), providerId, modelId);
+    if (!result.changes)
+      throw new Error(`Modèle inconnu: ${providerId}/${modelId}`);
+    return this.modelRegistry(providerId).find((model) => model.id === modelId);
   }
   project(idOrPath) {
     const byId = this.db

@@ -79,3 +79,142 @@ test("CLI persists projects and resumes with the saved or explicitly changed mod
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("CLI lists providers and persists global and Auto model activation", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-provider-cli-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const store = new ChatStore(join(dir, "data", "omni.sqlite"));
+    store.saveProviderCatalog({
+      providerId: "codex",
+      name: "Codex OAuth",
+      authStatus: "connected",
+      models: ["model-a"],
+    });
+    store.close();
+    const providers = run("providers", "list", "--json");
+    assert.equal(providers.status, 0, providers.stderr);
+    assert.equal(JSON.parse(providers.stdout)[0].id, "codex");
+    const providerDisabled = run("providers", "disable", "--provider", "codex");
+    assert.equal(providerDisabled.status, 0, providerDisabled.stderr);
+    assert.equal(JSON.parse(providerDisabled.stdout).enabled, false);
+    const providerEnabled = run("providers", "enable", "--provider", "codex");
+    assert.equal(providerEnabled.status, 0, providerEnabled.stderr);
+    assert.equal(JSON.parse(providerEnabled.stdout).enabled, true);
+    const project = run(
+      "project",
+      "create",
+      "--name",
+      "provider-disable-test",
+      "--path",
+      dir,
+    );
+    assert.equal(project.status, 0, project.stderr);
+    const globallyDisabled = run(
+      "models",
+      "disable",
+      "--provider",
+      "codex",
+      "--model",
+      "model-a",
+    );
+    assert.equal(globallyDisabled.status, 0, globallyDisabled.stderr);
+    const refused = run("chat", "--project", dir, "--model", "codex:model-a");
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.stderr, /Modèle désactivé ou indisponible/);
+    const globallyEnabled = run(
+      "models",
+      "enable",
+      "--provider",
+      "codex",
+      "--model",
+      "model-a",
+    );
+    assert.equal(globallyEnabled.status, 0, globallyEnabled.stderr);
+    const disabled = run(
+      "models",
+      "disable",
+      "--provider",
+      "codex",
+      "--model",
+      "model-a",
+      "--auto-only",
+    );
+    assert.equal(disabled.status, 0, disabled.stderr);
+    assert.equal(JSON.parse(disabled.stdout).enabledForAuto, false);
+    const verify = new ChatStore(join(dir, "data", "omni.sqlite"));
+    assert.equal(verify.modelRegistry("codex")[0].enabledForAuto, false);
+    verify.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test(
+  "real provider registry refreshes OAuth catalogs and Auto excludes a disabled model",
+  { skip: process.env.OMNI_LIVE_PROVIDER_REGISTRY_TESTS !== "1" },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "omni-live-provider-cli-"));
+    const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+    const run = (args, overrides = {}) =>
+      spawnSync(process.execPath, [cli, ...args], {
+        env: { ...env, ...overrides },
+        encoding: "utf8",
+      });
+    try {
+      const refreshed = run(["providers", "refresh", "--json"]);
+      assert.equal(refreshed.status, 0, refreshed.stderr);
+      const providers = JSON.parse(refreshed.stdout);
+      const codex = providers.find(
+        (provider) =>
+          provider.providerId === "codex" &&
+          provider.authStatus === "connected" &&
+          provider.modelCount > 0,
+      );
+      assert.ok(codex, "A real Codex OAuth catalog must be available");
+      const listed = run(["models", "list", "--provider", "codex"]);
+      assert.equal(listed.status, 0, listed.stderr);
+      const model = listed.stdout.trim().split("\n")[0];
+      assert.ok(model);
+      const disabled = run([
+        "models",
+        "disable",
+        "--provider",
+        "codex",
+        "--model",
+        model,
+        "--auto-only",
+      ]);
+      assert.equal(disabled.status, 0, disabled.stderr);
+      const projectPath = join(dir, "project");
+      const project = run([
+        "project",
+        "create",
+        "--name",
+        "registry-live",
+        "--path",
+        projectPath,
+      ]);
+      assert.equal(project.status, 0, project.stderr);
+      const attempted = run(
+        [
+          "run",
+          "--project",
+          projectPath,
+          "--auto",
+          "Reply with ROUTER_SHOULD_NOT_RUN only.",
+        ],
+        { OMNI_AUTO_MODELS: `codex:${model}` },
+      );
+      assert.notEqual(attempted.status, 0);
+      assert.match(
+        attempted.stderr,
+        /No compatible enabled model\/harness candidate/,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

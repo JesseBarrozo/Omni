@@ -1,5 +1,18 @@
 # Vérification et tests à refaire
 
+## Provider Manager et Model Registry
+
+- [x] Migration SQLite version 2 conserve les providers, leurs états, les identifiants de modèles et les drapeaux d’activation; les préférences survivent à la réouverture de la base.
+- [x] Les catalogues anciens restent présents comme indisponibles après un rafraîchissement qui ne les retourne plus; les préférences ne sont pas réinitialisées.
+- [x] `providers refresh --json` dans un répertoire de données isolé a interrogé les vrais comptes OAuth : Codex connecté avec 8 modèles, Claude Code connecté avec 13 modèles; OpenAI a été rapporté déconnecté car aucune `OPENAI_API_KEY` n’était configurée.
+- [x] `providers list --json`, `models list --provider codex` et `models disable --provider codex --model MODEL --auto-only` ont été exécutés sur le CLI réel.
+- [x] Après désactivation Auto d’un modèle Codex réel et allowlist limitée à ce modèle, `omni run --auto` a échoué avant l’exécution avec `No compatible enabled model/harness candidate`.
+- [x] Les tests unitaires couvrent la migration, la conservation des préférences, les modèles disparus et les commandes de gestion locales.
+- [ ] OpenAI direct n’a pas été rafraîchi ni testé en réel : clé API absente. Aucun secret provider n’est stocké dans cette phase; les secrets restent dans les CLIs officiels ou l’environnement.
+- [ ] Comptes multiples, coffre de secrets système, quotas et métadonnées de prix ne sont pas implémentés.
+
+Validation de phase : `npm test` a découvert 45 tests (35 réussis, 0 échec, 10 intégrations opt-in ignorées); lint, format:check, check, build et diff-check réussis. `OMNI_LIVE_PROVIDER_REGISTRY_TESTS=1 node --test test/cli.test.mjs` : 3/3 réussis, y compris le parcours OAuth réel.
+
 ## Phase : premier harness Codex
 
 Ce document suit les vérifications du harness `codex` via le Codex app-server officiel. Les résultats sont mis à jour après chaque exécution; les tests conditionnels ne sont pas considérés comme réussis lorsqu’ils sont ignorés.
