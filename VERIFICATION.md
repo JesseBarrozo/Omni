@@ -56,7 +56,8 @@
 - [x] Le test live Auto compare chaque candidat de la décision avec le catalogue officiel lu par le SDK réel : modèle, statut local et prix d’entrée correspondent, sans génération ni clé API.
 - [x] Le test unitaire vérifie le plafond d’entrée et la raison `input-price-over-limit`; prix absent ou invalide reste inconnu et le plafond configuré exclut ce candidat.
 - [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test test/opencode-harness.test.mjs` : 6/6; `npm test` : 119 tests, 92 réussis, 0 échec, 27 opt-in ignorés; lint, format:check, check, build, audit et diff-check réussis.
-- [ ] Le coût réel par tour n’est pas encore collecté depuis les événements OpenCode; les budgets limitent actuellement le coût d’entrée catalogue, sans coût de sortie ni plafond de dépense total.
+- [ ] Le coût de sortie catalogue et un plafond de facturation garanti pour les coûts inconnus ou les tours actifs ne sont pas disponibles. Le coût réellement rapporté par OpenCode est agrégé; voir le budget mensuel Auto ci-dessous.
+- [x] `OMNI_AUTO_MONTHLY_BUDGET_USD` additionne uniquement les coûts USD rapportés et persistés du projet pendant le mois UTC courant, et exclut les candidats Auto lorsque le plafond est atteint. Test unitaire du seuil atteint et du montant sous le plafond; aucun fournisseur ni modèle n’a été appelé. Limite : les coûts absents ne sont pas estimés et un tour déjà démarré peut dépasser le plafond.
 
 ### Événements d’usage OpenCode (contrat, génération live non testée)
 

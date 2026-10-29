@@ -32,7 +32,12 @@ import {
 } from "../src/claude-code.mjs";
 import { runChatTurn } from "../src/chat-runner.mjs";
 import { HarnessSwapService } from "../src/harness-swap.mjs";
-import { AutoRouter, ModelRegistry, redactSecrets } from "../src/core.mjs";
+import {
+  AutoRouter,
+  ModelRegistry,
+  redactSecrets,
+  sumReportedUsageCost,
+} from "../src/core.mjs";
 
 const dataDir = process.env.OMNI_DATA_DIR || join(homedir(), ".omni");
 const store = new ChatStore(join(dataDir, "omni.sqlite"));
@@ -511,6 +516,27 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
     : null;
   if (maxInputPerMillion !== null && !Number.isFinite(maxInputPerMillion))
     throw new Error("OMNI_AUTO_MAX_INPUT_PER_MILLION doit être un nombre");
+  const maxMonthlySpendUsd = process.env.OMNI_AUTO_MONTHLY_BUDGET_USD
+    ? Number(process.env.OMNI_AUTO_MONTHLY_BUDGET_USD)
+    : null;
+  if (
+    maxMonthlySpendUsd !== null &&
+    (!Number.isFinite(maxMonthlySpendUsd) || maxMonthlySpendUsd < 0)
+  )
+    throw new Error(
+      "OMNI_AUTO_MONTHLY_BUDGET_USD doit être un nombre USD positif ou nul",
+    );
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const monthStart = `${currentMonth}-01T00:00:00.000Z`;
+  const [year, month] = currentMonth.split("-").map(Number);
+  const nextMonthStart = new Date(Date.UTC(year, month, 1)).toISOString();
+  const monthlySpendUsd = sumReportedUsageCost(
+    store.executionEvents("usage", {
+      projectId: project.id,
+      from: monthStart,
+      until: nextMonthStart,
+    }),
+  );
   const privacyMode = process.env.OMNI_AUTO_PRIVACY === "strict";
   const router = new AutoRouter(registry, {
     profile: process.env.OMNI_AUTO_PROFILE ?? "balance",
@@ -520,6 +546,8 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
       .filter(Boolean),
     excludedProviders: [...disabledProviders],
     maxInputPerMillion,
+    maxMonthlySpendUsd,
+    monthlySpendUsd,
     privacyMode,
     previousResults,
     availableMcpServers,

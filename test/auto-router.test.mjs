@@ -6,7 +6,11 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { ChatStore } from "../src/chat-store.mjs";
-import { AutoRouter, ModelRegistry } from "../src/core.mjs";
+import {
+  AutoRouter,
+  ModelRegistry,
+  sumReportedUsageCost,
+} from "../src/core.mjs";
 import { ClaudeCodeChat, claudeAuthStatus } from "../src/claude-code.mjs";
 import { CodexChat, codexAuthStatus } from "../src/codex-chat.mjs";
 
@@ -251,6 +255,47 @@ test("Auto applies an OpenCode per-million input ceiling and explains its price 
     evaluated.evaluated[0].exclusions.includes("input-price-over-limit"),
   );
   assert.equal(evaluated.evaluated[0].inputPerMillion, 0.5);
+});
+
+test("Auto blocks candidates after persisted monthly project spend reaches its ceiling", () => {
+  const registry = registryFixture();
+  const blocked = new AutoRouter(registry, {
+    maxMonthlySpendUsd: 1,
+    monthlySpendUsd: 1,
+  }).evaluate({ prompt: "Answer", needsTools: true });
+  assert.equal(blocked.eligible.length, 0);
+  assert.ok(
+    blocked.evaluated.every((candidate) =>
+      candidate.exclusions.includes("monthly-spend-budget-reached"),
+    ),
+  );
+  assert.throws(
+    () =>
+      new AutoRouter(registry, {
+        maxMonthlySpendUsd: 1,
+        monthlySpendUsd: 1,
+      }).select({ prompt: "Answer", needsTools: true }),
+    /monthly project budget reached/i,
+  );
+  const belowLimit = new AutoRouter(registry, {
+    maxMonthlySpendUsd: 1,
+    monthlySpendUsd: 0.999,
+  }).evaluate({ prompt: "Answer", needsTools: true });
+  assert.ok(belowLimit.eligible.length > 0);
+});
+
+test("monthly spend sums only valid provider-reported USD costs", () => {
+  assert.equal(
+    sumReportedUsageCost([
+      { payload: { costUsd: 0.12 } },
+      { payload: { costUsd: 0.03 } },
+      { payload: { costUsd: null } },
+      { payload: { costUsd: -1 } },
+      { payload: { tokens: { input: 900 } } },
+      null,
+    ]),
+    0.15,
+  );
 });
 
 test("AutoRouter requires a registered MCP server and filters harness compatibility", () => {

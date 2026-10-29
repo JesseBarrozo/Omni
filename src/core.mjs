@@ -332,6 +332,8 @@ export class AutoRouter {
       excludedProviders = [],
       preferredProviders = [],
       maxInputPerMillion = null,
+      maxMonthlySpendUsd = null,
+      monthlySpendUsd = 0,
       privacyMode = false,
       previousResults = {},
       availableMcpServers = [],
@@ -352,6 +354,15 @@ export class AutoRouter {
     this.excludedProviders = new Set(excludedProviders);
     this.preferredProviders = preferredProviders;
     this.maxInputPerMillion = maxInputPerMillion;
+    if (
+      maxMonthlySpendUsd !== null &&
+      (!Number.isFinite(maxMonthlySpendUsd) || maxMonthlySpendUsd < 0)
+    )
+      throw new TypeError("maxMonthlySpendUsd must be a non-negative number");
+    if (!Number.isFinite(monthlySpendUsd) || monthlySpendUsd < 0)
+      throw new TypeError("monthlySpendUsd must be a non-negative number");
+    this.maxMonthlySpendUsd = maxMonthlySpendUsd;
+    this.monthlySpendUsd = monthlySpendUsd;
     this.privacyMode = privacyMode || profile === "privacy";
     this.previousResults = previousResults;
     this.availableMcpServers = new Set(availableMcpServers);
@@ -425,6 +436,11 @@ export class AutoRouter {
           exclusions.push("required-mcp-unsupported");
         if (task.privacy && harness.privacyApproved !== true)
           exclusions.push("privacy-not-approved");
+        if (
+          this.maxMonthlySpendUsd !== null &&
+          this.monthlySpendUsd >= this.maxMonthlySpendUsd
+        )
+          exclusions.push("monthly-spend-budget-reached");
         const price = model.pricing?.inputPerMillion;
         if (
           this.maxInputPerMillion !== null &&
@@ -514,6 +530,13 @@ export class AutoRouter {
     const { task, evaluated, eligible } = this.evaluate(input);
     const candidates = eligible;
     if (!candidates.length) {
+      if (
+        this.maxMonthlySpendUsd !== null &&
+        this.monthlySpendUsd >= this.maxMonthlySpendUsd
+      )
+        throw new Error(
+          `Auto monthly project budget reached: $${this.monthlySpendUsd.toFixed(4)} reported of $${this.maxMonthlySpendUsd.toFixed(4)} configured for the current UTC month`,
+        );
       if (task.requiredMcpServers.length)
         throw new Error(
           `No compatible enabled model/harness candidate supports required MCP server(s): ${task.requiredMcpServers.join(", ")}`,
@@ -569,6 +592,8 @@ export class AutoRouter {
         profile: this.profile,
         privacyMode: task.privacy,
         maxInputPerMillion: this.maxInputPerMillion,
+        maxMonthlySpendUsd: this.maxMonthlySpendUsd,
+        monthlySpendUsd: this.monthlySpendUsd,
         preferredProviders: this.preferredProviders,
         ranking,
       },
@@ -580,6 +605,14 @@ export class AutoRouter {
       explanation: `Mode Auto · ${selected.harness.name ?? selected.harness.id} · ${selected.model.name ?? selected.model.id} · tâche ${task.type}, profil ${this.profile}${task.needsTools ? ", outils requis" : ""}${task.requiredMcpServers.length ? `, MCP requis: ${task.requiredMcpServers.join(", ")}` : ""}`,
     };
   }
+}
+
+export function sumReportedUsageCost(events) {
+  if (!Array.isArray(events)) throw new TypeError("events must be an array");
+  return events.reduce((total, event) => {
+    const cost = event?.payload?.costUsd;
+    return Number.isFinite(cost) && cost >= 0 ? total + cost : total;
+  }, 0);
 }
 
 export class SwapCoordinator {

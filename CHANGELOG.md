@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Budget mensuel Auto par projet : `OMNI_AUTO_MONTHLY_BUDGET_USD` bloque la sélection Auto dès que les coûts USD réellement persistés atteignent la limite du mois UTC; les montants inconnus restent non estimés et les tours actifs ne sont pas préemptés.
+
 - Usage report mensuel : `--month YYYY-MM` filtre les événements usage et routage par mois UTC avec borne de fin exclusive, pour consulter tokens, coûts mesurés et latences Auto sur la même période. Les mois mal formés sont rejetés.
 
 - Antigravity feasibility : `agy --help` et la documentation officielle ne fournissent aucun override de HOME/settings/hooks. Le catalogue OAuth réel renvoie 13 modèles avec le HOME connecté, mais échoue avec un HOME isolé sans clé API, même avec les seuls fichiers d’authentification liés temporairement. Omni conserve le refus sûr si les hooks globaux rendent le mode headless invérifiable; aucun fichier de configuration ni credential utilisateur n’a été modifié ou copié.
