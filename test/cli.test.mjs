@@ -415,6 +415,16 @@ test("CLI registry blocks disabled harnesses for run and harness swap", () => {
       capabilities: { tools: true, streaming: true, checkpoint: true },
     });
     store.setHarnessEnabled("codex", false);
+    store.saveHarnessRegistry({
+      id: "opencode",
+      name: "OpenCode server SDK",
+      providerId: "opencode",
+      integration: "OpenCode local server via official SDK v2",
+      status: "connected",
+      available: true,
+      capabilities: { tools: true, streaming: true, checkpoint: true },
+    });
+    store.setHarnessEnabled("opencode", false);
     const conversation = store.createConversation(
       project.id,
       "existing",
@@ -445,6 +455,15 @@ test("CLI registry blocks disabled harnesses for run and harness swap", () => {
     );
     assert.notEqual(swap.status, 0);
     assert.match(swap.stderr, /Harness désactivé: codex/);
+    const disabledOpenCodeSwap = run(
+      "swap",
+      "--conversation",
+      conversation.id,
+      "--harness",
+      "opencode",
+    );
+    assert.notEqual(disabledOpenCodeSwap.status, 0);
+    assert.match(disabledOpenCodeSwap.stderr, /Harness désactivé: opencode/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

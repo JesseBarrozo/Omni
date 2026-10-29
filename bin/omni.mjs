@@ -127,7 +127,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter --stdin\n  auth key set anthropic --stdin\n  auth key set google --stdin\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  auth key remove openrouter|anthropic|google [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter --stdin\n  auth key set anthropic --stdin\n  auth key set google --stdin\n  auth key list openai [--json]\n  auth key use openai --profile NAME\n  auth key remove openai [--profile NAME] [--yes]\n  auth key remove openrouter|anthropic|google [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
@@ -803,11 +803,17 @@ async function prepareAutoCandidate(decision, conversation) {
 }
 
 async function swapHarness(conversationId, harnessId, requestedModel) {
-  if (!conversationId || !["claude", "codex"].includes(harnessId))
+  if (!conversationId || !["claude", "codex", "opencode"].includes(harnessId))
     throw new Error(
-      "Usage: omni swap --conversation ID --harness claude|codex [--model MODEL]",
+      "Usage: omni swap --conversation ID --harness claude|codex|opencode [--model MODEL]",
     );
-  assertHarnessEnabled(harnessId === "claude" ? "claude-code" : "codex");
+  const registryHarnessId =
+    harnessId === "claude"
+      ? "claude-code"
+      : harnessId === "opencode"
+        ? "opencode"
+        : "codex";
+  assertHarnessEnabled(registryHarnessId);
   const conversation = store.conversation(conversationId);
   const project = store.project(conversation.projectId);
   const rl = createInterface({
@@ -821,9 +827,14 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
       ? conversation.modelId?.startsWith("claude")
         ? conversation.modelId
         : "claude"
-      : "codex");
+      : harnessId === "opencode"
+        ? conversation.modelId?.startsWith("opencode:") ||
+          conversation.modelId?.includes("/")
+          ? conversation.modelId
+          : "opencode"
+        : "codex");
   assertManualSelectionEnabled(model, harnessId);
-  const requestPermission = permissionPrompt(rl, harnessId);
+  const requestPermission = permissionPrompt(rl, registryHarnessId);
   const adapter =
     harnessId === "claude"
       ? new ClaudeCodeHarness({
@@ -833,13 +844,21 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
           requestPermission,
           mcpRegistry: mcpRegistry(),
         })
-      : new CodexHarness({
-          store,
-          cwd: project.rootPath ?? process.cwd(),
-          model: model === "codex" ? undefined : model,
-          requestPermission,
-          mcpRegistry: mcpRegistry(),
-        });
+      : harnessId === "opencode"
+        ? new OpenCodeHarness({
+            store,
+            cwd: project.rootPath ?? process.cwd(),
+            model,
+            executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode",
+            requestPermission,
+          })
+        : new CodexHarness({
+            store,
+            cwd: project.rootPath ?? process.cwd(),
+            model: model === "codex" ? undefined : model,
+            requestPermission,
+            mcpRegistry: mcpRegistry(),
+          });
   try {
     const service = new HarnessSwapService({
       store,

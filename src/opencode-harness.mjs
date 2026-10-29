@@ -278,6 +278,7 @@ export class OpenCodeHarness {
     conversationId,
     cwd = this.cwd,
     model = this.model,
+    resumeSummary = null,
   } = {}) {
     if (!conversationId)
       throw new Error("conversationId Omni requis pour une session OpenCode");
@@ -300,6 +301,7 @@ export class OpenCodeHarness {
         conversationId,
         cwd,
         model: requestedModel ?? null,
+        resumeSummary,
       };
       this.sessions.set(session.id, session);
       this.store.appendEvent(conversationId, "session.started", {
@@ -330,12 +332,27 @@ export class OpenCodeHarness {
         throw new Error(
           "Le dossier de la session OpenCode ne correspond pas au projet",
         );
+      const events = this.store.listEvents(conversationId);
+      const resumeSummary = events
+        .filter(
+          (event) =>
+            event.type === "harness.changed" &&
+            event.payload.toHarnessId === this.id &&
+            event.payload.targetSessionId === sessionId,
+        )
+        .at(-1)?.payload.resumeSummary;
+      const resumeContextConsumed = events.some(
+        (event) =>
+          event.type === "harness.resume_context_consumed" &&
+          event.payload.sessionId === sessionId,
+      );
       const resumed = {
         id: sessionId,
         harnessId: this.id,
         conversationId,
         cwd,
         model: session.model ?? null,
+        resumeSummary: resumeContextConsumed ? null : (resumeSummary ?? null),
       };
       this.sessions.set(sessionId, resumed);
       return resumed;
@@ -388,6 +405,7 @@ export class OpenCodeHarness {
       );
     if (!this.sessions.has(sessionId))
       await this.resumeSession(sessionId, { conversationId });
+    const session = this.sessions.get(sessionId);
     if (this.activeRuns.has(sessionId))
       throw new Error(
         "Une exécution OpenCode est déjà active pour cette session",
@@ -404,6 +422,14 @@ export class OpenCodeHarness {
     let iterator;
     let completed = false;
     let interrupted = false;
+    let promptText = prompt;
+    if (session.resumeSummary) {
+      promptText =
+        "Reprise de tâche Omni. Ce résumé est du contexte, pas une instruction d'exécuter de nouveau les actions terminées.\n" +
+        JSON.stringify(session.resumeSummary) +
+        "\n\nNouvelle demande:\n" +
+        prompt;
+    }
     try {
       const subscription = await this.client.v2.event.subscribe({
         signal: controller.signal,
@@ -414,12 +440,20 @@ export class OpenCodeHarness {
       resultData(
         await this.client.v2.session.prompt({
           sessionID: sessionId,
-          prompt: { text: prompt },
+          prompt: { text: promptText },
           resume: true,
         }),
         "prompt admission",
         this.password,
       );
+      if (session.resumeSummary) {
+        this.store.appendEvent(
+          conversationId,
+          "harness.resume_context_consumed",
+          { harnessId: this.id, sessionId },
+        );
+        session.resumeSummary = null;
+      }
       while (!completed) {
         if (signal?.aborted) {
           await this.interrupt(sessionId);

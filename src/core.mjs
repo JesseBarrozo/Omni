@@ -19,6 +19,7 @@ export const EVENT_TYPES = Object.freeze([
   "permission.denied",
   "model.changed",
   "harness.changed",
+  "harness.resume_context_consumed",
   "routing.decision",
   "routing.result",
   "routing.fallback",

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -131,8 +132,124 @@ test("OpenCode adapter fails closed when its permission reply is rejected", asyn
   }
 });
 
+test("OpenCode swap resume context is admitted once and survives process restart", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "omni-opencode-resume-"));
+  temporaryDirectories.add(directory);
+  const databaseFile = join(directory, "omni.sqlite");
+  let store = new ChatStore(databaseFile);
+  const project = store.createProject("resume context", directory);
+  const conversation = store.createConversation(
+    project.id,
+    "swap context",
+    "opencode",
+  );
+  const sessionId = "session-resume-context";
+  const summary = { objective: "Update the project", filesModified: ["a.txt"] };
+  store.appendEvent(conversation.id, "harness.changed", {
+    fromHarnessId: "claude-code",
+    toHarnessId: "opencode",
+    targetSessionId: sessionId,
+    resumeSummary: summary,
+  });
+  const sentPrompts = [];
+  const session = { id: sessionId, location: { directory } };
+  const client = {
+    v2: {
+      session: {
+        get: async () => ({ data: { data: session } }),
+        prompt: async ({ prompt }) => {
+          sentPrompts.push(prompt.text);
+          return { data: {} };
+        },
+        interrupt: async () => ({ data: {} }),
+      },
+      event: {
+        subscribe: async () => ({
+          stream: (async function* () {
+            yield { type: "session.idle", data: { sessionID: sessionId } };
+          })(),
+        }),
+      },
+    },
+  };
+  const fetchImpl = async () =>
+    new Response(
+      JSON.stringify({
+        paths: {
+          "/api/session/{sessionID}/permission/{requestID}/reply": {
+            post: {
+              requestBody: {
+                content: {
+                  "application/json": {
+                    schema: {
+                      properties: {
+                        decision: { enum: ["once", "always", "reject"] },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+      { status: 200 },
+    );
+  const newHarness = () =>
+    new OpenCodeHarness({
+      store,
+      cwd: directory,
+      serverFactory: async () => ({
+        url: "http://127.0.0.1:9000",
+        password: "resume-test-password",
+        close: async () => {},
+      }),
+      clientFactory: () => client,
+      fetchImpl,
+    });
+  let first;
+  let second;
+  try {
+    first = newHarness();
+    const sessionRef = await first.resumeSession(sessionId, {
+      conversationId: conversation.id,
+    });
+    for await (const event of first.run({
+      conversationId: conversation.id,
+      sessionId,
+      prompt: "Continue the task",
+    }))
+      assert.equal(event.type, "session.completed");
+    assert.match(sentPrompts[0], /Reprise de tâche Omni/);
+    assert.match(sentPrompts[0], /Update the project/);
+    assert.equal(sessionRef.resumeSummary, null);
+    await first.dispose();
+    store.close();
+    store = new ChatStore(databaseFile);
+    second = newHarness();
+    const recovered = await second.resumeSession(sessionId, {
+      conversationId: conversation.id,
+    });
+    assert.equal(recovered.resumeSummary, null);
+    assert.equal(
+      store
+        .listEvents(conversation.id)
+        .filter(
+          (event) =>
+            event.type === "harness.resume_context_consumed" &&
+            event.payload.sessionId === sessionId,
+        ).length,
+      1,
+    );
+  } finally {
+    await first?.dispose();
+    await second?.dispose();
+    store.close();
+  }
+});
+
 test(
-  "official OpenCode server creates and resumes a persisted session without a model call",
+  "official OpenCode server accepts a safe swap and resumes it after an Omni store restart",
   { skip: process.env.OMNI_LIVE_OPENCODE_TESTS !== "1" },
   async () => {
     const directory = mkdtempSync(join(tmpdir(), "omni-opencode-live-"));
@@ -152,8 +269,27 @@ test(
     const conversation = store.createConversation(
       project.id,
       "restart",
-      "opencode",
+      "claude:configured-model",
     );
+    store.addMessage(
+      conversation.id,
+      "user",
+      "Continue after reviewing the change",
+    );
+    store.addMessage(
+      conversation.id,
+      "assistant",
+      "The change is complete.",
+      "completed",
+    );
+    store.appendEvent(conversation.id, "session.started", {
+      harnessId: "claude-code",
+      sessionId: "prior-claude-session",
+    });
+    store.appendEvent(conversation.id, "file.changed", {
+      path: "src/changed.mjs",
+      harnessId: "claude-code",
+    });
     const env = {
       PATH: process.env.PATH,
       HOME: directory,
@@ -162,34 +298,51 @@ test(
       XDG_CACHE_HOME: cacheDirectory,
       TMPDIR: directory,
     };
-    let first;
     let second;
     try {
-      first = new OpenCodeHarness({ store, cwd: projectDirectory, env });
-      await first.initialize();
-      const created = await first.createSession({
-        conversationId: conversation.id,
-      });
-      await first.dispose();
       store.close();
+      const cliPath = new URL("../bin/omni.mjs", import.meta.url);
+      const cliRun = spawnSync(
+        process.execPath,
+        [
+          cliPath.pathname,
+          "swap",
+          "--conversation",
+          conversation.id,
+          "--harness",
+          "opencode",
+        ],
+        {
+          cwd: projectDirectory,
+          env: { ...env, OMNI_DATA_DIR: directory },
+          encoding: "utf8",
+          timeout: 30_000,
+        },
+      );
+      assert.equal(cliRun.status, 0, cliRun.stderr);
+      assert.equal(JSON.parse(cliRun.stdout).harnessId, "opencode");
       store = new ChatStore(databaseFile);
-      const savedSessionId = store
+      const swapEvent = store
         .listEvents(conversation.id)
         .filter(
           (event) =>
-            event.type === "session.started" &&
-            event.payload.harnessId === "opencode",
+            event.type === "harness.changed" &&
+            event.payload.toHarnessId === "opencode",
         )
-        .at(-1)?.payload.sessionId;
-      assert.equal(savedSessionId, created.id);
+        .at(-1);
+      const createdSessionId = swapEvent.payload.targetSessionId;
       second = new OpenCodeHarness({ store, cwd: projectDirectory, env });
-      const resumed = await second.resumeSession(savedSessionId, {
+      const resumed = await second.resumeSession(createdSessionId, {
         conversationId: conversation.id,
       });
-      assert.equal(resumed.id, created.id);
+      assert.equal(resumed.id, createdSessionId);
       assert.equal(resumed.cwd, projectDirectory);
+      assert.equal(
+        resumed.resumeSummary.objective,
+        "Continue after reviewing the change",
+      );
       const checkpoint = await second.checkpoint(resumed.id);
-      assert.equal(checkpoint.sessionId, created.id);
+      assert.equal(checkpoint.sessionId, createdSessionId);
       assert.equal((await second.listModels()).length >= 0, true);
       const permissionResult = await second.client.v2.session.permission.create(
         {
@@ -208,7 +361,6 @@ test(
       assert.equal(rejected.error, undefined);
       assert.equal(rejected.response.status, 204);
     } finally {
-      await first?.dispose();
       await second?.dispose();
       store.close();
     }
