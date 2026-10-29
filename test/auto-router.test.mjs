@@ -298,6 +298,24 @@ test("Auto applies output price ceilings and excludes unknown output prices", ()
 
 test("Auto blocks candidates after persisted monthly project spend reaches its ceiling", () => {
   const registry = registryFixture();
+  registry.registerProvider({ id: "opencode", name: "OpenCode" });
+  registry.registerModel({
+    id: "priced",
+    providerId: "opencode",
+    usageCostReporting: true,
+    pricing: { inputPerMillion: 0.5, outputPerMillion: 1.5 },
+  });
+  registry.registerModel({
+    id: "unknown-price",
+    providerId: "opencode",
+    usageCostReporting: true,
+    pricing: { inputPerMillion: 0.5 },
+  });
+  registry.registerHarness({
+    id: "opencode",
+    providerIds: ["opencode"],
+    capabilities: { tools: true },
+  });
   const blocked = new AutoRouter(registry, {
     maxMonthlySpendUsd: 1,
     monthlySpendUsd: 1,
@@ -306,6 +324,18 @@ test("Auto blocks candidates after persisted monthly project spend reaches its c
   assert.ok(
     blocked.evaluated.every((candidate) =>
       candidate.exclusions.includes("monthly-spend-budget-reached"),
+    ),
+  );
+  assert.ok(
+    blocked.evaluated.some((candidate) =>
+      candidate.exclusions.includes(
+        "monthly-budget-cost-reporting-unsupported",
+      ),
+    ),
+  );
+  assert.ok(
+    blocked.evaluated.some((candidate) =>
+      candidate.exclusions.includes("monthly-budget-catalog-pricing-unknown"),
     ),
   );
   assert.throws(
@@ -320,7 +350,18 @@ test("Auto blocks candidates after persisted monthly project spend reaches its c
     maxMonthlySpendUsd: 1,
     monthlySpendUsd: 0.999,
   }).evaluate({ prompt: "Answer", needsTools: true });
-  assert.ok(belowLimit.eligible.length > 0);
+  assert.deepEqual(
+    belowLimit.eligible.map((candidate) => candidate.model.id),
+    ["priced"],
+  );
+  assert.throws(
+    () =>
+      new AutoRouter(registryFixture(), {
+        maxMonthlySpendUsd: 1,
+        monthlySpendUsd: 0,
+      }).select({ prompt: "Answer", needsTools: true }),
+    /requires candidates with a supported USD cost report/i,
+  );
 });
 
 test("monthly spend sums only valid provider-reported USD costs", () => {

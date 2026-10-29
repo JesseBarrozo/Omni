@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- En mode budget mensuel, Auto refuse explicitement les candidats sans suivi de coût et tarifs catalogue complets; si tous sont inconnus ou non pris en charge, la commande explique le blocage au lieu de poursuivre silencieusement.
+
+- Garde budget renforcé : quand `OMNI_AUTO_MONTHLY_BUDGET_USD` est défini, Auto exclut également les candidats sans événements de coûts pris en charge ou sans tarifs d’entrée et de sortie connus. Cela réduit le risque de traiter un coût inconnu comme nul; le plafond ne couvre toujours pas les événements manquants ni les tours simultanés.
+
 - Suivi de reprise : ajout de `POINTS_A_VERIFIER.md` avec les scénarios réels en attente, les blocages d’intégration, les limites des budgets mesurés et les commandes locales de revalidation; correction des lignes historiques contradictoires sur les tarifs OpenCode.
 
 - Auto budget tarifaire de sortie : le registre conserve le tarif de sortie OpenCode, y compris le maximum des paliers; `OMNI_AUTO_MAX_OUTPUT_PER_MILLION` exclut les modèles dont le prix de sortie dépasse le seuil ou reste inconnu.

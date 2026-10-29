@@ -334,6 +334,7 @@ export class OpenCodeHarness {
             name: entry.name,
             available: true,
             local: localProviders.has(entry.providerID),
+            usageCostReporting: true,
             capabilities: {
               tools: entry.capabilities?.tools === true,
               input: entry.capabilities?.input ?? [],

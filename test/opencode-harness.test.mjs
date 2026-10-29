@@ -141,30 +141,36 @@ test("OpenCode catalog keeps model tool capability and only marks explicit loopb
   try {
     const models = await harness.listModelCatalog();
     assert.deepEqual(
-      models.map(({ id, local, capabilities, pricing }) => ({
-        id,
-        local,
-        tools: capabilities.tools,
-        pricing,
-      })),
+      models.map(
+        ({ id, local, capabilities, pricing, usageCostReporting }) => ({
+          id,
+          local,
+          tools: capabilities.tools,
+          pricing,
+          usageCostReporting,
+        }),
+      ),
       [
         {
           id: "ollama-custom/llama",
           local: true,
           tools: true,
           pricing: { inputPerMillion: 0.5, outputPerMillion: 1.5 },
+          usageCostReporting: true,
         },
         {
           id: "remote/object-cost-model",
           local: false,
           tools: true,
           pricing: { inputPerMillion: 0.1, outputPerMillion: 0.3 },
+          usageCostReporting: true,
         },
         {
           id: "remote/text-model",
           local: false,
           tools: false,
           pricing: undefined,
+          usageCostReporting: true,
         },
       ],
     );

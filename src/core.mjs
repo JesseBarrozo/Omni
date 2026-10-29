@@ -450,6 +450,17 @@ export class AutoRouter {
           exclusions.push("monthly-spend-budget-reached");
         const price = model.pricing?.inputPerMillion;
         const outputPrice = model.pricing?.outputPerMillion;
+        if (this.maxMonthlySpendUsd !== null) {
+          if (model.usageCostReporting !== true)
+            exclusions.push("monthly-budget-cost-reporting-unsupported");
+          if (
+            !Number.isFinite(price) ||
+            !Number.isFinite(outputPrice) ||
+            price < 0 ||
+            outputPrice < 0
+          )
+            exclusions.push("monthly-budget-catalog-pricing-unknown");
+        }
         if (
           this.maxInputPerMillion !== null &&
           (!Number.isFinite(price) || price > this.maxInputPerMillion)
@@ -555,6 +566,20 @@ export class AutoRouter {
       )
         throw new Error(
           `Auto monthly project budget reached: $${this.monthlySpendUsd.toFixed(4)} reported of $${this.maxMonthlySpendUsd.toFixed(4)} configured for the current UTC month`,
+        );
+      if (
+        this.maxMonthlySpendUsd !== null &&
+        evaluated.some((candidate) =>
+          candidate.exclusions.some((reason) =>
+            [
+              "monthly-budget-cost-reporting-unsupported",
+              "monthly-budget-catalog-pricing-unknown",
+            ].includes(reason),
+          ),
+        )
+      )
+        throw new Error(
+          "Auto monthly budget requires candidates with a supported USD cost report and known input/output catalog prices; no eligible candidate meets that requirement",
         );
       if (task.requiredMcpServers.length)
         throw new Error(
