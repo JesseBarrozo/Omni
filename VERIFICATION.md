@@ -65,9 +65,10 @@ Ce document suit les vérifications du harness `codex` via le Codex app-server o
 - [x] Après fermeture/réouverture de SQLite, le même thread est repris et le modèle relit le contenu créé.
 - [x] Le parcours CLI interactif réel a affiché la demande d’approbation, reçu `y`, écrit le fichier, puis une nouvelle invocation CLI a repris la conversation.
 - [x] Le test vérifie l’absence de secret dans l’export et qu’aucun nouveau thread Codex n’est créé lors de la reprise.
-- [ ] Exercer un refus explicite dans le parcours CLI réel et vérifier son événement dans l’historique.
+- [ ] Le refus explicite via le prompt interactif du CLI et son affichage dans l’historique restent à vérifier.
 - [ ] Exercer en réel `Ctrl-C` pendant un tour et confirmer `turn/interrupt` sans relance automatique.
-- [ ] Exercer une demande `item/commandExecution/requestApproval` et `item/permissions/requestApproval` réelle; ces chemins sont gérés, mais non validés par ce parcours.
+- [x] Test OAuth live `OMNI_LIVE_CODEX_COMMAND_APPROVAL_TESTS=1 node --test --test-name-pattern='requests command approval' test/codex-harness.test.mjs` : Codex a demandé `item/commandExecution/requestApproval`; la commande temporaire approuvée a créé un marqueur une fois, tandis qu’une commande jumelle refusée n’a pas créé de fichier et a produit `permission.denied`. Aucun appel OpenAI par clé.
+- [ ] `item/permissions/requestApproval` reste non observé : une demande réelle avec `curl` vers un serveur HTTP loopback temporaire n’a sollicité que `item/commandExecution/requestApproval`; après approbation de commande, la requête loopback est arrivée une fois. Aucun accès à un hôte externe n’a été tenté.
 
 ## Tests à exécuter ou refaire
 

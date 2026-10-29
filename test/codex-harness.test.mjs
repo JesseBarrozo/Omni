@@ -566,3 +566,101 @@ test(
     }
   },
 );
+
+test(
+  "real Codex OAuth app-server requests command approval and blocks a denied command",
+  {
+    skip:
+      process.env.OMNI_LIVE_CODEX_COMMAND_APPROVAL_TESTS !== "1" ||
+      !codexAuthStatus().authenticated,
+  },
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "omni-codex-command-approval-"));
+    const approvedMarker = join(dir, "approved-command.txt");
+    const deniedMarker = join(dir, "denied-command.txt");
+    const store = new ChatStore(join(dir, "omni.sqlite"));
+    const project = store.createProject("Codex command approval", dir);
+    const approvedConversation = store.createConversation(
+      project.id,
+      "Approved shell command",
+      "codex",
+    );
+    const deniedConversation = store.createConversation(
+      project.id,
+      "Denied shell command",
+      "codex",
+    );
+    const env = {
+      PATH: process.env.PATH ?? "",
+      HOME: process.env.HOME ?? "",
+      CODEX_HOME: process.env.CODEX_HOME ?? "",
+    };
+    let denyCurrentCommand = false;
+    const approvals = [];
+    const harness = new CodexHarness({
+      store,
+      cwd: dir,
+      env,
+      requestPermission: async (request) => {
+        approvals.push(request);
+        if (request.method === "item/commandExecution/requestApproval")
+          return !denyCurrentCommand;
+        return false;
+      },
+    });
+    const runCommand = async (conversationId, marker) => {
+      const events = [];
+      for await (const event of harness.run({
+        conversationId,
+        prompt: `Run exactly one shell command that writes the literal text "once" to ${marker}, using shell only. Do not use file tools, do not run another command, and report the result.`,
+        signal: new AbortController().signal,
+      }))
+        events.push(event);
+      return events;
+    };
+    try {
+      await runCommand(approvedConversation.id, approvedMarker);
+      assert.equal(existsSync(approvedMarker), true);
+      assert.equal(readFileSync(approvedMarker, "utf8"), "once");
+      const approval = approvals.find(
+        ({ method, params }) =>
+          method === "item/commandExecution/requestApproval" &&
+          JSON.stringify(params).includes(approvedMarker),
+      );
+      assert.ok(
+        approval,
+        "Codex did not request approval for the expected command",
+      );
+      assert.ok(
+        store
+          .listEvents(approvedConversation.id)
+          .some(
+            ({ type, payload }) =>
+              type === "permission.granted" &&
+              payload.method === approval.method,
+          ),
+      );
+
+      denyCurrentCommand = true;
+      await runCommand(deniedConversation.id, deniedMarker);
+      assert.equal(existsSync(deniedMarker), false);
+      assert.ok(
+        approvals.some(
+          ({ method, params }) =>
+            method === "item/commandExecution/requestApproval" &&
+            JSON.stringify(params).includes(deniedMarker),
+        ),
+        "Codex did not request the denied command approval",
+      );
+      assert.ok(
+        store
+          .listEvents(deniedConversation.id)
+          .some(({ type }) => type === "permission.denied"),
+      );
+    } finally {
+      await harness.dispose();
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
