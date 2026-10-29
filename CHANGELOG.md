@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Vérification d’intégration du budget Auto : `auto plan` a utilisé le catalogue réel OpenCode avec `OMNI_AUTO_MONTHLY_BUDGET_USD` configuré; tarifs affichés et exclusions des modèles non tarifés confirmés, sans génération.
+
 - En mode budget mensuel, Auto refuse explicitement les candidats sans suivi de coût et tarifs catalogue complets; si tous sont inconnus ou non pris en charge, la commande explique le blocage au lieu de poursuivre silencieusement.
 
 - Garde budget renforcé : quand `OMNI_AUTO_MONTHLY_BUDGET_USD` est défini, Auto exclut également les candidats sans événements de coûts pris en charge ou sans tarifs d’entrée et de sortie connus. Cela réduit le risque de traiter un coût inconnu comme nul; le plafond ne couvre toujours pas les événements manquants ni les tours simultanés.

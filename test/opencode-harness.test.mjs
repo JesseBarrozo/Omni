@@ -663,6 +663,7 @@ test(
       OMNI_DISABLED_PROVIDERS:
         "codex,claude,openai,openrouter,anthropic,google",
       OMNI_AUTO_PREFERRED_PROVIDERS: "opencode",
+      OMNI_AUTO_MONTHLY_BUDGET_USD: "10",
     };
     const cliPath = new URL("../bin/omni.mjs", import.meta.url);
     const createProject = spawnSync(
@@ -725,6 +726,20 @@ test(
         evaluated.knownInputPricePerMillion,
         model.pricing?.inputPerMillion ?? null,
       );
+      assert.equal(
+        evaluated.knownOutputPricePerMillion,
+        model.pricing?.outputPerMillion ?? null,
+      );
+      if (
+        !Number.isFinite(model.pricing?.inputPerMillion) ||
+        !Number.isFinite(model.pricing?.outputPerMillion)
+      )
+        assert.ok(
+          evaluated.exclusions.includes(
+            "monthly-budget-catalog-pricing-unknown",
+          ),
+          `Auto accepted unpriced model ${model.id} with a monthly budget`,
+        );
     }
     const store = new ChatStore(join(dataDirectory, "omni.sqlite"));
     try {

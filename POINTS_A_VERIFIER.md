@@ -28,6 +28,7 @@ Mis à jour le 29 octobre 2026. Ce relevé complète [`VERIFICATION.md`](VERIFIC
 ### Budgets et coûts
 
 - [ ] Le budget mensuel `OMNI_AUTO_MONTHLY_BUDGET_USD` bloque Auto lorsque les coûts USD persistés du projet atteignent le plafond. Quand il est actif, les candidats sans voie de rapport de coût ou sans prix d’entrée/sortie catalogue sont exclus, avec une erreur explicite si aucun candidat ne remplit ces conditions. Un événement de coût peut toutefois manquer au runtime et des tours déjà démarrés ou concurrents peuvent dépasser le plafond; ce n’est pas une limite de facturation garantie.
+- [x] Le parcours `auto plan` avec le serveur OpenCode local réel et un budget mensuel actif a validé les prix de catalogue et l’exclusion de prix incomplets, sans générer de réponse ni appeler un fournisseur.
 - [ ] Les plafonds `OMNI_AUTO_MAX_INPUT_PER_MILLION` et `OMNI_AUTO_MAX_OUTPUT_PER_MILLION` filtrent les tarifs du catalogue OpenCode. Ils ne prédisent pas le coût d’un prompt et ne constituent pas un plafond de facture.
 - [ ] Les fournisseurs OAuth Codex/Claude et les APIs OpenAI/Anthropic/Gemini ne rapportent pas actuellement de coût USD dans les événements Omni; seuls les compteurs réellement présents sont conservés. Ne pas inventer les tarifs ou estimer une dépense.
 
