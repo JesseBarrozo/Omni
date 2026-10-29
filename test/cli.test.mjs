@@ -15,6 +15,29 @@ import { ChatStore } from "../src/chat-store.mjs";
 
 const cli = fileURLToPath(new URL("../bin/omni.mjs", import.meta.url));
 
+test("CLI refuses to present Antigravity chat as an Omni harness run", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-antigravity-run-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const project = run("project", "create", "--name", "isolated-chat");
+    assert.equal(project.status, 0, project.stderr);
+    const result = run(
+      "run",
+      "--project",
+      JSON.parse(project.stdout).id,
+      "--model",
+      "antigravity:gemini-4-argon-medium",
+      "Hello",
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /chat isolé uniquement/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("CLI persists projects and resumes with the saved or explicitly changed model", () => {
   const dir = mkdtempSync(join(tmpdir(), "omni-cli-"));
   const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };

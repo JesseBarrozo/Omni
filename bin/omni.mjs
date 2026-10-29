@@ -9,6 +9,11 @@ import { serializeJsonLine } from "../src/cli-output.mjs";
 import { OpenAIChat } from "../src/openai-chat.mjs";
 import { OpenAIAuth } from "../src/openai-auth.mjs";
 import {
+  AntigravityCliChat,
+  antigravityCliStatus,
+  startAntigravityLogin,
+} from "../src/antigravity-cli.mjs";
+import {
   CodexHarness,
   CodexChat,
   codexAuthStatus,
@@ -52,7 +57,7 @@ const emitRunEvent = (type, payload = {}) => {
 };
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|antigravity] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|antigravity] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project) {
@@ -381,6 +386,10 @@ async function refreshProvider(providerId) {
       provider = oauthConnected
         ? new OpenAIChat({ oauth: auth })
         : new OpenAIChat();
+  } else if (providerId === "antigravity") {
+    name = "Google Antigravity CLI OAuth";
+    authenticated = antigravityCliStatus().cliInstalled;
+    if (authenticated) provider = new AntigravityCliChat({ store, dataDir });
   } else throw new Error(`Fournisseur non pris en charge: ${providerId}`);
   if (!authenticated) {
     store.saveProviderCatalog({
@@ -429,7 +438,9 @@ function assertManualSelectionEnabled(modelId, harness = null) {
       ? "codex"
       : modelId === "claude" || modelId.startsWith("claude:")
         ? "claude"
-        : "openai");
+        : modelId.startsWith("antigravity:")
+          ? "antigravity"
+          : "openai");
   const provider = store
     .providerRegistry()
     .find((entry) => entry.id === providerId);
@@ -442,6 +453,10 @@ function assertManualSelectionEnabled(modelId, harness = null) {
   const registered = store
     .modelRegistry(providerId)
     .find((model) => model.id === modelName);
+  if (providerId === "antigravity" && !registered)
+    throw new Error(
+      "Modèle Antigravity absent du catalogue Omni; lancez `omni models list --provider antigravity`",
+    );
   if (registered && (!registered.enabled || !registered.available))
     throw new Error(
       `Modèle désactivé ou indisponible: ${providerId}/${modelName}`,
@@ -631,7 +646,13 @@ async function chat(
                 ? model.slice("claude:".length)
                 : undefined,
             })
-          : createOpenAIChat());
+          : model.startsWith("antigravity:")
+            ? new AntigravityCliChat({
+                store,
+                dataDir,
+                model: model.slice("antigravity:".length),
+              })
+            : createOpenAIChat());
   const rl = createInterface({
     input: stdin,
     output: jsonRunOutput ? process.stderr : stdout,
@@ -908,11 +929,14 @@ try {
             ? "api-key"
             : null,
       },
+      antigravityCliStatus(),
     ];
     hasFlag("--json")
       ? print(status)
-      : status.forEach(({ provider, authenticated }) =>
-          print(`${provider}: ${authenticated ? "connecté" : "non connecté"}`),
+      : status.forEach(({ provider, authenticated, cliInstalled }) =>
+          print(
+            `${provider}: ${authenticated === null ? (cliInstalled ? "CLI présent; compte non vérifié" : "CLI absent") : authenticated ? "connecté" : "non connecté"}`,
+          ),
         );
   } else if (
     command === "auth" &&
@@ -941,6 +965,18 @@ try {
     if (result.status !== 0)
       throw new Error("La connexion Claude a échoué ou a été annulée");
     print("Connexion Claude terminée.");
+  } else if (
+    command === "auth" &&
+    args[0] === "login" &&
+    args[1] === "antigravity"
+  ) {
+    const result = startAntigravityLogin();
+    if (result.error) throw new Error("Impossible de lancer Antigravity CLI");
+    if (result.status !== 0)
+      throw new Error("La connexion Antigravity a échoué ou a été annulée");
+    print(
+      "Antigravity CLI fermé. Validez le compte avec `omni providers refresh --provider antigravity`.",
+    );
   } else if (command === "providers" && args[0] === "list") {
     const result = store.providerRegistry();
     hasFlag("--json")
@@ -952,7 +988,9 @@ try {
         );
   } else if (command === "providers" && args[0] === "refresh") {
     const requested = option("--provider");
-    const providers = requested ? [requested] : ["codex", "claude", "openai"];
+    const providers = requested
+      ? [requested]
+      : ["codex", "claude", "openai", "antigravity"];
     const results = await Promise.all(providers.map(refreshProvider));
     hasFlag("--json")
       ? print(results)
@@ -1162,6 +1200,10 @@ try {
     if ((!autoMode && !model) || !prompt)
       throw new Error(
         "Usage: omni run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--json] PROMPT",
+      );
+    if (!autoMode && model?.startsWith("antigravity:"))
+      throw new Error(
+        "Antigravity est disponible en chat isolé uniquement; `omni run` exige un harness réel.",
       );
     let autoDecision = null;
     if (autoMode) {
