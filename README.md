@@ -1,6 +1,6 @@
 # Omni
 
-Omni is an independent Universal AI Harness under phased development. Its CLI provides persistent SQLite conversations, OpenAI ChatGPT OAuth, API-key providers for OpenAI and OpenRouter, Codex OAuth through the official app-server, and Claude Code Agent SDK sessions. OpenAI OAuth uses OpenAI’s documented Sign in with ChatGPT flow for open-source local apps; see [`VERIFICATION.md`](VERIFICATION.md) for the live validation state. OpenRouter uses its documented OpenAI-compatible Chat Completions API with the existing official OpenAI JavaScript SDK; no authenticated live request has been made. See [`AUDIT.md`](AUDIT.md) for the verified repository baseline and [`Omni_PRD.md`](Omni_PRD.md) for the product requirements.
+Omni is an independent Universal AI Harness under phased development. Its CLI provides persistent SQLite conversations, OpenAI ChatGPT OAuth, API-key providers for OpenAI, OpenRouter and Anthropic, Codex OAuth through the official app-server, and Claude Code Agent SDK sessions. OpenAI OAuth uses OpenAI’s documented Sign in with ChatGPT flow for open-source local apps; see [`VERIFICATION.md`](VERIFICATION.md) for the live validation state. OpenRouter and Anthropic use their documented message APIs with official SDKs; no authenticated live requests have been made for either provider. Anthropic API access is separate from Claude Code OAuth/harness access. See [`AUDIT.md`](AUDIT.md) for the verified repository baseline and [`Omni_PRD.md`](Omni_PRD.md) for the product requirements.
 
 ## Requirements
 
@@ -11,6 +11,7 @@ Omni is an independent Universal AI Harness under phased development. Its CLI pr
 - for ChatGPT plan usage, run `omni auth login openai`; OAuth credentials are stored in the operating system’s secure credential store, never SQLite
 - optionally, an OpenAI API key in `OPENAI_API_KEY` for direct API billing, or store it with `omni auth key set openai --stdin`; the CLI reads one line without displaying it and stores it in the system credential store
 - optionally, an OpenRouter API key in `OPENROUTER_API_KEY`, or store it with `omni auth key set openrouter --stdin`; OpenRouter credentials use a distinct system credential-store entry
+- optionally, an Anthropic API key in `ANTHROPIC_API_KEY`, or store it with `omni auth key set anthropic --stdin`; Anthropic API credentials are distinct from Claude Code login and use a separate system credential-store entry
 
 Install dependencies with `npm install`. `npm run build`, `npm run lint`, `npm run format:check` and `npm run check` validate the current CLI and core runtime.
 
@@ -35,6 +36,7 @@ node ./bin/omni.mjs auth status --json
 node ./bin/omni.mjs auth login openai
 node ./bin/omni.mjs auth key set openai --stdin --profile work < /secure/path/openai-key
 node ./bin/omni.mjs auth key set openrouter --stdin < /secure/path/openrouter-key
+node ./bin/omni.mjs auth key set anthropic --stdin < /secure/path/anthropic-key
 node ./bin/omni.mjs auth key list openai --json
 node ./bin/omni.mjs auth key use openai --profile work
 node ./bin/omni.mjs auth key remove openai --profile work
@@ -45,7 +47,9 @@ node ./bin/omni.mjs models list
 node ./bin/omni.mjs models list --provider codex
 node ./bin/omni.mjs models list --provider claude
 node ./bin/omni.mjs models list --provider openrouter
+node ./bin/omni.mjs models list --provider anthropic
 node ./bin/omni.mjs chat --project ./my-project --model openrouter:provider/model-id
+node ./bin/omni.mjs chat --project ./my-project --model anthropic:claude-model-id
 node ./bin/omni.mjs run --project ./my-project --model codex "Explain this project"
 node ./bin/omni.mjs run --project ./my-project --model claude:sonnet "Explain this project"
 node ./bin/omni.mjs run --project ./my-project --harness claude "Inspect the project and propose changes"

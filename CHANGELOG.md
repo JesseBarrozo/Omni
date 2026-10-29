@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Anthropic API : ajout distinct de Claude Code, via le SDK officiel `@anthropic-ai/sdk` 1.3.0 (Apache-2.0), pagination de `models.list()`, streaming Messages API et credentials dédiés du trousseau. Le SDK a passé un parcours contrat complet contre un serveur HTTP local; aucune clé réelle ni requête live utilisée.
+
 - OpenRouter : nouveau provider via le SDK officiel `openai` et l’endpoint OpenAI-compatible Chat Completions documenté par OpenRouter. Le catalogue et le chat streamé sont intégrés aux commandes `providers refresh`, `models list`, `chat` et `resume`; clé dédiée au trousseau système ou variable `OPENROUTER_API_KEY`, erreurs expurgées. Test SDK HTTP local réussi; aucun appel live ni test de clé OpenRouter effectué.
 
 - Codex app-server : test live OAuth de `item/commandExecution/requestApproval` avec acceptation ponctuelle puis refus. Une commande shell locale approuvée écrit son marqueur une fois; la commande jumelle refusée ne s’exécute pas. Le profil supplémentaire `item/permissions/requestApproval` n’a pas été sollicité par le runtime lors de l’essai loopback; il reste à valider lorsqu’un scénario sûr le déclenchera.

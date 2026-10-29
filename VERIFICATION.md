@@ -1,5 +1,15 @@
 # Vérification et tests à refaire
 
+## Provider API Anthropic
+
+- [x] Implémentation séparée de Claude Code : SDK officiel `@anthropic-ai/sdk` 1.3.0, catalogue paginé et flux Messages API, reprise via l’historique SQLite.
+- [x] Clé dédiée `Omni Anthropic API Key` dans le trousseau système, ou `ANTHROPIC_API_KEY`; les erreurs SDK expurgent la clé. L’authentification Anthropic API n’emprunte pas le login Claude Code.
+- [x] Commandes prévues : `auth key set/remove anthropic`, `providers refresh --provider anthropic`, `models list --provider anthropic`, chat avec `anthropic:MODEL_ID`.
+- [x] Le vrai SDK Anthropic a été exécuté contre un serveur HTTP loopback : pagination du catalogue sur deux pages, headers d’auth/version, Messages API SSE, ordre des deltas et arrêt final; tests de credentials isolés et expurgation de clé.
+- [x] Sans clé Anthropic, la commande CLI `providers refresh --provider anthropic --json` retourne `disconnected` sans appel réseau.
+- [x] Validation du dépôt : `npm test` (105 tests, 80 réussis, 0 échec, 25 opt-in ignorés), lint, format:check, check, build, diff-check et `npm audit --omit=dev` (0 vulnérabilité) réussis.
+- [ ] Ne pas tester de clé ou appeler l’API réelle. Catalogue et génération live restent non validés; utiliser le test SDK loopback de contrat.
+
 ## Provider OpenRouter
 
 - [x] L’adaptateur s’appuie sur le package officiel `openai` déjà installé et configure l’endpoint officiel OpenRouter; le chat passe par Chat Completions en flux SSE, son catalogue par `GET /models`.

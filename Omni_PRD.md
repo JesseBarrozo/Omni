@@ -12,6 +12,7 @@
 
 ## État d’implémentation vérifié — 29 octobre 2026
 
+- OpenRouter direct et Anthropic Messages API disposent maintenant de providers CLI avec les SDK officiels, catalogue de modèles paginé, streaming et identifiants isolés dans le trousseau; leurs contrats ont été testés avec les SDK contre des serveurs HTTP loopback. Aucun appel live avec clé API n’a été lancé. Anthropic API est distinct de Claude Code OAuth.
 - Le socle chat SQLite de la phase 2 est commité (`93677d7`). Le test direct OpenAI par clé API n’a pas été exécuté.
 - Le parcours Codex OAuth via l’app-server officiel a répondu en réel, streamé les deltas et repris le même thread après redémarrage de la base Omni. L’authentification reste gérée par le CLI Codex; Omni n’importe ni n’extrait son jeton. Cette intégration est en lecture seule.
 - L’intégration Claude Code utilise le SDK Agent officiel, le login CLI et les callbacks de permission Omni. Après connexion OAuth Claude, les tests réels de streaming, reprise de session après redémarrage SQLite et écriture temporaire avec permission explicite ont réussi. Le test CLI interactif de refus et l’interruption réelle restent à vérifier; voir `VERIFICATION.md`.
