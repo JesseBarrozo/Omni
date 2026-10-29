@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Rapport Auto : `usage report` inclut désormais les résultats `routing.result` filtrés et la latence moyenne réellement mesurée pour les exécutions Auto; les mesures absentes ne sont pas extrapolées.
+
 - OpenAI usage capture : les réponses complètes `response.completed` de l’API Responses enregistrent les compteurs officiels input/output/reasoning/cache dans `usage.updated` pour les chemins API et OAuth; aucune estimation de coût n’est créée. Validé avec le SDK OpenAI réel contre un SSE HTTP loopback, sans appel fournisseur.
 
 - Usage Anthropic/Gemini : les SDK officiels exposent les compteurs de la réponse finale et les écrivent dans `usage.updated`; les dimensions absentes restent absentes. Le rapport agrège chaque compteur indépendamment et indique `null` quand aucun échantillon ne le fournit. Contrats SDK validés via les serveurs HTTP loopback existants, sans fournisseur externe.

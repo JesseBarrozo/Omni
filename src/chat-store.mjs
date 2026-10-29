@@ -489,6 +489,7 @@ export class ChatStore {
         "permission.denied",
       ],
       usage: ["usage.updated"],
+      routing: ["routing.result"],
     }[kind];
     if (!eventTypes) throw new Error(`Historique inconnu: ${kind}`);
     if (!conversationId && !projectId)

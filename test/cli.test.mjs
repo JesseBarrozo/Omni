@@ -559,8 +559,22 @@ test("CLI reports only persisted provider usage for a project or conversation", 
         cache: { read: 0, write: 0 },
       },
     });
+    store.appendEvent(conversation.id, "routing.result", {
+      providerId: "opencode",
+      modelId: "provider/model-one",
+      harnessId: "opencode",
+      outcome: "completed",
+      latencyMs: 80,
+    });
     const noUsage = store.createConversation(project.id, "no usage", "codex");
     store.appendEvent(noUsage.id, "usage.updated", { providerId: "unknown" });
+    store.appendEvent(noUsage.id, "routing.result", {
+      providerId: "codex",
+      modelId: "codex-model",
+      harnessId: "codex",
+      outcome: "failed",
+      latencyMs: 120,
+    });
     const partial = store.createConversation(
       project.id,
       "partial usage",
@@ -569,6 +583,9 @@ test("CLI reports only persisted provider usage for a project or conversation", 
     store.appendEvent(partial.id, "usage.updated", {
       providerId: "openai",
       tokens: { input: 9, output: 2 },
+    });
+    store.appendEvent(partial.id, "routing.result", {
+      outcome: "interrupted",
     });
     store.close();
 
@@ -593,6 +610,15 @@ test("CLI reports only persisted provider usage for a project or conversation", 
       cacheRead: 2,
       cacheWrite: 2,
     });
+    assert.equal(result.summary.routingResultCount, 3);
+    assert.deepEqual(result.summary.routingOutcomes, {
+      completed: 1,
+      failed: 1,
+      interrupted: 1,
+      other: 0,
+    });
+    assert.equal(result.summary.latencyReports, 2);
+    assert.equal(result.summary.averageLatencyMs, 100);
     assert.equal(result.events[2].costUsd, null);
     assert.equal(result.events[2].tokens, null);
 
@@ -605,6 +631,8 @@ test("CLI reports only persisted provider usage for a project or conversation", 
     );
     assert.equal(scoped.status, 0, scoped.stderr);
     assert.equal(JSON.parse(scoped.stdout).summary.eventCount, 2);
+    assert.equal(JSON.parse(scoped.stdout).summary.routingResultCount, 1);
+    assert.equal(JSON.parse(scoped.stdout).summary.averageLatencyMs, 80);
     const partialReport = run(
       "usage",
       "report",

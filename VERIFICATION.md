@@ -1,5 +1,9 @@
 ## Rapport d’usage CLI
 
+- Le même rapport expose séparément les événements `routing.result` : nombre terminé/échoué/interrompu et latence moyenne des seules durées persistées. Le test vérifie un succès à 80 ms, un échec à 120 ms, une interruption sans durée et un filtre conversation.
+
+- [x] Après ajout de latence Auto : `npm test` (122 tests, 95 réussis, 0 échec, 27 opt-in ignorés), lint, format:check, check, build, audit production (0 vulnérabilité) et diff-check réussis.
+
 - [x] `omni usage report --project PATH_OR_ID [--json]` agrège les événements `usage.updated` persistés; `--conversation ID` isole une conversation.
 - [x] Les sommes USD n’incluent que les coûts rapportés et valides; chaque compteur token est agrégé uniquement sur ses valeurs présentes et valides. Les dimensions sans mesure restent `null`/« non rapportées », sans estimation.
 - [x] Test CLI sur une base SQLite temporaire avec plusieurs conversations, mesures présentes et absentes, filtres projet/conversation, rendu texte et JSON. Aucun fournisseur, modèle ou secret utilisé.

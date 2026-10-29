@@ -2018,6 +2018,10 @@ try {
       conversationId,
       projectId,
     });
+    const routingEvents = store.executionEvents("routing", {
+      conversationId,
+      projectId,
+    });
     const totals = {
       input: null,
       output: null,
@@ -2031,6 +2035,31 @@ try {
     let costUsd = 0;
     let costReports = 0;
     let tokenReports = 0;
+    let latencyTotalMs = 0;
+    let latencyReports = 0;
+    const outcomes = { completed: 0, failed: 0, interrupted: 0, other: 0 };
+    const routingRecords = routingEvents.map((event) => {
+      const payload = event.payload;
+      const latencyMs = payload.latencyMs;
+      const validLatency = Number.isFinite(latencyMs) && latencyMs >= 0;
+      if (validLatency) {
+        latencyTotalMs += latencyMs;
+        latencyReports += 1;
+      }
+      const outcome = Object.hasOwn(outcomes, payload.outcome)
+        ? payload.outcome
+        : "other";
+      outcomes[outcome] += 1;
+      return {
+        conversationId: event.conversationId,
+        createdAt: event.createdAt,
+        providerId: payload.providerId ?? null,
+        modelId: payload.modelId ?? null,
+        harnessId: payload.harnessId ?? null,
+        outcome,
+        latencyMs: validLatency ? latencyMs : null,
+      };
+    });
     const records = events.map((event) => {
       const payload = event.payload;
       const reportedCost = payload.costUsd;
@@ -2070,6 +2099,7 @@ try {
       projectId: projectId ? store.project(projectId).id : null,
       conversationId,
       events: records,
+      routing: routingRecords,
       summary: {
         eventCount: records.length,
         costReports,
@@ -2077,6 +2107,12 @@ try {
         tokenReports,
         tokenFieldReports,
         tokens: tokenReports ? totals : null,
+        routingResultCount: routingRecords.length,
+        routingOutcomes: outcomes,
+        latencyReports,
+        averageLatencyMs: latencyReports
+          ? latencyTotalMs / latencyReports
+          : null,
       },
     };
     if (hasFlag("--json")) print(report);
@@ -2091,6 +2127,14 @@ try {
         report.summary.tokens
           ? `Tokens · entrée ${totals.input ?? "non rapportée"} · sortie ${totals.output ?? "non rapportée"} · raisonnement ${totals.reasoning ?? "non rapporté"} · cache lecture ${totals.cacheRead ?? "non rapporté"} · cache écriture ${totals.cacheWrite ?? "non rapportée"}`
           : "Tokens: non rapportés",
+      );
+      print(
+        report.summary.averageLatencyMs === null
+          ? "Latence Auto: non rapportée"
+          : `Latence moyenne Auto: ${report.summary.averageLatencyMs.toFixed(1)} ms (${report.summary.latencyReports} mesure(s))`,
+      );
+      print(
+        `Résultats Auto · terminés ${outcomes.completed} · échoués ${outcomes.failed} · interrompus ${outcomes.interrupted}`,
       );
       for (const record of records)
         print(
