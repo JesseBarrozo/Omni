@@ -85,7 +85,7 @@ async function startFixture() {
         'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
       );
       response.write(
-        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":2}}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":3,"output_tokens":2,"cache_read_input_tokens":2,"cache_creation_input_tokens":4,"output_tokens_details":{"reasoning_tokens":1}}}\n\n',
       );
       response.end('event: message_stop\ndata: {"type":"message_stop"}\n\n');
       return;
@@ -116,6 +116,7 @@ test("official Anthropic SDK lists paginated models and streams Messages API del
     "claude-model-z",
   ]);
   const deltas = [];
+  const usageEvents = [];
   assert.equal(
     await provider.stream({
       model: "anthropic:claude-model-a",
@@ -124,10 +125,22 @@ test("official Anthropic SDK lists paginated models and streams Messages API del
         { role: "assistant", content: "second" },
       ],
       onDelta: (delta) => deltas.push(delta),
+      onUsage: (usage) => usageEvents.push(usage),
     }),
     "hello world",
   );
   assert.deepEqual(deltas, ["hello ", "world"]);
+  assert.deepEqual(usageEvents, [
+    {
+      providerId: "anthropic",
+      tokens: {
+        input: 3,
+        output: 2,
+        reasoning: 1,
+        cache: { read: 2, write: 4 },
+      },
+    },
+  ]);
   assert.equal(requests.length, 3);
   assert.ok(requests.every(({ authenticated }) => authenticated));
   assert.ok(requests.every(({ version }) => version));

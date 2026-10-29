@@ -2019,12 +2019,15 @@ try {
       projectId,
     });
     const totals = {
-      input: 0,
-      output: 0,
-      reasoning: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
+      input: null,
+      output: null,
+      reasoning: null,
+      cacheRead: null,
+      cacheWrite: null,
     };
+    const tokenFieldReports = Object.fromEntries(
+      Object.keys(totals).map((field) => [field, 0]),
+    );
     let costUsd = 0;
     let costReports = 0;
     let tokenReports = 0;
@@ -2037,22 +2040,21 @@ try {
         costReports += 1;
       }
       const tokens = payload.tokens;
-      const values = [
-        tokens?.input,
-        tokens?.output,
-        tokens?.reasoning,
-        tokens?.cache?.read,
-        tokens?.cache?.write,
-      ];
-      const validTokens = values.every(
-        (value) => Number.isFinite(value) && value >= 0,
-      );
-      if (validTokens) {
-        totals.input += tokens.input;
-        totals.output += tokens.output;
-        totals.reasoning += tokens.reasoning;
-        totals.cacheRead += tokens.cache.read;
-        totals.cacheWrite += tokens.cache.write;
+      const validCount = (value) => Number.isSafeInteger(value) && value >= 0;
+      const normalizedTokens = {};
+      for (const [field, value] of [
+        ["input", tokens?.input],
+        ["output", tokens?.output],
+        ["reasoning", tokens?.reasoning],
+        ["cacheRead", tokens?.cache?.read],
+        ["cacheWrite", tokens?.cache?.write],
+      ]) {
+        if (!validCount(value)) continue;
+        normalizedTokens[field] = value;
+        totals[field] = (totals[field] ?? 0) + value;
+        tokenFieldReports[field] += 1;
+      }
+      if (Object.keys(normalizedTokens).length) {
         tokenReports += 1;
       }
       return {
@@ -2061,17 +2063,7 @@ try {
         providerId: payload.providerId ?? null,
         harnessId: payload.harnessId ?? null,
         costUsd: validCost ? reportedCost : null,
-        tokens: validTokens
-          ? {
-              input: tokens.input,
-              output: tokens.output,
-              reasoning: tokens.reasoning,
-              cache: {
-                read: tokens.cache.read,
-                write: tokens.cache.write,
-              },
-            }
-          : null,
+        tokens: Object.keys(normalizedTokens).length ? normalizedTokens : null,
       };
     });
     const report = {
@@ -2083,6 +2075,7 @@ try {
         costReports,
         costUsd: costReports ? costUsd : null,
         tokenReports,
+        tokenFieldReports,
         tokens: tokenReports ? totals : null,
       },
     };
@@ -2096,7 +2089,7 @@ try {
       );
       print(
         report.summary.tokens
-          ? `Tokens · entrée ${totals.input} · sortie ${totals.output} · raisonnement ${totals.reasoning} · cache lecture ${totals.cacheRead} · cache écriture ${totals.cacheWrite}`
+          ? `Tokens · entrée ${totals.input ?? "non rapportée"} · sortie ${totals.output ?? "non rapportée"} · raisonnement ${totals.reasoning ?? "non rapporté"} · cache lecture ${totals.cacheRead ?? "non rapporté"} · cache écriture ${totals.cacheWrite ?? "non rapportée"}`
           : "Tokens: non rapportés",
       );
       for (const record of records)

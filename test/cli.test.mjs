@@ -561,21 +561,37 @@ test("CLI reports only persisted provider usage for a project or conversation", 
     });
     const noUsage = store.createConversation(project.id, "no usage", "codex");
     store.appendEvent(noUsage.id, "usage.updated", { providerId: "unknown" });
+    const partial = store.createConversation(
+      project.id,
+      "partial usage",
+      "openai",
+    );
+    store.appendEvent(partial.id, "usage.updated", {
+      providerId: "openai",
+      tokens: { input: 9, output: 2 },
+    });
     store.close();
 
     const report = run("usage", "report", "--project", dir, "--json");
     assert.equal(report.status, 0, report.stderr);
     const result = JSON.parse(report.stdout);
-    assert.equal(result.summary.eventCount, 3);
+    assert.equal(result.summary.eventCount, 4);
     assert.equal(result.summary.costReports, 2);
     assert.ok(Math.abs(result.summary.costUsd - 0.0052) < 1e-12);
-    assert.equal(result.summary.tokenReports, 2);
+    assert.equal(result.summary.tokenReports, 3);
     assert.deepEqual(result.summary.tokens, {
-      input: 1200,
-      output: 160,
+      input: 1209,
+      output: 162,
       reasoning: 20,
       cacheRead: 30,
       cacheWrite: 5,
+    });
+    assert.deepEqual(result.summary.tokenFieldReports, {
+      input: 3,
+      output: 3,
+      reasoning: 2,
+      cacheRead: 2,
+      cacheWrite: 2,
     });
     assert.equal(result.events[2].costUsd, null);
     assert.equal(result.events[2].tokens, null);
@@ -589,6 +605,21 @@ test("CLI reports only persisted provider usage for a project or conversation", 
     );
     assert.equal(scoped.status, 0, scoped.stderr);
     assert.equal(JSON.parse(scoped.stdout).summary.eventCount, 2);
+    const partialReport = run(
+      "usage",
+      "report",
+      "--conversation",
+      partial.id,
+      "--json",
+    );
+    assert.equal(partialReport.status, 0, partialReport.stderr);
+    assert.deepEqual(JSON.parse(partialReport.stdout).summary.tokens, {
+      input: 9,
+      output: 2,
+      reasoning: null,
+      cacheRead: null,
+      cacheWrite: null,
+    });
     const readable = run("usage", "report", "--conversation", noUsage.id);
     assert.equal(readable.status, 0, readable.stderr);
     assert.match(readable.stdout, /Coût USD: non rapporté/);

@@ -81,25 +81,28 @@ export class OpenAIChat {
         if (event.type === "response.completed") {
           completed = true;
           const usage = event.response?.usage;
+          const validCount = (count) =>
+            Number.isSafeInteger(count) && count >= 0;
           const tokens = {
-            input: usage?.input_tokens,
-            output: usage?.output_tokens,
-            reasoning: usage?.output_tokens_details?.reasoning_tokens,
+            ...(validCount(usage?.input_tokens)
+              ? { input: usage.input_tokens }
+              : {}),
+            ...(validCount(usage?.output_tokens)
+              ? { output: usage.output_tokens }
+              : {}),
+            ...(validCount(usage?.output_tokens_details?.reasoning_tokens)
+              ? { reasoning: usage.output_tokens_details.reasoning_tokens }
+              : {}),
             cache: {
-              read: usage?.input_tokens_details?.cached_tokens,
-              write: usage?.input_tokens_details?.cache_write_tokens,
+              ...(validCount(usage?.input_tokens_details?.cached_tokens)
+                ? { read: usage.input_tokens_details.cached_tokens }
+                : {}),
+              ...(validCount(usage?.input_tokens_details?.cache_write_tokens)
+                ? { write: usage.input_tokens_details.cache_write_tokens }
+                : {}),
             },
           };
-          const counts = [
-            tokens.input,
-            tokens.output,
-            tokens.reasoning,
-            tokens.cache.read,
-            tokens.cache.write,
-          ];
-          if (
-            counts.every((count) => Number.isSafeInteger(count) && count >= 0)
-          )
+          if (Object.keys(tokens).some((key) => key !== "cache"))
             completedUsage = { providerId: "openai", tokens };
         }
         if (event.type === "error" || event.type === "response.failed") {

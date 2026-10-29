@@ -70,7 +70,7 @@ export class AnthropicApiChat {
     }
   }
 
-  async stream({ model, messages, signal, onDelta }) {
+  async stream({ model, messages, signal, onDelta, onUsage = () => {} }) {
     let stream;
     let text = "";
     let completed = false;
@@ -95,6 +95,31 @@ export class AnthropicApiChat {
       completed = finalMessage.stop_reason !== null;
       if (!completed)
         throw new Error("Le flux Anthropic s’est terminé sans message_stop.");
+      const usage = finalMessage.usage;
+      const validCount = (value) => Number.isSafeInteger(value) && value >= 0;
+      const tokens = {
+        ...(validCount(usage?.input_tokens)
+          ? { input: usage.input_tokens }
+          : {}),
+        ...(validCount(usage?.output_tokens)
+          ? { output: usage.output_tokens }
+          : {}),
+        ...(usage?.output_tokens_details?.reasoning_tokens !== undefined
+          ? validCount(usage.output_tokens_details.reasoning_tokens)
+            ? { reasoning: usage.output_tokens_details.reasoning_tokens }
+            : {}
+          : {}),
+        cache: {
+          ...(validCount(usage?.cache_read_input_tokens)
+            ? { read: usage.cache_read_input_tokens }
+            : {}),
+          ...(validCount(usage?.cache_creation_input_tokens)
+            ? { write: usage.cache_creation_input_tokens }
+            : {}),
+        },
+      };
+      if (Object.keys(tokens).some((key) => key !== "cache"))
+        onUsage({ providerId: "anthropic", tokens });
       return text;
     } catch (error) {
       throw this.#safeError(error);

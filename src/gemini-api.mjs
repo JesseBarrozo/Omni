@@ -80,9 +80,10 @@ export class GeminiApiChat {
     }
   }
 
-  async stream({ model, messages, signal, onDelta }) {
+  async stream({ model, messages, signal, onDelta, onUsage = () => {} }) {
     let text = "";
     let sawChunk = false;
+    let finalUsage = null;
     try {
       const stream = await this.client.models.generateContentStream({
         model: model.startsWith("google:")
@@ -101,6 +102,7 @@ export class GeminiApiChat {
       });
       for await (const chunk of stream) {
         sawChunk = true;
+        if (chunk.usageMetadata) finalUsage = chunk.usageMetadata;
         const blockReason = chunk.promptFeedback?.blockReason;
         if (blockReason)
           throw new Error(`Gemini a bloqué la demande (${blockReason}).`);
@@ -112,6 +114,27 @@ export class GeminiApiChat {
       }
       if (!sawChunk)
         throw new Error("Le flux Gemini s’est terminé sans réponse.");
+      if (finalUsage) {
+        const validCount = (value) => Number.isSafeInteger(value) && value >= 0;
+        const tokens = {
+          ...(validCount(finalUsage.promptTokenCount)
+            ? { input: finalUsage.promptTokenCount }
+            : {}),
+          ...(validCount(finalUsage.candidatesTokenCount)
+            ? { output: finalUsage.candidatesTokenCount }
+            : {}),
+          ...(validCount(finalUsage.thoughtsTokenCount)
+            ? { reasoning: finalUsage.thoughtsTokenCount }
+            : {}),
+          cache: {
+            ...(validCount(finalUsage.cachedContentTokenCount)
+              ? { read: finalUsage.cachedContentTokenCount }
+              : {}),
+          },
+        };
+        if (Object.keys(tokens).some((key) => key !== "cache"))
+          onUsage({ providerId: "google", tokens });
+      }
       return text;
     } catch (error) {
       throw this.#safeError(error);

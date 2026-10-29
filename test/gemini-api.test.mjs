@@ -89,7 +89,7 @@ async function startFixture() {
         'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"hello "}]}}]}\n\n',
       );
       response.write(
-        'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"gemini"}]},"finishReason":"STOP"}]}\n\n',
+        'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"gemini"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":3,"thoughtsTokenCount":1,"cachedContentTokenCount":2}}\n\n',
       );
       response.end();
       return;
@@ -124,6 +124,7 @@ test("official Gemini SDK paginates models and streams GenerateContent locally",
     "models/gemini-model-z",
   ]);
   const deltas = [];
+  const usageEvents = [];
   assert.equal(
     await provider.stream({
       model: "google:models/gemini-model-a",
@@ -132,10 +133,22 @@ test("official Gemini SDK paginates models and streams GenerateContent locally",
         { role: "assistant", content: "second" },
       ],
       onDelta: (delta) => deltas.push(delta),
+      onUsage: (usage) => usageEvents.push(usage),
     }),
     "hello gemini",
   );
   assert.deepEqual(deltas, ["hello ", "gemini"]);
+  assert.deepEqual(usageEvents, [
+    {
+      providerId: "google",
+      tokens: {
+        input: 8,
+        output: 3,
+        reasoning: 1,
+        cache: { read: 2 },
+      },
+    },
+  ]);
   assert.equal(requests.length, 3);
   assert.ok(requests.every(({ authenticated }) => authenticated));
   assert.ok(requests.some(({ pageToken }) => pageToken === "cursor-2"));
