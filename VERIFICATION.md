@@ -120,6 +120,20 @@ Le test réel crée un dépôt Git jetable, demande au vrai app-server Codex de 
 - Refus explicite dans le CLI swap/run, interruption réelle pendant une opération et permissions CLI en TTY : à refaire; les tests actuels couvrent l’approbation réelle via SDK/app-server et la reprise CLI sans TTY.
 - Les événements d’outils, commandes et modifications de fichiers sont conservés dans le journal Omni pour alimenter le résumé de swap; les parcours réels Claude/Codex ont vérifié les appels d’outils et le changement de fichier.
 
+## CLI JSONL pour terminal d’agent (Orca niveau 1)
+
+- [x] `omni run --json` produit un JSONL versionné (`version: 1`) sur stdout; aucune sortie humaine ne se mélange au flux.
+- [x] Événements couverts : décision et fallback Auto, démarrage, deltas streamés, outils (nom seulement), permission demandée/accordée/refusée (portée ponctuelle), checkpoint, fin, interruption et erreur.
+- [x] Les invites d’autorisation interactives sont dirigées vers stderr; sans TTY, les outils mutateurs restent refusés. Aucun prompt utilisateur ou contenu brut d’outil n’est sérialisé.
+- [x] Les erreurs de validation sortent comme un unique événement `run.failed` et gardent le code de sortie 1; une interruption terminée normalement conserve le code 130.
+- [x] Tests unitaires de l’enveloppe JSONL, CLI et sortie d’erreur structurée réussis.
+- [x] `OMNI_LIVE_CLI_JSON_TESTS=1 node --test test/cli.test.mjs` : 7 réussis, 0 échec, 2 autres opt-in ignorés; un vrai tour OAuth Codex a streamé les événements JSONL, terminé, puis son historique a été relu depuis SQLite.
+- [x] `OMNI_LIVE_CLI_JSON_TESTS=1 node --test --test-name-pattern="preserves partial output" test/cli.test.mjs` : 1/1 réussi; SIGINT après le premier delta, code 130, événement final `run.interrupted` et réponse partielle conservée avec statut SQLite `interrupted`.
+- [ ] L’intégration CLI réelle de permission a été tentée avec Codex, mais n’a émis aucun événement `permission.requested`; l’assertion a échoué avant les contrôles de refus/fichier. Le répertoire temporaire a été supprimé. Le fixture a été corrigé pour créer le répertoire projet, mais le parcours n’a pas été relancé pour éviter de répéter automatiquement une génération pouvant demander une écriture.
+- [ ] L’intégration native `orca agent launch --agent omni` reste impossible avec le contrat Orca installé : Orca rejette l’ID et ne documente pas d’enregistrement de processus externe. Le flux fonctionne comme processus CLI dans un terminal ordinaire; le test depuis un terminal géré par Orca n’a pas été exécuté.
+- [ ] Le test OpenAI par clé API n’a pas été lancé; ce parcours n’est pas requis pour cette phase.
+- Validation locale finale : `npm test` (67 découverts, 51 réussis, 0 échec, 16 opt-in ignorés), lint, `format:check`, `check`, build (146,5 kB), `git diff --check` et `npm audit --omit=dev` (0 vulnérabilité) réussis.
+
 ## Phase Auto Orchestrator
 
 ### Re-exécution des intégrations opt-in (2026-10-29)

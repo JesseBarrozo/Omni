@@ -37,3 +37,9 @@ There is no verified public custom-agent registration or process protocol in the
 - Omni's real `omni run --auto` path was independently exercised against an authenticated real model, but this does not constitute an Orca Agent Session integration test.
 
 No Orca source, agent registration, workspace settings, or user data were modified. The Orca app was opened to satisfy the installed CLI's runtime requirement for status/schema checks.
+
+## Structured CLI process output
+
+`omni run --project "$PWD" --auto --json "..."` is available in any ordinary terminal, including one opened inside an Orca workspace. Stdout is newline-delimited JSON with `version: 1`, streamed response deltas, routing decisions/fallbacks, sanitized tool and permission events, and a terminal completion/interruption/failure event. Permission prompts use stderr; without a TTY, Omni denies the requested action. The conversation and streamed text persist in Omni’s SQLite store.
+
+This makes the CLI easier for an external process to consume, but it does not register Omni as an Orca Agent Session. The installed Orca CLI still rejects `--agent omni`, and exposes no documented custom-agent protocol. This phase does not modify Orca.

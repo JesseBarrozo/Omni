@@ -43,12 +43,15 @@ node ./bin/omni.mjs run --project ./my-project --model claude:sonnet "Explain th
 node ./bin/omni.mjs run --project ./my-project --harness claude "Inspect the project and propose changes"
 node ./bin/omni.mjs run --project ./my-project --harness codex --model codex "Inspect the project and propose changes"
 node ./bin/omni.mjs run --project ./my-project --auto "Inspect the project and propose changes"
+node ./bin/omni.mjs run --project ./my-project --auto --json "Inspect the project and propose changes"
 node ./bin/omni.mjs run --harness claude --conversation CONVERSATION_ID "Continue the task"
 node ./bin/omni.mjs swap --conversation CONVERSATION_ID --harness codex
 node ./bin/omni.mjs swap --conversation CONVERSATION_ID --harness claude
 node ./bin/omni.mjs chat --project ./my-project --model MODEL_ID
 node ./bin/omni.mjs resume CONVERSATION_ID [--model MODEL_ID]
 ```
+
+`omni run ... --json` writes versioned JSON Lines to stdout (`version: 1`): `routing.decision`/`routing.fallback`, `run.started`, streamed `message.delta`, sanitized tool and one-time permission events, then `run.completed`, `run.interrupted`, or `run.failed`. Prompts and raw tool inputs are not included. Interactive permission questions go to stderr; without a TTY, permissions remain denied. A successful run exits 0, failures 1, and an interrupted run 130. This is Omni’s process interface for ordinary terminals, including an Orca terminal; it is not Orca’s native Agent Session protocol.
 
 `providers refresh` persists non-secret provider status and the latest models discovered through authenticated Codex/Claude CLIs, OpenAI ChatGPT OAuth, or `OPENAI_API_KEY`; `providers list` shows that local registry. For OpenAI, a saved ChatGPT OAuth profile takes precedence over `OPENAI_API_KEY`. `models list --provider ID` refreshes that provider’s real catalog, and `models enable|disable --provider ID --model ID` controls manual availability; add `--auto-only` to change only Auto eligibility. `providers enable|disable --provider ID` controls the provider globally. Preferences survive restarts. OAuth access and refresh tokens remain in the operating system credential store and never enter SQLite, logs, or exports; the validated ID token is discarded. Omni currently supports one OpenAI OAuth profile; signing in again reuses its issued client ID. Linux requires Secret Service (for example, GNOME Keyring or KWallet); Omni fails closed when a secure store is unavailable.
 

@@ -1,9 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { ChatStore } from "../src/chat-store.mjs";
 
@@ -78,6 +84,33 @@ test("CLI persists projects and resumes with the saved or explicitly changed mod
     const verify = new ChatStore(join(dir, "data", "omni.sqlite"));
     assert.equal(verify.conversation(conversation.id).modelId, "new-model");
     verify.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI --json reports run validation errors as a single JSONL event", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-cli-json-error-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const project = run(
+      "project",
+      "create",
+      "--name",
+      "json-errors",
+      "--path",
+      dir,
+    );
+    assert.equal(project.status, 0, project.stderr);
+    const result = run("run", "--project", dir, "--json");
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr, "");
+    const lines = result.stdout.trim().split("\n");
+    assert.equal(lines.length, 1);
+    assert.equal(JSON.parse(lines[0]).type, "run.failed");
+    assert.match(JSON.parse(lines[0]).error, /Usage: omni run/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -448,6 +481,255 @@ test(
         /No compatible enabled model\/harness candidate/,
       );
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "real Omni run --json streams versioned events and persists the completed conversation",
+  { skip: process.env.OMNI_LIVE_CLI_JSON_TESTS !== "1", timeout: 90000 },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "omni-live-cli-json-"));
+    const dataDir = join(dir, "omni-data");
+    const env = { ...process.env, OMNI_DATA_DIR: dataDir };
+    const run = (...args) =>
+      spawnSync(process.execPath, [cli, ...args], {
+        cwd: dir,
+        env,
+        encoding: "utf8",
+        timeout: 80000,
+      });
+    let store;
+    try {
+      const projectPath = join(dir, "project");
+      mkdirSync(projectPath);
+      const project = run(
+        "project",
+        "create",
+        "--name",
+        "JSONL live",
+        "--path",
+        projectPath,
+      );
+      assert.equal(project.status, 0, project.stderr);
+      const result = run(
+        "run",
+        "--project",
+        projectPath,
+        "--model",
+        process.env.OMNI_LIVE_CLI_JSON_MODEL ?? "codex",
+        "--json",
+        "Reply with exactly: OMNI_JSONL_REAL_OK",
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stderr, "");
+      assert.doesNotMatch(result.stdout, /sk-[A-Za-z0-9_-]{12,}|Bearer\s+\S+/);
+      const events = result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      assert.ok(events.every((event) => event.version === 1));
+      assert.equal(events[0].type, "run.started");
+      assert.ok(events.some((event) => event.type === "message.delta"));
+      assert.equal(events.at(-1).type, "run.completed");
+      assert.match(
+        events
+          .filter((event) => event.type === "message.delta")
+          .map((event) => event.delta)
+          .join(""),
+        /OMNI_JSONL_REAL_OK/,
+      );
+      store = new ChatStore(join(dataDir, "omni.sqlite"));
+      const conversation = store.conversation(events[0].conversationId);
+      assert.equal(conversation.status, "completed");
+      assert.match(conversation.messages.at(-1).content, /OMNI_JSONL_REAL_OK/);
+    } finally {
+      store?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "real Omni run --json preserves partial output and exits 130 after SIGINT",
+  { skip: process.env.OMNI_LIVE_CLI_JSON_TESTS !== "1", timeout: 90000 },
+  async () => {
+    const dir = mkdtempSync(join(tmpdir(), "omni-live-cli-json-interrupt-"));
+    const dataDir = join(dir, "omni-data");
+    const env = { ...process.env, OMNI_DATA_DIR: dataDir };
+    const run = (...args) =>
+      spawnSync(process.execPath, [cli, ...args], {
+        cwd: dir,
+        env,
+        encoding: "utf8",
+        timeout: 10000,
+      });
+    let store;
+    let child;
+    try {
+      const projectPath = join(dir, "project");
+      const project = run(
+        "project",
+        "create",
+        "--name",
+        "JSONL interrupt",
+        "--path",
+        projectPath,
+      );
+      assert.equal(project.status, 0, project.stderr);
+      child = spawn(
+        process.execPath,
+        [
+          cli,
+          "run",
+          "--project",
+          projectPath,
+          "--model",
+          process.env.OMNI_LIVE_CLI_JSON_MODEL ?? "codex",
+          "--json",
+          "Write a detailed 700-word explanation of photosynthesis.",
+        ],
+        { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let stdoutText = "";
+      let stderrText = "";
+      let sentInterrupt = false;
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk) => {
+        stdoutText += chunk;
+        if (!sentInterrupt) {
+          const lines = stdoutText.split("\n");
+          if (
+            lines.some((line) => {
+              try {
+                return JSON.parse(line).type === "message.delta";
+              } catch {
+                return false;
+              }
+            })
+          ) {
+            sentInterrupt = true;
+            child.kill("SIGINT");
+          }
+        }
+      });
+      child.stderr.on("data", (chunk) => (stderrText += chunk));
+      const exit = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          child.kill("SIGKILL");
+          reject(new Error("JSONL interrupt test timed out"));
+        }, 70000);
+        child.once("error", (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+        child.once("close", (code, signal) => {
+          clearTimeout(timer);
+          resolve({ code, signal });
+        });
+      });
+      child = null;
+      assert.equal(
+        sentInterrupt,
+        true,
+        "a streamed delta should precede SIGINT",
+      );
+      assert.equal(exit.code, 130, stderrText);
+      assert.equal(exit.signal, null);
+      assert.equal(stderrText, "");
+      const events = stdoutText
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      assert.equal(events.at(-1).type, "run.interrupted");
+      assert.ok(events.some((event) => event.type === "message.delta"));
+      store = new ChatStore(join(dataDir, "omni.sqlite"));
+      const conversation = store.conversation(
+        events.find((event) => event.type === "run.started").conversationId,
+      );
+      assert.equal(conversation.status, "interrupted");
+      assert.equal(conversation.messages.at(-1).status, "interrupted");
+      assert.ok(conversation.messages.at(-1).content.length > 0);
+    } finally {
+      if (child && !child.killed) child.kill("SIGKILL");
+      store?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "real Omni run --json records a denied tool permission without writing the file",
+  { skip: process.env.OMNI_LIVE_CLI_JSON_TESTS !== "1", timeout: 90000 },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "omni-live-cli-json-permission-"));
+    const dataDir = join(dir, "omni-data");
+    const env = { ...process.env, OMNI_DATA_DIR: dataDir };
+    const run = (...args) =>
+      spawnSync(process.execPath, [cli, ...args], {
+        cwd: dir,
+        env,
+        encoding: "utf8",
+        timeout: 80000,
+      });
+    let store;
+    try {
+      const projectPath = join(dir, "project");
+      mkdirSync(projectPath);
+      const project = run(
+        "project",
+        "create",
+        "--name",
+        "JSONL permission",
+        "--path",
+        projectPath,
+      );
+      assert.equal(project.status, 0, project.stderr);
+      const filePath = join(projectPath, "must-not-exist.txt");
+      const result = run(
+        "run",
+        "--project",
+        projectPath,
+        "--model",
+        "codex",
+        "--harness",
+        "codex",
+        "--json",
+        `Create ${filePath} with the exact text DENIED. Do not use any other tool.`,
+      );
+      assert.equal(result.status, 0, result.stderr);
+      const events = result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      const requestedIndex = events.findIndex(
+        (event) => event.type === "permission.requested",
+      );
+      const deniedIndex = events.findIndex(
+        (event) => event.type === "permission.denied",
+      );
+      assert.ok(requestedIndex >= 0);
+      assert.ok(deniedIndex > requestedIndex);
+      assert.equal(
+        events.some((event) => event.type === "permission.granted"),
+        false,
+      );
+      assert.equal(existsSync(filePath), false);
+      assert.ok(events.every((event) => !("input" in event)));
+      assert.doesNotMatch(result.stdout, /sk-[A-Za-z0-9_-]{12,}|Bearer\s+\S+/);
+      store = new ChatStore(join(dataDir, "omni.sqlite"));
+      const conversation = store.conversation(
+        events.find((event) => event.type === "run.started").conversationId,
+      );
+      assert.ok(
+        store
+          .listEvents(conversation.id)
+          .some((event) => event.type === "permission.denied"),
+      );
+    } finally {
+      store?.close();
       rmSync(dir, { recursive: true, force: true });
     }
   },

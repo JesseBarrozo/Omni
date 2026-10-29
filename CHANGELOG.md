@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- CLI Orca niveau 1 : `omni run --json` expose un flux JSONL versionné avec streaming, décision/fallback Auto, événements outils/permissions assainis et fins explicites; les questions de permission restent sur stderr et les sessions persistent. Cela ne crée pas un Agent Session natif Orca, dont le CLI installé ne documente pas de protocole d’agent externe.
 - Correctif Auto Router : les modèles sont indexés par couple fournisseur/ID afin que des ID homonymes (les catalogues OAuth Codex et OpenAI partagent actuellement les mêmes 8 ID) ne s’écrasent pas. Les ID de modèle exposés restent inchangés; une activation par ID ambigu est refusée explicitement.
 - OpenAI ChatGPT OAuth : ajout du flux Sign in with ChatGPT officiel pour les applications open source, avec PKCE, validation OIDC, scopes du plan ChatGPT, trousseau système, renouvellement sérialisé, catalogue OAuth et chat Responses `store:false`. Parcours CLI réel validé : connexion, catalogue de 8 modèles, réponse avec `gpt-6.1-sol`, puis reprise de l’historique dans un nouveau processus.
 - Correctif migration SQLite : appliquer les migrations v2 (Provider/Model Registry) puis v3 (Harness Registry) dans l’ordre pour les bases neuves et les mises à niveau depuis v1.
