@@ -221,3 +221,13 @@ Commandes/résultats de cette investigation : `agy --help` (CLI présent), `agy 
 - [x] Smoke CLI réel sans génération ni requête de catalogue : `omni auth status --json` avec un `OMNI_DATA_DIR` temporaire retourne pour Antigravity `cliInstalled: true`, `authenticated: null`.
 - [ ] Appel de modèle live depuis le nouvel adaptateur Omni et reprise live après fermeture/réouverture SQLite : non exécutés conformément à la demande de ne pas tester l'API. La commande opt-in est `OMNI_LIVE_ANTIGRAVITY_TESTS=1 node --test test/antigravity-cli.test.mjs`; elle fait une première génération et une seconde demande de reprise.
 - [ ] Antigravity comme harness Omni, changement Harness Swap, permissions ponctuelles d'outils Antigravity et intégration Auto : non pris en charge; absence documentée d'un callback externe d'approbation. Le provider de chat reste expérimental jusqu'au test live.
+
+## SecretStore commun
+
+- [x] Audit du code existant : `OpenAIAuth` utilisait `Entry` directement sous l'identité keyring `Omni OpenAI ChatGPT OAuth` / `default`; Codex, Claude Code et Antigravity délèguent leurs tokens à leurs CLIs officiels.
+- [x] `src/secret-store.mjs` centralise get/set/delete via `@napi-rs/keyring` 2.1.2, valide les noms service/compte, refuse les secrets vides et remplace les erreurs natives par un message fixe sans `cause`.
+- [x] Linux force `secret-service`, qui échoue si absent, plutôt que le fallback automatique keyutils non persistant décrit par le README du package. Le wrapper est MIT; les notices de composants embarqués Linux restent à vérifier avant redistribution.
+- [x] `OpenAIAuth` utilise le nouveau store et garde exactement son service/compte historique; tests PKCE, refresh, réauthentification et suppression de l'ancien ID token passent avec ce contrat.
+- [x] Test réel du trousseau système : `OMNI_LIVE_KEYRING_TESTS=1 node --test test/secret-store.test.mjs` — 3/3 réussis; secret aléatoire ajouté, relu et supprimé, puis absence confirmée. Aucun secret affiché.
+- [x] `npm test` : 75 tests découverts, 57 réussis, 0 échec, 18 intégrations live ignorées; `npm run lint`, `npm run format:check`, `npm run check`, `npm run build` (162,0 kB), `npm audit --omit=dev` (0 vulnérabilité) et `git diff --check` réussis.
+- [ ] Le trousseau a été validé sur l'OS courant seulement; macOS, Windows et Linux Secret Service doivent être exercés sur leurs runners respectifs. Les clés API OpenAI continuent de venir de l'environnement et ne sont pas enregistrées par Omni.

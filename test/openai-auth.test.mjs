@@ -8,6 +8,7 @@ import { Entry } from "@napi-rs/keyring";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { OpenAIAuth } from "../src/openai-auth.mjs";
 import { OpenAIChat } from "../src/openai-chat.mjs";
+import { SecretStore } from "../src/secret-store.mjs";
 
 const issuer = "https://auth.openai.com";
 const clientId = "oaiapp_omni_unit_test";
@@ -86,7 +87,13 @@ async function createFlow({ expiresIn = 3600, badState = false } = {}) {
   };
   const auth = new OpenAIAuth({
     dataDir,
-    entry,
+    secretStore: new SecretStore({
+      entryFactory: (service, account) => {
+        assert.equal(service, "Omni OpenAI ChatGPT OAuth");
+        assert.equal(account, "default");
+        return entry;
+      },
+    }),
     fetchImpl,
     openBrowser: async (rawUrl) => {
       const authorization = new URL(rawUrl);

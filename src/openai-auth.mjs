@@ -18,9 +18,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { platform } from "node:os";
-import { Entry } from "@napi-rs/keyring";
 import { createLocalJWKSet, jwtVerify } from "jose";
+import { SecretStore } from "./secret-store.mjs";
 
 const issuerUrl = "https://auth.openai.com";
 const apiResource = "https://api.openai.com/v1";
@@ -39,12 +38,6 @@ function safeKeyringError() {
   return new Error(
     "Le trousseau système est inaccessible; vérifiez qu’il est déverrouillé et réessayez.",
   );
-}
-
-function defaultEntry() {
-  const options =
-    platform() === "linux" ? { linux: { store: "secret-service" } } : undefined;
-  return new Entry(serviceName, accountName, options);
 }
 
 export function openSystemBrowser(url) {
@@ -150,7 +143,8 @@ export async function validateOpenAIIdentity({
 export class OpenAIAuth {
   constructor({
     dataDir,
-    entry = defaultEntry(),
+    entry,
+    secretStore = new SecretStore({ entry }),
     fetchImpl = fetch,
     openBrowser = openSystemBrowser,
     now = Date.now,
@@ -158,7 +152,7 @@ export class OpenAIAuth {
   } = {}) {
     if (!dataDir) throw new TypeError("dataDir est requis pour OpenAIAuth");
     this.dataDir = dataDir;
-    this.entry = entry;
+    this.secretStore = secretStore;
     this.fetch = fetchImpl;
     this.openBrowser = openBrowser;
     this.now = now;
@@ -168,7 +162,9 @@ export class OpenAIAuth {
 
   #readCredential() {
     try {
-      const credential = parseCredential(this.entry.getPassword());
+      const credential = parseCredential(
+        this.secretStore.get(serviceName, accountName),
+      );
       if (credential && Object.hasOwn(credential, "idToken")) {
         const minimalCredential = { ...credential };
         delete minimalCredential.idToken;
@@ -188,7 +184,11 @@ export class OpenAIAuth {
 
   #saveCredential(credential) {
     try {
-      this.entry.setPassword(JSON.stringify(credential));
+      this.secretStore.set(
+        serviceName,
+        accountName,
+        JSON.stringify(credential),
+      );
     } catch {
       throw safeKeyringError();
     }
