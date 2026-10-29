@@ -109,3 +109,16 @@ Résultats du commit Auto : `npm test` : 40 tests, 32 réussis, 0 échec, 8 int�
 - [x] Usage documenté comme commande Omni normale depuis un terminal appartenant déjà à un espace Orca; cela ne crée pas une session d’agent Orca native.
 - [ ] Session Omni native dans la liste Agent Sessions Orca : non prise en charge par l’interface exposée; il faut un contrat d’agent externe documenté ou une évolution Orca.
 - L’application Orca a été ouverte conformément au guide CLI pour satisfaire le prérequis runtime. Aucun code, réglage, enregistrement d’agent ou donnée utilisateur Orca n’a été modifié.
+
+## Investigation OAuth Antigravity
+
+- [x] Documentation officielle du CLI Antigravity consultée via Context7 : `https://antigravity.google/docs/cli/headless` et `https://antigravity.google/docs/cli/modes`.
+- [x] CLI officiel `agy` 1.4.9 installé en cache local pour l’essai, sans exécuter son installateur ni modifier les réglages d’autres outils.
+- [x] `agy models` a retourné le catalogue réellement disponible, dont `gemini-4-argon-medium`, les variantes Gemini 3.8 Flash, Claude Opus/Sonnet 5.5 et GPT-OSS 120B.
+- [x] Exécution réelle avec les identifiants locaux Antigravity et sans variables d’environnement de clé API/ADC : `agy -p 'Reply with ANTIGRAVITY_OMNI_READONLY_OK only. Do not inspect files.' --mode plan --output-format stream-json --model gemini-4-argon-medium --print-timeout 60s`. Le modèle a renvoyé `ANTIGRAVITY_OMNI_READONLY_OK` avec `status: SUCCESS`.
+- [x] Le flux `init` réel en `--mode plan` a annoncé `permission_mode: request-review` et des outils mutateurs/externes, dont `write_to_file`, `run_command`, outils navigateur, MCP et `send_message`.
+- [x] La documentation officielle indique qu’en mode headless il n’existe pas de prompt interactif : les demandes de permission non accordées sont refusées en douceur, mais les lectures et écritures dans l’espace de travail actif sont autorisées par défaut. Aucune API documentée ne permet à Omni d’intercepter les demandes et de rendre une approbation ponctuelle.
+- [ ] Intégration Omni Antigravity OAuth/chat/harness : non implémentée. La CLI possède une vraie authentification OAuth et le modèle répond, mais son interface headless ne permet pas à Omni de respecter son contrat d’approbation et pourrait modifier le projet sans demander l’autorisation Omni. Le mode `plan` n’a pas été considéré comme barrière de sécurité, car le flux réel déclare quand même les outils mutateurs et externes.
+- [ ] Ne pas annoncer Antigravity comme fournisseur ou harness Omni utilisable tant qu’une interface officielle sans outils mutateurs ou avec callback de permission externe n’est pas disponible.
+
+Commandes/résultats de cette investigation : `agy --help` (CLI présent), `agy models` (catalogue réel), puis appel OAuth modèle ci-dessus (réussi). Aucun secret ni contenu de credential n’a été lu ou ajouté aux logs Omni. Les docs officielles distinguent le CLI OAuth du SDK Python, dont les méthodes d’authentification documentées ne fournissent pas la connexion OAuth personnelle recherchée.
