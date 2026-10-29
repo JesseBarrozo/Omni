@@ -1330,6 +1330,8 @@ async function runOpenCodeHarness(conversation, prompt, preparedRun = null) {
         emitRunEvent("tool.failed", { toolName: event.payload.toolName });
       } else if (event.type === "session.interrupted") {
         interrupted = true;
+      } else if (event.type === "usage.updated") {
+        emitRunEvent("usage.updated", event.payload);
       } else if (event.type === "session.completed") {
         completed = true;
       }

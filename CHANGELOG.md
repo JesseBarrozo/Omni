@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- OpenCode usage events : Omni now consumes the official `session.next.step.ended` event and persists validated USD cost plus input/output/reasoning/cache token counts as `usage.updated`, deduplicated per assistant message. Contract-tested against the SDK event schema; a live model turn remains untested.
+
 - Auto OpenCode budget metadata : OpenCode model catalog input prices now flow into Auto in the documented USD-per-million-token unit. For context-tier catalogs Omni uses the maximum input price, so efficiency ranking and configured input ceilings are conservative; absent or invalid prices remain unknown and are filtered by a configured ceiling.
 
 - Auto capability profiles : OpenCode model catalog now preserves tool-call support and classifies providers as local only when the official provider registry exposes a loopback API URL. Auto filters models explicitly lacking tool calls, `local-first` ranks explicitly local models before preferred remote providers, `privacy` enforces an approved harness, and unsupported profile names fail validation. Model generation and tool calls remain untested for OpenCode.

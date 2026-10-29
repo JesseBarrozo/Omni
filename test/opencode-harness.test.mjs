@@ -265,6 +265,119 @@ test("OpenCode adapter fails closed when its permission reply is rejected", asyn
   }
 });
 
+test("OpenCode usage events persist reported USD cost and token counts once per assistant message", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "omni-opencode-usage-"));
+  temporaryDirectories.add(directory);
+  const store = new ChatStore(join(directory, "omni.sqlite"));
+  const project = store.createProject("usage contract", directory);
+  const conversation = store.createConversation(
+    project.id,
+    "usage",
+    "opencode",
+  );
+  const session = { id: "usage-session", location: { directory } };
+  const stepEvent = {
+    type: "session.next.step.ended",
+    data: {
+      sessionID: session.id,
+      assistantMessageID: "assistant-message-1",
+      cost: 0.0042,
+      tokens: {
+        input: 1000,
+        output: 125,
+        reasoning: 25,
+        cache: { read: 20, write: 5 },
+      },
+    },
+  };
+  const client = {
+    v2: {
+      session: {
+        create: async () => ({ data: { data: session } }),
+        prompt: async () => ({ data: {} }),
+        interrupt: async () => ({ data: {} }),
+      },
+      event: {
+        subscribe: async () => ({
+          stream: (async function* () {
+            yield stepEvent;
+            yield { ...stepEvent, id: "duplicate-event" };
+            yield { type: "session.idle", data: { sessionID: session.id } };
+          })(),
+        }),
+      },
+    },
+  };
+  const harness = new OpenCodeHarness({
+    store,
+    cwd: directory,
+    serverFactory: async () => ({
+      url: "http://127.0.0.1:9000",
+      password: "usage-test-password",
+      close: async () => {},
+    }),
+    clientFactory: () => client,
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({
+          paths: {
+            "/api/session/{sessionID}/permission/{requestID}/reply": {
+              post: {
+                requestBody: {
+                  content: {
+                    "application/json": {
+                      schema: {
+                        properties: {
+                          decision: { enum: ["once", "always", "reject"] },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+  });
+  try {
+    const sessionRef = await harness.createSession({
+      conversationId: conversation.id,
+    });
+    const emitted = [];
+    for await (const event of harness.run({
+      conversationId: conversation.id,
+      sessionId: sessionRef.id,
+      prompt: "test prompt",
+    }))
+      emitted.push(event);
+    const usage = emitted.find((event) => event.type === "usage.updated");
+    assert.deepEqual(usage.payload, {
+      providerId: "opencode",
+      harnessId: "opencode",
+      sessionId: session.id,
+      messageId: "assistant-message-1",
+      costUsd: 0.0042,
+      tokens: {
+        input: 1000,
+        output: 125,
+        reasoning: 25,
+        cache: { read: 20, write: 5 },
+      },
+    });
+    assert.equal(
+      store
+        .listEvents(conversation.id)
+        .filter((event) => event.type === "usage.updated").length,
+      1,
+    );
+  } finally {
+    await harness.dispose();
+    store.close();
+  }
+});
+
 test("OpenCode swap resume context is admitted once and survives process restart", async () => {
   const directory = mkdtempSync(join(tmpdir(), "omni-opencode-resume-"));
   temporaryDirectories.add(directory);

@@ -31,6 +31,13 @@
 - [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test test/opencode-harness.test.mjs` : 6/6; `npm test` : 119 tests, 92 réussis, 0 échec, 27 opt-in ignorés; lint, format:check, check, build, audit et diff-check réussis.
 - [ ] Le coût réel par tour n’est pas encore collecté depuis les événements OpenCode; les budgets limitent actuellement le coût d’entrée catalogue, sans coût de sortie ni plafond de dépense total.
 
+### Événements d’usage OpenCode (contrat, génération live non testée)
+
+- [x] Le schéma officiel SDK `session.next.step.ended` porte le coût en USD et les compteurs input/output/reasoning/cache. Omni valide les nombres, associe provider/harness/session/message et écrit `usage.updated`; les événements répétés du même message ne sont ajoutés qu’une fois.
+- [x] Le test de contrat fait passer un événement avec les valeurs spécifiées, vérifie le payload Omni persistant et confirme qu’un événement répété n’ajoute pas de second coût.
+- [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test test/opencode-harness.test.mjs` : 7/7 réussis pour le catalogue, le swap/reprise et le parcours Auto sans génération. `npm test` : 120 tests, 93 réussis, 0 échec, 27 opt-in ignorés; lint, format:check, check, build, audit et diff-check réussis.
+- [ ] Aucun tour de modèle live n’a été exécuté pour observer et valider un événement réel, conformément au choix de ne pas tester les clés API. Ne pas considérer les coûts réels par tour comme validés.
+
 ## Harness Swap OpenCode (en cours)
 
 - [x] `omni swap --conversation ID --harness opencode` passe par `HarnessSwapService`, conserve le contexte, écrit le checkpoint avant la création de session et refuse un harness désactivé.

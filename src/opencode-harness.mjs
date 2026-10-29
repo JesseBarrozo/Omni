@@ -490,6 +490,7 @@ export class OpenCodeHarness {
     let iterator;
     let completed = false;
     let interrupted = false;
+    const recordedUsageMessages = new Set();
     let promptText = prompt;
     if (session.resumeSummary) {
       promptText =
@@ -539,6 +540,47 @@ export class OpenCodeHarness {
           );
         }
         const data = event?.data;
+        if (event?.type === "session.next.step.ended") {
+          if (
+            data.sessionID !== sessionId ||
+            typeof data.assistantMessageID !== "string" ||
+            recordedUsageMessages.has(data.assistantMessageID)
+          )
+            continue;
+          const tokenCounts = [
+            data.tokens?.input,
+            data.tokens?.output,
+            data.tokens?.reasoning,
+            data.tokens?.cache?.read,
+            data.tokens?.cache?.write,
+          ];
+          if (
+            !Number.isFinite(data.cost) ||
+            data.cost < 0 ||
+            tokenCounts.some((value) => !Number.isFinite(value) || value < 0)
+          )
+            continue;
+          recordedUsageMessages.add(data.assistantMessageID);
+          const payload = {
+            providerId: "opencode",
+            harnessId: this.id,
+            sessionId,
+            messageId: data.assistantMessageID,
+            costUsd: data.cost,
+            tokens: {
+              input: data.tokens.input,
+              output: data.tokens.output,
+              reasoning: data.tokens.reasoning,
+              cache: {
+                read: data.tokens.cache.read,
+                write: data.tokens.cache.write,
+              },
+            },
+          };
+          this.store.appendEvent(conversationId, "usage.updated", payload);
+          yield { conversationId, type: "usage.updated", payload };
+          continue;
+        }
         if (event?.type === "permission.v2.asked") {
           if (data.sessionID !== sessionId) continue;
           const request = {
