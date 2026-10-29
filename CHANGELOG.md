@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Antigravity feasibility : `agy --help` et la documentation officielle ne fournissent aucun override de HOME/settings/hooks. Le catalogue OAuth réel renvoie 13 modèles avec le HOME connecté, mais échoue avec un HOME isolé sans clé API. Omni conserve le refus sûr si les hooks globaux rendent le mode headless invérifiable; aucun fichier de configuration ni credential utilisateur n’a été modifié ou copié.
+- Antigravity feasibility : `agy --help` et la documentation officielle ne fournissent aucun override de HOME/settings/hooks. Le catalogue OAuth réel renvoie 13 modèles avec le HOME connecté, mais échoue avec un HOME isolé sans clé API, même avec les seuls fichiers d’authentification liés temporairement. Omni conserve le refus sûr si les hooks globaux rendent le mode headless invérifiable; aucun fichier de configuration ni credential utilisateur n’a été modifié ou copié.
 
 - Rapport Auto : `usage report` inclut désormais les résultats `routing.result` filtrés et la latence moyenne réellement mesurée pour les exécutions Auto; les mesures absentes ne sont pas extrapolées.
 
