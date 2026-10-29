@@ -187,12 +187,18 @@ class CodexAppServer {
 }
 
 export class CodexChat {
-  constructor({ store, executable = "codex", cwd = process.cwd() } = {}) {
+  constructor({
+    store,
+    executable = "codex",
+    cwd = process.cwd(),
+    model = null,
+  } = {}) {
     if (!store)
       throw new Error("CodexChat requires the Omni conversation store");
     this.store = store;
     this.executable = executable;
     this.cwd = cwd;
+    this.model = model;
   }
 
   async listModels() {
@@ -210,7 +216,16 @@ export class CodexChat {
     }
   }
 
-  async stream({ messages, conversationId, signal, onDelta }) {
+  async stream({
+    messages,
+    conversationId,
+    model = this.model,
+    signal,
+    onDelta,
+  }) {
+    const selectedModel = model?.startsWith("codex:")
+      ? model.slice("codex:".length)
+      : model;
     const server = await new CodexAppServer({
       executable: this.executable,
     }).start();
@@ -232,6 +247,9 @@ export class CodexChat {
           cwd: this.cwd,
           approvalPolicy: "on-request",
           sandbox: "read-only",
+          ...(selectedModel && selectedModel !== "codex"
+            ? { model: selectedModel }
+            : {}),
         });
         threadId = priorSession;
       } else {
@@ -239,6 +257,9 @@ export class CodexChat {
           cwd: this.cwd,
           approvalPolicy: "on-request",
           sandbox: "read-only",
+          ...(selectedModel && selectedModel !== "codex"
+            ? { model: selectedModel }
+            : {}),
         });
         threadId = started.thread.id;
         this.store.appendEvent(conversationId, "session.started", {

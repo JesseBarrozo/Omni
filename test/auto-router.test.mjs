@@ -28,6 +28,18 @@ function registryFixture() {
     capabilities: { tools: true },
     privacyApproved: true,
   });
+  registry.registerHarness({
+    id: "codex-chat",
+    providerIds: ["codex"],
+    capabilities: { tools: "read-only" },
+    privacyApproved: false,
+  });
+  registry.registerHarness({
+    id: "claude-chat",
+    providerIds: ["claude"],
+    capabilities: { tools: false },
+    privacyApproved: false,
+  });
   return registry;
 }
 
@@ -53,6 +65,13 @@ test("AutoRouter deterministically chooses only enabled, compatible, approved ca
     ),
   );
   assert.ok(
+    first.evaluatedCandidates.some(
+      (candidate) =>
+        candidate.key === "codex/codex-model/codex-chat" &&
+        candidate.exclusions.includes("required-tools-unsupported"),
+    ),
+  );
+  assert.ok(
     first.criteria.ranking.some((criterion) =>
       criterion.includes("stable tie-break"),
     ),
@@ -74,6 +93,34 @@ test("AutoRouter records the next real eligible candidate as fallback", () => {
         candidate.harnessId === decision.fallback.harnessId,
     ),
   );
+});
+
+test("AutoRouter chooses the least-capability chat adapter when tools are unnecessary", () => {
+  const registry = registryFixture();
+  const leastPrivilegeDecision = new AutoRouter(registry).select({
+    prompt: "What is two plus two?",
+  });
+  assert.equal(leastPrivilegeDecision.selected.harnessId, "claude-chat");
+
+  const decision = new AutoRouter(registry, {
+    preferredProviders: ["codex", "claude"],
+  }).select({ prompt: "What is two plus two?" });
+  assert.equal(decision.criteria.task.needsTools, false);
+  assert.equal(decision.selected.providerId, "codex");
+  assert.equal(decision.selected.harnessId, "codex-chat");
+  assert.ok(
+    decision.criteria.ranking.some((criterion) =>
+      criterion.includes("least-privilege capability fit"),
+    ),
+  );
+  const toolCandidate = decision.evaluatedCandidates.find(
+    (candidate) => candidate.key === "codex/codex-model/codex-harness",
+  );
+  assert.equal(toolCandidate.eligible, true);
+  const chatCandidate = decision.evaluatedCandidates.find(
+    (candidate) => candidate.key === "codex/codex-model/codex-chat",
+  );
+  assert.equal(chatCandidate.eligible, true);
 });
 
 test("AutoRouter excludes unknown prices under a configured cost ceiling and records fallback", () => {
@@ -170,10 +217,12 @@ test(
       const claudeModel = claudeModels.find((model) =>
         /^claude-(?:haiku|sonnet|opus)-\d/.test(model),
       );
-      const routedModel = claudeModel
-        ? `claude:${claudeModel}`
-        : codexModels[0]
-          ? `codex:${codexModels[0]}`
+      const codexModel = codexModels.find((model) => model !== "default");
+      const preferredProvider = codexModel ? "codex" : "claude";
+      const routedModel = codexModel
+        ? `codex:${codexModel}`
+        : claudeModel
+          ? `claude:${claudeModel}`
           : null;
       assert.ok(
         routedModel,
@@ -200,6 +249,7 @@ test(
             ...process.env,
             OMNI_DATA_DIR: dataDir,
             OMNI_AUTO_MODELS: routedModel,
+            OMNI_AUTO_PREFERRED_PROVIDERS: preferredProvider,
           },
         },
       );
@@ -224,6 +274,8 @@ test(
         ),
       );
       assert.ok(decision.payload.candidates.length > 0);
+      assert.equal(decision.payload.selected.providerId, preferredProvider);
+      assert.match(decision.payload.selected.harnessId, /-chat$/);
       assert.ok(
         decision.payload.evaluatedCandidates.length >=
           decision.payload.candidates.length,
@@ -280,7 +332,7 @@ test(
           "--auto",
           "--project",
           dir,
-          "Reply with AUTO_PREFLIGHT_FALLBACK_OK only.",
+          "Do not execute anything or use tools; reply with AUTO_PREFLIGHT_FALLBACK_OK only.",
         ],
         {
           cwd: dir,

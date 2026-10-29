@@ -416,6 +416,17 @@ export class AutoRouter {
       const preferredA = a.preferredRank < 0 ? Infinity : a.preferredRank;
       const preferredB = b.preferredRank < 0 ? Infinity : b.preferredRank;
       if (preferredA !== preferredB) return preferredA - preferredB;
+      const capabilityRank = (harness) => {
+        const tools = harness.capabilities?.tools;
+        if (task.needsTools) return tools === true ? 0 : 1;
+        if (tools === false) return 0;
+        if (tools === "read-only") return 1;
+        return 2;
+      };
+      const capabilityFitA = capabilityRank(a.harness);
+      const capabilityFitB = capabilityRank(b.harness);
+      if (capabilityFitA !== capabilityFitB)
+        return capabilityFitA - capabilityFitB;
       const successA = a.previous?.attempts
         ? a.previous.successes / a.previous.attempts
         : null;
@@ -464,6 +475,7 @@ export class AutoRouter {
     const selected = candidates[0];
     const ranking = [
       "preferredProviders (configured order)",
+      "least-privilege capability fit (tools only when required)",
       "recorded success rate (only when available)",
       ...(this.profile === "intelligence"
         ? ["explicit model quality (only when available)"]

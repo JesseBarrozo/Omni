@@ -79,9 +79,12 @@ Le test réel crée un dépôt Git jetable, demande au vrai app-server Codex de 
 - [x] Les journaux du parcours réel ont été contrôlés pour l’absence de clé API/token Bearer.
 - [x] Aucune relance automatique n’a lieu après le démarrage d’une tâche. Le candidat de secours est conservé dans la décision mais n’est pas exécuté après une panne, afin de ne pas rejouer un outil non idempotent.
 - [x] En mode Auto, Omni initialise le harness sélectionné avant d’enregistrer le prompt ou de lancer un tour; si cette initialisation échoue, il tente les candidats classés suivants et consigne `routing.fallback` avec le candidat, l’échec et la raison. Les erreurs après l’entrée dans `run()` ne déclenchent aucun secours.
+- [x] Le routeur distingue une demande sans outils, une conversation Codex en sandbox lecture seule et les harnesses à outils; un candidat Claude `tools: false` est préféré à l’accès Codex lecture seule et aux harnesses mutateurs, sauf préférence fournisseur configurée. Les tâches qui requièrent des outils excluent le mode Codex lecture seule.
+- [x] Le parcours réel `OMNI_LIVE_AUTO_TESTS=1` a sélectionné un modèle Codex concret, créé une conversation `codex-chat`, passé le modèle choisi à `thread/start`, streamé une vraie réponse OAuth et persisté le résultat. La clé `OPENAI_API_KEY` était absente; cette validation ne couvre pas l’API OpenAI directe.
 - [x] Test réel `OMNI_LIVE_AUTO_FALLBACK_TESTS=1 node --test test/auto-router.test.mjs` : le CLI a sélectionné Codex, son exécutable harness configuré comme absent a échoué au préflight, puis Omni a appelé un vrai modèle Claude OAuth et persisté l’événement de secours ainsi qu’un seul résultat terminé; aucun deuxième prompt n’a été créé.
-- [x] Exécution combinée après le changement : `OMNI_LIVE_AUTO_TESTS=1 OMNI_LIVE_AUTO_FALLBACK_TESTS=1 node --test test/auto-router.test.mjs` : 7/7 réussis, sans test ignoré; le parcours normal Auto et le fallback réel sont passés.
+- [x] Exécution combinée après le changement : `OMNI_LIVE_AUTO_TESTS=1 OMNI_LIVE_AUTO_FALLBACK_TESTS=1 node --test test/auto-router.test.mjs` : 8/8 réussis, sans test ignoré; le parcours normal Auto et le fallback réel sont passés.
 - [ ] Le parcours réel de fallback de préflight n’a été vérifié qu’avec Claude comme candidat de secours; vérifier Codex comme candidat de secours avec deux comptes connectés.
+- Validation finale de cette phase : `npm test` (42 découverts, 33 réussis, 0 échec, 9 tests live ignorés sans opt-in), `npm run lint`, `npm run format:check`, `npm run check`, `npm run build`, `git diff --check` et les deux parcours OAuth Auto combinés (8/8) réussis.
 
 ### Limites réelles de routage
 

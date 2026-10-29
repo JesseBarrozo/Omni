@@ -54,18 +54,39 @@ async function autoRoute(prompt, project) {
         process.env.OMNI_AUTO_MODELS.split(",").map((value) => value.trim()),
       )
     : null;
-  const addProvider = (providerId, models, harnessId, harnessName) => {
+  const addProvider = (
+    providerId,
+    models,
+    harnessId,
+    harnessName,
+    chatHarnessId,
+  ) => {
     const enabled = !disabledProviders.has(providerId);
     registry.registerProvider({ id: providerId, name: providerId, enabled });
-    registry.registerHarness({
-      id: harnessId,
-      name: harnessName,
-      enabled: true,
-      available: true,
-      providerIds: [providerId],
-      capabilities: { tools: true },
-      privacyApproved: false,
-    });
+    for (const harness of [
+      {
+        id: harnessId,
+        name: harnessName,
+        tools: true,
+      },
+      {
+        id: chatHarnessId,
+        name:
+          providerId === "codex"
+            ? "Codex chat (sandbox lecture seule)"
+            : "Claude chat (sans outils)",
+        tools: providerId === "codex" ? "read-only" : false,
+      },
+    ])
+      registry.registerHarness({
+        id: harness.id,
+        name: harness.name,
+        enabled: true,
+        available: true,
+        providerIds: [providerId],
+        capabilities: { tools: harness.tools },
+        privacyApproved: false,
+      });
     for (const modelId of models)
       registry.registerModel({
         id: modelId,
@@ -92,7 +113,7 @@ async function autoRoute(prompt, project) {
         cwd: project.rootPath ?? process.cwd(),
       }).listModels();
       if (models.length)
-        addProvider("codex", models, "codex", "Codex app-server");
+        addProvider("codex", models, "codex", "Codex app-server", "codex-chat");
       else
         checkedProviders.push({
           providerId: "codex",
@@ -116,7 +137,13 @@ async function autoRoute(prompt, project) {
         cwd: project.rootPath ?? process.cwd(),
       }).listModels();
       if (models.length)
-        addProvider("claude", models, "claude-code", "Claude Code Agent SDK");
+        addProvider(
+          "claude",
+          models,
+          "claude-code",
+          "Claude Code Agent SDK",
+          "claude-chat",
+        );
       else
         checkedProviders.push({
           providerId: "claude",
@@ -168,7 +195,7 @@ async function autoRoute(prompt, project) {
     privacyMode,
     previousResults,
   });
-  const decision = router.select({ prompt, needsTools: true });
+  const decision = router.select({ prompt });
   return { ...decision, checkedProviders };
 }
 
@@ -238,6 +265,22 @@ function createHarnessRun(harnessId, conversation, modelId) {
   return { adapter, rl };
 }
 
+function createAutoChatProvider(candidate, conversation) {
+  const project = store.project(conversation.projectId);
+  const cwd = project.rootPath ?? process.cwd();
+  if (candidate.providerId === "claude")
+    return new ClaudeCodeChat({
+      store,
+      cwd,
+      model: candidate.modelId,
+    });
+  if (candidate.providerId === "codex")
+    return new CodexChat({ store, cwd, model: candidate.modelId });
+  throw new Error(
+    `Fournisseur de chat Auto non pris en charge: ${candidate.providerId}`,
+  );
+}
+
 async function prepareAutoCandidate(decision, conversation) {
   const failures = [];
   const checkedHarnesses = new Set();
@@ -248,6 +291,23 @@ async function prepareAutoCandidate(decision, conversation) {
       candidate.providerId === "claude"
         ? `claude:${candidate.modelId}`
         : candidate.modelId;
+    if (candidate.harnessId.endsWith("-chat")) {
+      try {
+        const provider = createAutoChatProvider(candidate, conversation);
+        const models = await provider.listModels();
+        if (!models.includes(candidate.modelId))
+          throw new Error(
+            `Modèle Auto indisponible au préflight: ${candidate.modelId}`,
+          );
+        return { candidate, run: { provider }, failures };
+      } catch (error) {
+        failures.push({
+          candidate,
+          error: redactSecrets(error.message),
+        });
+        continue;
+      }
+    }
     const run = createHarnessRun(candidate.harnessId, conversation, modelId);
     try {
       await run.adapter.initialize();
@@ -328,20 +388,32 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
   }
 }
 
-async function chat(conversation, model, initialPrompt = null) {
+async function chat(
+  conversation,
+  model,
+  initialPrompt = null,
+  preparedProvider = null,
+) {
   const project = store.project(conversation.projectId);
   const provider =
-    model === "codex"
+    preparedProvider ??
+    (model === "codex"
       ? new CodexChat({ store, cwd: project.rootPath ?? process.cwd() })
-      : model === "claude" || model.startsWith("claude:")
-        ? new ClaudeCodeChat({
+      : model.startsWith("codex:")
+        ? new CodexChat({
             store,
             cwd: project.rootPath ?? process.cwd(),
-            model: model.startsWith("claude:")
-              ? model.slice("claude:".length)
-              : undefined,
+            model: model.slice("codex:".length),
           })
-        : new OpenAIChat();
+        : model === "claude" || model.startsWith("claude:")
+          ? new ClaudeCodeChat({
+              store,
+              cwd: project.rootPath ?? process.cwd(),
+              model: model.startsWith("claude:")
+                ? model.slice("claude:".length)
+                : undefined,
+            })
+          : new OpenAIChat());
   const rl = createInterface({
     input: stdin,
     output: stdout,
@@ -699,11 +771,18 @@ try {
     if (autoMode) {
       autoDecision = await autoRoute(prompt, project);
       const selected = autoDecision.selected;
-      harness = selected.harnessId === "claude-code" ? "claude" : "codex";
+      harness =
+        selected.harnessId === "claude-code"
+          ? "claude"
+          : selected.harnessId === "codex"
+            ? "codex"
+            : null;
       model =
         selected.providerId === "claude"
           ? `claude:${selected.modelId}`
-          : selected.modelId;
+          : selected.harnessId === "codex-chat"
+            ? `codex:${selected.modelId}`
+            : selected.modelId;
     }
     if (conversation) {
       conversation = store.setModel(conversation.id, model);
@@ -737,8 +816,17 @@ try {
           const from = autoDecision.selected;
           const to = prepared.candidate;
           model =
-            to.providerId === "claude" ? `claude:${to.modelId}` : to.modelId;
-          harness = to.harnessId === "claude-code" ? "claude" : "codex";
+            to.providerId === "claude"
+              ? `claude:${to.modelId}`
+              : to.harnessId === "codex-chat"
+                ? `codex:${to.modelId}`
+                : to.modelId;
+          harness =
+            to.harnessId === "claude-code"
+              ? "claude"
+              : to.harnessId === "codex"
+                ? "codex"
+                : null;
           conversation = store.setModel(conversation.id, model);
           store.appendEvent(conversation.id, "routing.fallback", {
             decisionId: autoDecision.id,
@@ -763,7 +851,7 @@ try {
         await runClaudeHarness(conversation, prompt, preparedRun);
       else if (harness === "codex")
         await runCodexHarness(conversation, prompt, preparedRun);
-      else await chat(conversation, model, prompt);
+      else await chat(conversation, model, prompt, preparedRun?.provider);
       if (autoDecision)
         store.appendEvent(conversation.id, "routing.result", {
           decisionId: autoDecision.id,
