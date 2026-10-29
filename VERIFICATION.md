@@ -1,3 +1,11 @@
+## Antigravity CLI — isolement sûr non disponible sur cet environnement
+
+- [x] `agy --help` vérifié sur le binaire installé : aucune option de HOME/config/settings/hooks; la documentation officielle situe les réglages dans le HOME utilisateur et spécifie le comportement headless. Voir [CLI headless permissions](https://antigravity.google/docs/cli/headless.md), [CLI settings](https://antigravity.google/docs/cli/using.md) et [sandbox](https://antigravity.google/docs/cli/sandbox).
+- [x] Catalogue OAuth `agy models` avec le HOME connecté et toutes les variables de clé/token retirées : sortie 0, 13 modèles; aucune génération.
+- [x] Même catalogue avec HOME/XDG temporaires et variables de clé/token retirées : sortie 1, zéro modèle, diagnostic classé authentification absente. Le contexte de connexion de cette installation n’est donc pas disponible dans le HOME isolé.
+- [x] Aucun contenu de credential, aucune variable API key et aucun message brut d’erreur n’a été affiché; les configurations Antigravity n’ont pas été modifiées.
+- [ ] Impossible de supprimer les hooks globaux du processus sans modifier/copier la configuration ou les credentials utilisateur, ou sans capacité de surcharge officielle. Omni échoue fermé; l’intégration Antigravity et sa reprise live restent non validées. Aucune génération/modification de fichiers n’a été exécutée.
+
 ## Rapport d’usage CLI
 
 - Le même rapport expose séparément les événements `routing.result` : nombre terminé/échoué/interrompu et latence moyenne des seules durées persistées. Le test vérifie un succès à 80 ms, un échec à 120 ms, une interruption sans durée et un filtre conversation.
