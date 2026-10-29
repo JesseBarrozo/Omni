@@ -229,6 +229,30 @@ test("privacy profile enforces approved harnesses and rejects unknown profile na
   );
 });
 
+test("Auto applies an OpenCode per-million input ceiling and explains its price exclusion", () => {
+  const registry = new ModelRegistry();
+  registry.registerProvider({ id: "opencode", name: "OpenCode" });
+  registry.registerModel({
+    id: "remote/priced-model",
+    providerId: "opencode",
+    pricing: { inputPerMillion: 0.5 },
+  });
+  registry.registerHarness({
+    id: "opencode",
+    providerIds: ["opencode"],
+    capabilities: { tools: true },
+  });
+
+  const evaluated = new AutoRouter(registry, {
+    maxInputPerMillion: 0.4,
+  }).evaluate({ prompt: "Implement a fix", needsTools: true });
+  assert.equal(evaluated.eligible.length, 0);
+  assert.ok(
+    evaluated.evaluated[0].exclusions.includes("input-price-over-limit"),
+  );
+  assert.equal(evaluated.evaluated[0].inputPerMillion, 0.5);
+});
+
 test("AutoRouter requires a registered MCP server and filters harness compatibility", () => {
   const router = new AutoRouter(registryFixture(), {
     availableMcpServers: ["local-fs"],

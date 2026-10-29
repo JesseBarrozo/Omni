@@ -19,8 +19,17 @@
 - [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test --test-name-pattern='Auto plan reads a real OpenCode catalog' test/opencode-harness.test.mjs` : 1/1 réussi avec le CLI/serveur installé; la décision a sélectionné un vrai ID `provider/model` et aucune conversation n’a été créée. Aucun appel génération ni clé API.
 - [x] Contrat OpenCode du catalogue modèle/provider : capacités d’appel d’outils lues depuis `ModelV2Info`; seule une URL API HTTP(S) explicitement loopback (`localhost`, `127/8`, `::1`) marque le provider local. Un modèle sans outils est exclu des tâches agentiques.
 - [x] Profils `balance`, `efficiency`, `intelligence`, `local-first`, `privacy` et `custom` validés; `local-first` préfère le loopback puis retombe sur les candidats distants, `privacy` ne peut pas être désactivé par une entrée de tâche et les profils inconnus sont rejetés.
+- [x] Le coût d’entrée OpenCode, documenté en USD par million de tokens, est conservé. Pour un modèle à plusieurs paliers de contexte, Auto prend le maximum input; un coût absent reste inconnu et un plafond d’entrée l’exclut. Les plafonds de sortie ne sont pas implémentés.
 - [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test test/opencode-harness.test.mjs` : 6/6 réussis, dont la sélection Auto depuis le catalogue officiel; aucun appel à un modèle ou à une clé API. Tests globaux après changements : 118 tests, 91 réussis, 0 échec, 27 opt-in ignorés; lint, format:check, check, build, audit et diff-check réussis.
-- [ ] Le streaming d’une génération OpenCode, les outils pilotés par modèle, fallback live Auto et coût/latence réels ne sont pas validés. Aucun provider loopback local n’est configuré sur l’environnement de test; le profil `local-first` est vérifié avec les métadonnées de catalogue contrat et le routeur unitaire.
+- [ ] Le streaming d’une génération OpenCode, les outils pilotés par modèle, fallback live Auto et coût/latence mesurés restent non validés. Aucun provider loopback local n’est configuré sur l’environnement de test; le profil `local-first` est vérifié avec les métadonnées de catalogue contrat et le routeur unitaire.
+
+### Tarification OpenCode dans Auto
+
+- [x] La documentation officielle OpenCode définit les tarifs de catalogue comme USD par million de tokens et les coûts `StepFinishPart` comme USD. Omni lit les tarifs du registre modèle OpenCode et choisit le plus haut tarif d’entrée des paliers déclarés.
+- [x] Le test live Auto compare chaque candidat de la décision avec le catalogue officiel lu par le SDK réel : modèle, statut local et prix d’entrée correspondent, sans génération ni clé API.
+- [x] Le test unitaire vérifie le plafond d’entrée et la raison `input-price-over-limit`; prix absent ou invalide reste inconnu et le plafond configuré exclut ce candidat.
+- [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test test/opencode-harness.test.mjs` : 6/6; `npm test` : 119 tests, 92 réussis, 0 échec, 27 opt-in ignorés; lint, format:check, check, build, audit et diff-check réussis.
+- [ ] Le coût réel par tour n’est pas encore collecté depuis les événements OpenCode; les budgets limitent actuellement le coût d’entrée catalogue, sans coût de sortie ni plafond de dépense total.
 
 ## Harness Swap OpenCode (en cours)
 

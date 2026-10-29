@@ -316,18 +316,26 @@ export class OpenCodeHarness {
       );
       return (models ?? [])
         .filter((entry) => entry.enabled && entry.status === "active")
-        .map((entry) => ({
-          id: `${entry.providerID}/${entry.id}`,
-          providerId: entry.providerID,
-          name: entry.name,
-          available: true,
-          local: localProviders.has(entry.providerID),
-          capabilities: {
-            tools: entry.capabilities?.tools === true,
-            input: entry.capabilities?.input ?? [],
-            output: entry.capabilities?.output ?? [],
-          },
-        }))
+        .map((entry) => {
+          const inputPrices = (entry.cost ?? [])
+            .map((tier) => tier.input)
+            .filter((price) => Number.isFinite(price) && price >= 0);
+          return {
+            id: `${entry.providerID}/${entry.id}`,
+            providerId: entry.providerID,
+            name: entry.name,
+            available: true,
+            local: localProviders.has(entry.providerID),
+            capabilities: {
+              tools: entry.capabilities?.tools === true,
+              input: entry.capabilities?.input ?? [],
+              output: entry.capabilities?.output ?? [],
+            },
+            ...(inputPrices.length
+              ? { pricing: { inputPerMillion: Math.max(...inputPrices) } }
+              : {}),
+          };
+        })
         .sort((a, b) => a.id.localeCompare(b.id));
     } catch (error) {
       throw safeError(error, this.password);

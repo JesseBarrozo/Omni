@@ -47,6 +47,19 @@ test("OpenCode catalog keeps model tool capability and only marks explicit loopb
                   input: ["text"],
                   output: ["text"],
                 },
+                cost: [
+                  {
+                    input: 0.2,
+                    output: 0.8,
+                    cache: { read: 0.02, write: 0.2 },
+                  },
+                  {
+                    tier: { type: "context", size: 200_000 },
+                    input: 0.5,
+                    output: 1.5,
+                    cache: { read: 0.05, write: 0.5 },
+                  },
+                ],
               },
               {
                 id: "text-model",
@@ -59,6 +72,7 @@ test("OpenCode catalog keeps model tool capability and only marks explicit loopb
                   input: ["text"],
                   output: ["text"],
                 },
+                cost: [],
               },
             ],
           },
@@ -118,14 +132,25 @@ test("OpenCode catalog keeps model tool capability and only marks explicit loopb
   try {
     const models = await harness.listModelCatalog();
     assert.deepEqual(
-      models.map(({ id, local, capabilities }) => ({
+      models.map(({ id, local, capabilities, pricing }) => ({
         id,
         local,
         tools: capabilities.tools,
+        pricing,
       })),
       [
-        { id: "ollama-custom/llama", local: true, tools: true },
-        { id: "remote/text-model", local: false, tools: false },
+        {
+          id: "ollama-custom/llama",
+          local: true,
+          tools: true,
+          pricing: { inputPerMillion: 0.5 },
+        },
+        {
+          id: "remote/text-model",
+          local: false,
+          tools: false,
+          pricing: undefined,
+        },
       ],
     );
   } finally {
@@ -520,6 +545,19 @@ test(
       { cwd: projectDirectory, env, encoding: "utf8", timeout: 15_000 },
     );
     assert.equal(createProject.status, 0, createProject.stderr);
+    const catalogStore = new ChatStore(join(directory, "catalog.sqlite"));
+    const catalogHarness = new OpenCodeHarness({
+      store: catalogStore,
+      cwd: projectDirectory,
+      env,
+    });
+    let catalog;
+    try {
+      catalog = await catalogHarness.listModelCatalog();
+    } finally {
+      await catalogHarness.dispose();
+      catalogStore.close();
+    }
     const preview = spawnSync(
       process.execPath,
       [
@@ -543,6 +581,17 @@ test(
         (provider) => provider.providerId === "opencode",
       ).modelCount > 0,
     );
+    for (const model of catalog) {
+      const evaluated = decision.evaluatedCandidates.find(
+        (candidate) => candidate.key === `opencode/${model.id}/opencode`,
+      );
+      assert.ok(evaluated, `Auto omitted OpenCode model ${model.id}`);
+      assert.equal(evaluated.local, model.local);
+      assert.equal(
+        evaluated.knownInputPricePerMillion,
+        model.pricing?.inputPerMillion ?? null,
+      );
+    }
     const store = new ChatStore(join(dataDirectory, "omni.sqlite"));
     try {
       assert.equal(store.count().conversations, 0);
