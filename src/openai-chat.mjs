@@ -51,7 +51,7 @@ export class OpenAIChat {
       apiKey ? message.replaceAll(apiKey, "[REDACTED]") : message,
     );
   }
-  async stream({ model, messages, signal, onDelta }) {
+  async stream({ model, messages, signal, onDelta, onUsage = () => {} }) {
     const client = this.oauth
       ? this.clientFactory(await this.oauth.getAccessToken())
       : this.client;
@@ -71,13 +71,37 @@ export class OpenAIChat {
     }
     let text = "";
     let completed = false;
+    let completedUsage = null;
     try {
       for await (const event of stream) {
         if (event.type === "response.output_text.delta") {
           text += event.delta;
           onDelta(event.delta);
         }
-        if (event.type === "response.completed") completed = true;
+        if (event.type === "response.completed") {
+          completed = true;
+          const usage = event.response?.usage;
+          const tokens = {
+            input: usage?.input_tokens,
+            output: usage?.output_tokens,
+            reasoning: usage?.output_tokens_details?.reasoning_tokens,
+            cache: {
+              read: usage?.input_tokens_details?.cached_tokens,
+              write: usage?.input_tokens_details?.cache_write_tokens,
+            },
+          };
+          const counts = [
+            tokens.input,
+            tokens.output,
+            tokens.reasoning,
+            tokens.cache.read,
+            tokens.cache.write,
+          ];
+          if (
+            counts.every((count) => Number.isSafeInteger(count) && count >= 0)
+          )
+            completedUsage = { providerId: "openai", tokens };
+        }
         if (event.type === "error" || event.type === "response.failed") {
           const detail = event.message ?? event.response?.error?.message;
           throw new Error(
@@ -92,6 +116,7 @@ export class OpenAIChat {
         throw new Error(
           "Le flux Responses s’est terminé sans réponse complète",
         );
+      if (completedUsage) onUsage(completedUsage);
       return text;
     } catch (error) {
       throw this.#safeApiError(error);

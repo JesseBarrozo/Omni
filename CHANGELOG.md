@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- OpenAI usage capture : les réponses complètes `response.completed` de l’API Responses enregistrent les compteurs officiels input/output/reasoning/cache dans `usage.updated` pour les chemins API et OAuth; aucune estimation de coût n’est créée. Validé avec le SDK OpenAI réel contre un SSE HTTP loopback, sans appel fournisseur.
+
 - Usage report CLI : `omni usage report --project PATH_OR_ID` et `--conversation ID` résument les coûts USD et tokens réellement persistés, avec sortie texte ou `--json`; les mesures absentes ne sont pas estimées. Le calcul CLI est testé sur l’historique SQLite.
 
 - OpenCode usage events : Omni now consumes the official `session.next.step.ended` event and persists validated USD cost plus input/output/reasoning/cache token counts as `usage.updated`, deduplicated per assistant message. Contract-tested against the SDK event schema; a live model turn remains untested.

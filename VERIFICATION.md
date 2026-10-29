@@ -3,7 +3,10 @@
 - [x] `omni usage report --project PATH_OR_ID [--json]` agrège les événements `usage.updated` persistés; `--conversation ID` isole une conversation.
 - [x] Les sommes USD n’incluent que les coûts rapportés et valides; les tokens ne sont agrégés que lorsque tous les compteurs requis sont valides. Les champs manquants restent `null`/« non rapportés », sans estimation.
 - [x] Test CLI sur une base SQLite temporaire avec plusieurs conversations, mesures présentes et absentes, filtres projet/conversation, rendu texte et JSON. Aucun fournisseur, modèle ou secret utilisé.
-- [ ] L’événement d’usage OpenCode continue d’être uniquement validé par contrat SDK; une génération live reste non exécutée conformément à la consigne de ne pas tester les clés API.
+- [x] SDK OpenAI officiel exécuté contre un serveur SSE HTTP loopback : `response.completed.usage` input/output/reasoning/cache est normalisé puis persisté par `runChatTurn`; le CLI JSONL reçoit aussi `usage.updated`. Aucun endpoint externe, secret ou clé API.
+- [x] Événements d’échec et réponse incomplète : aucun compteur n’est persisté/émis comme usage.
+- [x] Validation après la capture OpenAI : `npm test` (122 tests, 95 réussis, 0 échec, 27 opt-in ignorés), lint, format:check, check, build, audit production (0 vulnérabilité) et diff-check réussis.
+- [ ] L’événement d’usage OpenCode reste validé par contrat SDK seulement; une génération live n’a pas été exécutée conformément à la consigne de ne pas tester les clés API. OpenAI a également été vérifié uniquement via SSE loopback.
 
 # Vérification et tests à refaire
 

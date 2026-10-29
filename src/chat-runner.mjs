@@ -6,6 +6,7 @@ export async function runChatTurn({
   prompt,
   signal,
   onDelta = () => {},
+  onUsage = () => {},
 }) {
   if (!prompt.trim()) throw new Error("Le message ne peut pas être vide");
   store.addMessage(conversationId, "user", prompt);
@@ -37,6 +38,16 @@ export async function runChatTurn({
         answer += delta;
         store.appendMessageDelta(assistantId, delta);
         onDelta(delta);
+      },
+      onUsage: (usage) => {
+        const payload = {
+          ...usage,
+          conversationId,
+          harnessId: null,
+          sessionId: null,
+        };
+        store.appendEvent(conversationId, "usage.updated", payload);
+        onUsage(payload);
       },
     });
     store.setMessage(assistantId, answer, "completed");

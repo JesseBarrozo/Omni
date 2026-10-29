@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:http";
+import OpenAI from "openai";
 import { ChatStore } from "../src/chat-store.mjs";
 import { OpenAIChat } from "../src/openai-chat.mjs";
 import { runChatTurn } from "../src/chat-runner.mjs";
@@ -315,6 +317,7 @@ test("SQLite event store rejects non-canonical Omni event types", () => {
 
 test("OpenAI client streams real Responses event shape and lists accessible models", async () => {
   const deltas = [];
+  const usageEvents = [];
   const client = {
     models: {
       list: async () => ({ data: [{ id: "model-b" }, { id: "model-a" }] }),
@@ -324,7 +327,20 @@ test("OpenAI client streams real Responses event shape and lists accessible mode
         controller: new AbortController(),
         async *[Symbol.asyncIterator]() {
           yield { type: "response.output_text.delta", delta: "hello" };
-          yield { type: "response.completed" };
+          yield {
+            type: "response.completed",
+            response: {
+              usage: {
+                input_tokens: 100,
+                output_tokens: 25,
+                output_tokens_details: { reasoning_tokens: 5 },
+                input_tokens_details: {
+                  cached_tokens: 20,
+                  cache_write_tokens: 3,
+                },
+              },
+            },
+          };
         },
       }),
     },
@@ -336,13 +352,111 @@ test("OpenAI client streams real Responses event shape and lists accessible mode
       model: "model-a",
       messages: [{ role: "user", content: "hi" }],
       onDelta: (v) => deltas.push(v),
+      onUsage: (value) => usageEvents.push(value),
     }),
     "hello",
   );
   assert.deepEqual(deltas, ["hello"]);
+  assert.deepEqual(usageEvents, [
+    {
+      providerId: "openai",
+      tokens: {
+        input: 100,
+        output: 25,
+        reasoning: 5,
+        cache: { read: 20, write: 3 },
+      },
+    },
+  ]);
+});
+
+test("official OpenAI SDK usage in response.completed persists to the usage report store", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-openai-usage-"));
+  const store = new ChatStore(join(dir, "db.sqlite"));
+  const project = store.createProject("OpenAI usage", dir);
+  const conversation = store.createConversation(
+    project.id,
+    "Usage",
+    "gpt-test",
+  );
+  const server = createServer((request, response) => {
+    if (request.method !== "POST" || request.url !== "/v1/responses") {
+      response.writeHead(404).end();
+      return;
+    }
+    response.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    });
+    response.end(
+      [
+        { type: "response.output_text.delta", delta: "hello" },
+        {
+          type: "response.completed",
+          response: {
+            usage: {
+              input_tokens: 100,
+              output_tokens: 25,
+              total_tokens: 125,
+              output_tokens_details: { reasoning_tokens: 5 },
+              input_tokens_details: {
+                cached_tokens: 20,
+                cache_write_tokens: 3,
+              },
+            },
+          },
+        },
+      ]
+        .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+        .join("") + "data: [DONE]\n\n",
+    );
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { port } = server.address();
+    const provider = new OpenAIChat({
+      apiKey: "local-contract-only",
+      clientFactory: (apiKey) =>
+        new OpenAI({
+          apiKey,
+          baseURL: `http://127.0.0.1:${port}/v1`,
+          maxRetries: 0,
+        }),
+    });
+    await runChatTurn({
+      store,
+      provider,
+      conversationId: conversation.id,
+      model: "gpt-test",
+      prompt: "hello",
+    });
+    const [event] = store.executionEvents("usage", {
+      conversationId: conversation.id,
+    });
+    assert.deepEqual(event.payload, {
+      providerId: "openai",
+      tokens: {
+        input: 100,
+        output: 25,
+        reasoning: 5,
+        cache: { read: 20, write: 3 },
+      },
+      conversationId: conversation.id,
+      harnessId: null,
+      sessionId: null,
+    });
+  } finally {
+    await new Promise((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("OpenAI stream failure and incomplete responses are never reported as success", async () => {
+  const usageEvents = [];
   for (const event of [
     {
       type: "response.failed",
@@ -366,6 +480,7 @@ test("OpenAI stream failure and incomplete responses are never reported as succe
         model: "listed-model",
         messages: [{ role: "user", content: "hello" }],
         onDelta() {},
+        onUsage: (usage) => usageEvents.push(usage),
       }),
     );
   }
@@ -384,9 +499,11 @@ test("OpenAI stream failure and incomplete responses are never reported as succe
       model: "listed-model",
       messages: [{ role: "user", content: "hello" }],
       onDelta() {},
+      onUsage: (usage) => usageEvents.push(usage),
     }),
     /sans réponse complète/,
   );
+  assert.deepEqual(usageEvents, []);
 });
 
 test("OpenAI API errors redact the configured key before reaching callers", async () => {

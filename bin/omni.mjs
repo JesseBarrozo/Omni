@@ -1036,6 +1036,7 @@ async function chat(
           if (jsonRunOutput) writeRunEvent("message.delta", { delta });
           else stdout.write(delta);
         },
+        onUsage: (usage) => emitRunEvent("usage.updated", usage),
       });
       if (!initialPrompt || !jsonRunOutput)
         stdout.write(
