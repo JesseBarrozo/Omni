@@ -516,6 +516,16 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
     : null;
   if (maxInputPerMillion !== null && !Number.isFinite(maxInputPerMillion))
     throw new Error("OMNI_AUTO_MAX_INPUT_PER_MILLION doit être un nombre");
+  const maxOutputPerMillion = process.env.OMNI_AUTO_MAX_OUTPUT_PER_MILLION
+    ? Number(process.env.OMNI_AUTO_MAX_OUTPUT_PER_MILLION)
+    : null;
+  if (
+    maxOutputPerMillion !== null &&
+    (!Number.isFinite(maxOutputPerMillion) || maxOutputPerMillion < 0)
+  )
+    throw new Error(
+      "OMNI_AUTO_MAX_OUTPUT_PER_MILLION doit être un nombre positif ou nul",
+    );
   const maxMonthlySpendUsd = process.env.OMNI_AUTO_MONTHLY_BUDGET_USD
     ? Number(process.env.OMNI_AUTO_MONTHLY_BUDGET_USD)
     : null;
@@ -546,6 +556,7 @@ async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
       .filter(Boolean),
     excludedProviders: [...disabledProviders],
     maxInputPerMillion,
+    maxOutputPerMillion,
     maxMonthlySpendUsd,
     monthlySpendUsd,
     privacyMode,

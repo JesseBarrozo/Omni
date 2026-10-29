@@ -332,6 +332,7 @@ export class AutoRouter {
       excludedProviders = [],
       preferredProviders = [],
       maxInputPerMillion = null,
+      maxOutputPerMillion = null,
       maxMonthlySpendUsd = null,
       monthlySpendUsd = 0,
       privacyMode = false,
@@ -354,6 +355,12 @@ export class AutoRouter {
     this.excludedProviders = new Set(excludedProviders);
     this.preferredProviders = preferredProviders;
     this.maxInputPerMillion = maxInputPerMillion;
+    if (
+      maxOutputPerMillion !== null &&
+      (!Number.isFinite(maxOutputPerMillion) || maxOutputPerMillion < 0)
+    )
+      throw new TypeError("maxOutputPerMillion must be a non-negative number");
+    this.maxOutputPerMillion = maxOutputPerMillion;
     if (
       maxMonthlySpendUsd !== null &&
       (!Number.isFinite(maxMonthlySpendUsd) || maxMonthlySpendUsd < 0)
@@ -442,6 +449,7 @@ export class AutoRouter {
         )
           exclusions.push("monthly-spend-budget-reached");
         const price = model.pricing?.inputPerMillion;
+        const outputPrice = model.pricing?.outputPerMillion;
         if (
           this.maxInputPerMillion !== null &&
           (!Number.isFinite(price) || price > this.maxInputPerMillion)
@@ -450,6 +458,16 @@ export class AutoRouter {
             Number.isFinite(price)
               ? "input-price-over-limit"
               : "input-price-unknown",
+          );
+        if (
+          this.maxOutputPerMillion !== null &&
+          (!Number.isFinite(outputPrice) ||
+            outputPrice > this.maxOutputPerMillion)
+        )
+          exclusions.push(
+            Number.isFinite(outputPrice)
+              ? "output-price-over-limit"
+              : "output-price-unknown",
           );
         const key = `${model.providerId}/${model.id}/${harness.id}`;
         evaluated.push({
@@ -463,6 +481,7 @@ export class AutoRouter {
           previous: this.previousResults[key] ?? null,
           latencyMs: this.previousResults[key]?.averageLatencyMs ?? null,
           inputPerMillion: price ?? null,
+          outputPerMillion: outputPrice ?? null,
           quality: Number.isFinite(model.quality) ? model.quality : null,
           local: model.local === true || provider?.local === true,
         });
@@ -585,6 +604,7 @@ export class AutoRouter {
         previous: candidate.previous,
         observedLatencyMs: candidate.latencyMs,
         knownInputPricePerMillion: candidate.inputPerMillion,
+        knownOutputPricePerMillion: candidate.outputPerMillion,
         local: candidate.local,
       })),
       criteria: {
@@ -592,6 +612,7 @@ export class AutoRouter {
         profile: this.profile,
         privacyMode: task.privacy,
         maxInputPerMillion: this.maxInputPerMillion,
+        maxOutputPerMillion: this.maxOutputPerMillion,
         maxMonthlySpendUsd: this.maxMonthlySpendUsd,
         monthlySpendUsd: this.monthlySpendUsd,
         preferredProviders: this.preferredProviders,

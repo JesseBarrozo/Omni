@@ -257,6 +257,45 @@ test("Auto applies an OpenCode per-million input ceiling and explains its price 
   assert.equal(evaluated.evaluated[0].inputPerMillion, 0.5);
 });
 
+test("Auto applies output price ceilings and excludes unknown output prices", () => {
+  const registry = new ModelRegistry();
+  registry.registerProvider({ id: "opencode", name: "OpenCode" });
+  registry.registerModel({
+    id: "remote/priced-model",
+    providerId: "opencode",
+    pricing: { inputPerMillion: 0.2, outputPerMillion: 1.5 },
+  });
+  registry.registerModel({
+    id: "remote/unknown-output",
+    providerId: "opencode",
+  });
+  registry.registerHarness({
+    id: "opencode",
+    providerIds: ["opencode"],
+    capabilities: { tools: true },
+  });
+
+  const evaluated = new AutoRouter(registry, {
+    maxOutputPerMillion: 1,
+  }).evaluate({ prompt: "Implement a fix", needsTools: true });
+  assert.equal(evaluated.eligible.length, 0);
+  assert.ok(
+    evaluated.evaluated.some((candidate) =>
+      candidate.exclusions.includes("output-price-over-limit"),
+    ),
+  );
+  assert.ok(
+    evaluated.evaluated.some((candidate) =>
+      candidate.exclusions.includes("output-price-unknown"),
+    ),
+  );
+  const evidence = new AutoRouter(registry, {
+    maxOutputPerMillion: 2,
+  }).select({ prompt: "Implement a fix", needsTools: true });
+  assert.equal(evidence.evaluatedCandidates[0].knownOutputPricePerMillion, 1.5);
+  assert.equal(evidence.criteria.maxOutputPerMillion, 2);
+});
+
 test("Auto blocks candidates after persisted monthly project spend reaches its ceiling", () => {
   const registry = registryFixture();
   const blocked = new AutoRouter(registry, {

@@ -317,8 +317,16 @@ export class OpenCodeHarness {
       return (models ?? [])
         .filter((entry) => entry.enabled && entry.status === "active")
         .map((entry) => {
-          const inputPrices = (entry.cost ?? [])
-            .map((tier) => tier.input)
+          const priceTiers = Array.isArray(entry.cost)
+            ? entry.cost
+            : entry.cost && typeof entry.cost === "object"
+              ? [entry.cost]
+              : [];
+          const inputPrices = priceTiers
+            .map((tier) => tier?.input)
+            .filter((price) => Number.isFinite(price) && price >= 0);
+          const outputPrices = priceTiers
+            .map((tier) => tier?.output)
             .filter((price) => Number.isFinite(price) && price >= 0);
           return {
             id: `${entry.providerID}/${entry.id}`,
@@ -331,8 +339,17 @@ export class OpenCodeHarness {
               input: entry.capabilities?.input ?? [],
               output: entry.capabilities?.output ?? [],
             },
-            ...(inputPrices.length
-              ? { pricing: { inputPerMillion: Math.max(...inputPrices) } }
+            ...(inputPrices.length || outputPrices.length
+              ? {
+                  pricing: {
+                    ...(inputPrices.length
+                      ? { inputPerMillion: Math.max(...inputPrices) }
+                      : {}),
+                    ...(outputPrices.length
+                      ? { outputPerMillion: Math.max(...outputPrices) }
+                      : {}),
+                  },
+                }
               : {}),
           };
         })
