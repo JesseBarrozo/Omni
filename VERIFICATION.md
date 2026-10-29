@@ -1,5 +1,16 @@
 # Vérification et tests à refaire
 
+## Harness OpenCode (commit `9eaf0d9`)
+
+- [x] SDK officiel `@opencode-ai/sdk` v2 et CLI `opencode v2.1.4`; serveur réel lié à `127.0.0.1`, Basic password aléatoire, variables API/token/password filtrées du processus enfant, HOME/XDG temporaires dans le test.
+- [x] Catalogue CLI réel : `providers refresh --provider opencode`, `harnesses refresh --harness opencode` et `models list --provider opencode`; le profil temporaire a exposé 9 modèles au rafraîchissement et 8 lignes dans la commande de liste. Aucune génération exécutée.
+- [x] Test serveur réel sans modèle : création session, fermeture serveur et SQLite, réouverture SQLite dans un nouvel adapter, reprise de la session, checkpoint et catalogue.
+- [x] OpenAPI réel : Omni vérifie `/openapi.json`, la route de réponse permission et l’énumération `once|always|reject`; le SDK envoie `reply` alors que le serveur demande `decision`, donc le fetch ne convertit que le champ vérifié. Création puis rejet réel d’une permission sans outil exécuté.
+- [x] Test de contrat : erreur à la réponse permission n’accorde rien, inscrit `permission.requested`, puis demande l’interruption.
+- [x] `OMNI_LIVE_OPENCODE_TESTS=1 node --test test/opencode-harness.test.mjs` : 3/3; `npm test` : 112 tests, 86 passés, 0 échec, 26 opt-in ignorés; lint, format:check, check, build et `git diff --check` réussis.
+- [ ] Aucun appel modèle, streaming réel d’une génération, exécution outil réelle ou interaction permission issue d’un modèle n’a été testé. Cela reste à valider sans tester de clés API. OpenCode n’est pas encore intégré à Auto ni Harness Swap.
+
+
 ## Isolation des faux harnesses
 
 - [x] `MockHarnessAdapter` déplacé de `src/adapters.mjs` vers `test-fixtures/mock-harness-adapter.mjs`; le code de production n’expose que `assertHarnessAdapter`.
