@@ -106,7 +106,7 @@ test("projects and partial/completed conversation messages survive database reop
   assert.equal(
     db.db.prepare("SELECT count(*) AS count FROM schema_migrations").get()
       .count,
-    2,
+    3,
   );
   db.close();
   rmSync(dir, { recursive: true, force: true });
@@ -119,7 +119,7 @@ test("provider and model catalogs persist preferences and mark stale models unav
   assert.equal(
     store.db.prepare("SELECT max(version) version FROM schema_migrations").get()
       .version,
-    2,
+    3,
   );
   store.saveProviderCatalog({
     providerId: "codex",
@@ -154,6 +154,50 @@ test("provider and model catalogs persist preferences and mark stale models unav
   assert.throws(
     () => store.setModelEnabled("codex", "unknown", false),
     /Modèle inconnu/,
+  );
+  store.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("harness registry persists real adapter metadata and enabled state", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-harness-registry-"));
+  const file = join(dir, "db.sqlite");
+  let store = new ChatStore(file);
+  store.saveHarnessRegistry({
+    id: "codex",
+    name: "Codex app-server",
+    providerId: "codex",
+    integration: "Codex app-server JSON-RPC",
+    status: "connected",
+    available: true,
+    capabilities: { streaming: true, tools: true, permissions: true },
+  });
+  store.setHarnessEnabled("codex", false);
+  store.close();
+
+  store = new ChatStore(file);
+  const [harness] = store.harnessRegistry();
+  assert.equal(harness.status, "connected");
+  assert.equal(harness.available, true);
+  assert.equal(harness.enabled, false);
+  assert.deepEqual(harness.capabilities, {
+    streaming: true,
+    tools: true,
+    permissions: true,
+  });
+  store.saveHarnessRegistry({
+    id: "codex",
+    name: "Codex app-server",
+    providerId: "codex",
+    integration: "Codex app-server JSON-RPC",
+    status: "disconnected",
+    available: false,
+    capabilities: { streaming: true, tools: true, permissions: true },
+  });
+  assert.equal(store.harnessRegistry()[0].enabled, false);
+  assert.throws(
+    () => store.setHarnessEnabled("unknown", false),
+    /Harness inconnu/,
   );
   store.close();
   rmSync(dir, { recursive: true, force: true });

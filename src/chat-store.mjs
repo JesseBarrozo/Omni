@@ -37,6 +37,27 @@ export class ChatStore {
           )
           .run(new Date().toISOString());
       })();
+    if (version < 3)
+      this.db.transaction(() => {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS harnesses (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            integration TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'unknown' CHECK (status IN ('connected', 'disconnected', 'unavailable', 'unknown')),
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+            available INTEGER NOT NULL DEFAULT 0 CHECK (available IN (0, 1)),
+            capabilities_json TEXT NOT NULL,
+            checked_at TEXT
+          );
+        `);
+        this.db
+          .prepare(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (3, ?)",
+          )
+          .run(new Date().toISOString());
+      })();
     if (version < 2)
       this.db.transaction(() => {
         this.db.exec(`
@@ -175,6 +196,68 @@ export class ChatStore {
     if (!result.changes)
       throw new Error(`Modèle inconnu: ${providerId}/${modelId}`);
     return this.modelRegistry(providerId).find((model) => model.id === modelId);
+  }
+  saveHarnessRegistry({
+    id,
+    name,
+    providerId,
+    integration,
+    status,
+    available,
+    capabilities,
+  }) {
+    if (!id || !name || !providerId || !integration || !capabilities)
+      throw new TypeError("Les métadonnées du harness sont incomplètes");
+    if (
+      !["connected", "disconnected", "unavailable", "unknown"].includes(status)
+    )
+      throw new TypeError(`Statut harness invalide: ${status}`);
+    this.db
+      .prepare(
+        `
+      INSERT INTO harnesses (id, name, provider_id, integration, status, available, capabilities_json, checked_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name = excluded.name, provider_id = excluded.provider_id,
+        integration = excluded.integration, status = excluded.status, available = excluded.available,
+        capabilities_json = excluded.capabilities_json, checked_at = excluded.checked_at
+    `,
+      )
+      .run(
+        id,
+        name,
+        providerId,
+        integration,
+        status,
+        Number(Boolean(available)),
+        JSON.stringify(capabilities),
+        new Date().toISOString(),
+      );
+    return this.harnessRegistry().find((harness) => harness.id === id);
+  }
+  harnessRegistry() {
+    return this.db
+      .prepare(
+        `
+      SELECT id, name, provider_id AS providerId, integration, status, enabled, available,
+        capabilities_json AS capabilitiesJson, checked_at AS checkedAt
+      FROM harnesses ORDER BY id
+    `,
+      )
+      .all()
+      .map((row) => ({
+        ...row,
+        enabled: Boolean(row.enabled),
+        available: Boolean(row.available),
+        capabilities: JSON.parse(row.capabilitiesJson),
+        capabilitiesJson: undefined,
+      }));
+  }
+  setHarnessEnabled(harnessId, enabled) {
+    const result = this.db
+      .prepare("UPDATE harnesses SET enabled = ? WHERE id = ?")
+      .run(Number(Boolean(enabled)), harnessId);
+    if (!result.changes) throw new Error(`Harness inconnu: ${harnessId}`);
+    return this.harnessRegistry().find((harness) => harness.id === harnessId);
   }
   project(idOrPath) {
     const byId = this.db

@@ -1,5 +1,13 @@
 # Vérification et tests à refaire
 
+## Harness Registry
+
+- [x] Le registre SQLite version 3 conserve les capacités de l’adaptateur, son statut, sa disponibilité et son activation après redémarrage.
+- [x] Les harnesses désactivés sont refusés par `omni run` et `omni swap`; Auto filtre le harness persistent désactivé avant toute exécution.
+- [x] `OMNI_LIVE_HARNESS_REGISTRY_TESTS=1 node --test test/cli.test.mjs` : les vrais Codex app-server et Claude Agent SDK sont initialisés avec OAuth, signalés connectés/disponibles et aucune tâche n’est démarrée; le modèle Codex limité à ce harness est ensuite rejeté par Auto après sa désactivation (4 tests réussis, 1 autre intégration opt-in ignorée).
+- Les capacités affichées proviennent des adapters Omni et ne garantissent pas l’accès aux permissions ou à l’état privé du harness. Aucun harness de démonstration n’est enregistré dans la CLI runtime.
+- Validation globale de la phase : `npm test` (48 tests découverts, 37 réussis, 0 échec, 11 opt-in ignorés), `npm run lint`, `npm run format:check`, `npm run check`, `npm run build`, `git diff --check` réussis.
+
 ## Provider Manager et Model Registry
 
 - [x] Migration SQLite version 2 conserve les providers, leurs états, les identifiants de modèles et les drapeaux d’activation; les préférences survivent à la réouverture de la base.

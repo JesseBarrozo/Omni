@@ -37,7 +37,7 @@ const option = (name, fallback = null) => {
 const hasFlag = (name) => args.includes(name);
 const help = () =>
   print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai] [--json]\n  providers enable|disable --provider ID\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
+    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login codex|claude\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code] [--json]\n  harnesses enable|disable --harness ID\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|--auto] [--conversation ID] PROMPT\n  swap --conversation ID --harness claude|codex [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
   );
 
 async function autoRoute(prompt, project) {
@@ -73,6 +73,9 @@ async function autoRoute(prompt, project) {
     const storedModels = new Map(
       store.modelRegistry(providerId).map((entry) => [entry.id, entry]),
     );
+    const storedHarnesses = new Map(
+      store.harnessRegistry().map((entry) => [entry.id, entry]),
+    );
     const enabled =
       storedProvider.enabled && !disabledProviders.has(providerId);
     registry.registerProvider({ id: providerId, name: providerId, enabled });
@@ -99,6 +102,9 @@ async function autoRoute(prompt, project) {
         providerIds: [providerId],
         capabilities: { tools: harness.tools },
         privacyApproved: false,
+        ...(storedHarnesses.has(harness.id)
+          ? { enabled: storedHarnesses.get(harness.id).enabled }
+          : {}),
       });
     for (const modelId of models)
       registry.registerModel({
@@ -405,6 +411,55 @@ function assertManualSelectionEnabled(modelId, harness = null) {
     );
 }
 
+function assertHarnessEnabled(harnessId) {
+  const registered = store
+    .harnessRegistry()
+    .find((harness) => harness.id === harnessId);
+  if (registered && !registered.enabled)
+    throw new Error(`Harness désactivé: ${harnessId}`);
+}
+
+async function refreshHarness(harnessId) {
+  let adapter;
+  let providerId;
+  let integration;
+  let authenticated;
+  if (harnessId === "codex") {
+    providerId = "codex";
+    integration = "Codex app-server JSON-RPC";
+    authenticated = codexAuthStatus().authenticated;
+    adapter = new CodexHarness({ store });
+  } else if (harnessId === "claude-code") {
+    providerId = "claude";
+    integration = "Claude Agent SDK";
+    authenticated = claudeAuthStatus().authenticated;
+    adapter = new ClaudeCodeHarness({ store });
+  } else throw new Error(`Harness non pris en charge: ${harnessId}`);
+  const capabilities = await adapter.capabilities();
+  let status = authenticated ? "unavailable" : "disconnected";
+  let available = false;
+  try {
+    if (authenticated) {
+      await adapter.initialize();
+      status = "connected";
+      available = true;
+    }
+  } catch {
+    status = "unavailable";
+  } finally {
+    await adapter.dispose().catch(() => {});
+  }
+  return store.saveHarnessRegistry({
+    id: adapter.id,
+    name: adapter.name,
+    providerId,
+    integration,
+    status,
+    available,
+    capabilities,
+  });
+}
+
 async function prepareAutoCandidate(decision, conversation) {
   const failures = [];
   const checkedHarnesses = new Set();
@@ -459,6 +514,7 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
     throw new Error(
       "Usage: omni swap --conversation ID --harness claude|codex [--model MODEL]",
     );
+  assertHarnessEnabled(harnessId === "claude" ? "claude-code" : "codex");
   const conversation = store.conversation(conversationId);
   const project = store.project(conversation.projectId);
   const rl = createInterface({
@@ -473,6 +529,7 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
         ? conversation.modelId
         : "claude"
       : "codex");
+  assertManualSelectionEnabled(model, harnessId);
   const requestPermission = permissionPrompt(rl, harnessId);
   const adapter =
     harnessId === "claude"
@@ -826,6 +883,31 @@ try {
       args[0] === "enable",
     );
     print(result);
+  } else if (command === "harnesses" && args[0] === "list") {
+    const result = store.harnessRegistry();
+    hasFlag("--json")
+      ? print(result)
+      : result.forEach((harness) =>
+          print(
+            `${harness.id}: ${harness.status}, ${harness.enabled ? "activé" : "désactivé"}, ${harness.integration}`,
+          ),
+        );
+  } else if (command === "harnesses" && args[0] === "refresh") {
+    const requested = option("--harness");
+    const harnesses = requested ? [requested] : ["codex", "claude-code"];
+    const results = await Promise.all(harnesses.map(refreshHarness));
+    hasFlag("--json")
+      ? print(results)
+      : results.forEach((harness) =>
+          print(
+            `${harness.id}: ${harness.status}, ${harness.available ? "disponible" : "indisponible"}`,
+          ),
+        );
+  } else if (
+    command === "harnesses" &&
+    ["enable", "disable"].includes(args[0])
+  ) {
+    print(store.setHarnessEnabled(option("--harness"), args[0] === "enable"));
   } else if (command === "project" && args[0] === "create") {
     const name = option("--name");
     if (!name) throw new Error("--name est requis");
@@ -945,7 +1027,11 @@ try {
             ? `codex:${selected.modelId}`
             : selected.modelId;
     }
-    if (!autoMode) assertManualSelectionEnabled(model, harness);
+    if (!autoMode) {
+      assertManualSelectionEnabled(model, harness);
+      if (harness)
+        assertHarnessEnabled(harness === "claude" ? "claude-code" : "codex");
+    }
     if (conversation) {
       conversation = store.setModel(conversation.id, model);
     } else {

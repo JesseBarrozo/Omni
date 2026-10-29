@@ -152,6 +152,59 @@ test("CLI lists providers and persists global and Auto model activation", () => 
   }
 });
 
+test("CLI registry blocks disabled harnesses for run and harness swap", () => {
+  const dir = mkdtempSync(join(tmpdir(), "omni-harness-cli-"));
+  const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+  const run = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { env, encoding: "utf8" });
+  try {
+    const store = new ChatStore(join(dir, "data", "omni.sqlite"));
+    const project = store.createProject("harness-disabled", dir);
+    store.saveHarnessRegistry({
+      id: "codex",
+      name: "Codex app-server",
+      providerId: "codex",
+      integration: "Codex app-server JSON-RPC",
+      status: "connected",
+      available: true,
+      capabilities: { tools: true, streaming: true, checkpoint: true },
+    });
+    store.setHarnessEnabled("codex", false);
+    const conversation = store.createConversation(
+      project.id,
+      "existing",
+      "codex",
+    );
+    store.close();
+    const listed = run("harnesses", "list", "--json");
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.equal(JSON.parse(listed.stdout)[0].enabled, false);
+    const task = run(
+      "run",
+      "--project",
+      dir,
+      "--harness",
+      "codex",
+      "--model",
+      "codex",
+      "Do nothing",
+    );
+    assert.notEqual(task.status, 0);
+    assert.match(task.stderr, /Harness désactivé: codex/);
+    const swap = run(
+      "swap",
+      "--conversation",
+      conversation.id,
+      "--harness",
+      "codex",
+    );
+    assert.notEqual(swap.status, 0);
+    assert.match(swap.stderr, /Harness désactivé: codex/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test(
   "real provider registry refreshes OAuth catalogs and Auto excludes a disabled model",
   { skip: process.env.OMNI_LIVE_PROVIDER_REGISTRY_TESTS !== "1" },
@@ -211,6 +264,67 @@ test(
       assert.notEqual(attempted.status, 0);
       assert.match(
         attempted.stderr,
+        /No compatible enabled model\/harness candidate/,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "real harness registry initializes OAuth harnesses without running a task and Auto excludes a disabled harness",
+  { skip: process.env.OMNI_LIVE_HARNESS_REGISTRY_TESTS !== "1" },
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "omni-live-harness-cli-"));
+    const env = { ...process.env, OMNI_DATA_DIR: join(dir, "data") };
+    const run = (args, overrides = {}) =>
+      spawnSync(process.execPath, [cli, ...args], {
+        env: { ...env, ...overrides },
+        encoding: "utf8",
+      });
+    try {
+      const refreshedProviders = run(["providers", "refresh", "--json"]);
+      assert.equal(refreshedProviders.status, 0, refreshedProviders.stderr);
+      const refreshed = run(["harnesses", "refresh", "--json"]);
+      assert.equal(refreshed.status, 0, refreshed.stderr);
+      const harnesses = JSON.parse(refreshed.stdout);
+      for (const id of ["codex", "claude-code"]) {
+        const harness = harnesses.find((entry) => entry.id === id);
+        assert.ok(harness, `${id} should be registered from its real adapter`);
+        assert.equal(harness.status, "connected");
+        assert.equal(harness.available, true);
+        assert.equal(harness.capabilities.streaming, true);
+        assert.equal(harness.capabilities.permissions, true);
+      }
+      const codexModels = run(["models", "list", "--provider", "codex"]);
+      assert.equal(codexModels.status, 0, codexModels.stderr);
+      const model = codexModels.stdout.trim().split("\n")[0];
+      const disabled = run(["harnesses", "disable", "--harness", "codex"]);
+      assert.equal(disabled.status, 0, disabled.stderr);
+      const projectPath = join(dir, "project");
+      const project = run([
+        "project",
+        "create",
+        "--name",
+        "harness-live",
+        "--path",
+        projectPath,
+      ]);
+      assert.equal(project.status, 0, project.stderr);
+      const routed = run(
+        [
+          "run",
+          "--project",
+          projectPath,
+          "--auto",
+          "Write a file in this project.",
+        ],
+        { OMNI_AUTO_MODELS: `codex:${model}` },
+      );
+      assert.notEqual(routed.status, 0);
+      assert.match(
+        routed.stderr,
         /No compatible enabled model\/harness candidate/,
       );
     } finally {
