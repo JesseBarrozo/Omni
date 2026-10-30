@@ -1,8 +1,345 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generator": "tools/atlas/generate.mjs",
-  "digest": "e3b0c44298fc1c14",
+  "digest": "07c27f0e1903d0f4",
+  "stack": [
+    "node"
+  ],
+  "sourceFiles": 83,
+  "manifests": [
+    {
+      "path": "package.json",
+      "kind": "node"
+    },
+    {
+      "path": "web/package.json",
+      "kind": "node"
+    }
+  ],
+  "entryPoints": [
+    {
+      "path": "bin/omni.mjs",
+      "kind": "bin",
+      "declaredIn": "package.json",
+      "line": 7
+    },
+    {
+      "path": "web/src/main.tsx",
+      "kind": "module",
+      "declaredIn": "web/src/main.tsx",
+      "line": 1
+    }
+  ],
+  "scripts": [
+    {
+      "name": "test",
+      "command": "node --test",
+      "file": "package.json",
+      "line": 28
+    },
+    {
+      "name": "start",
+      "command": "node ./bin/omni.mjs",
+      "file": "package.json",
+      "line": 29
+    },
+    {
+      "name": "check",
+      "command": "node --check src/cli-output.mjs && node --check src/core.mjs && node --check src/adapters.mjs && node --check src/chat-store.mjs && node --check src/openai-chat.mjs && node --check src/openai-auth.mjs && node --check src/openrouter-chat.mjs && node --check src/codex-chat.mjs && node --check src/claude-code.mjs && node --check src/harness-swap.mjs && node --check src/chat-runner.mjs && node --check src/anthropic-api.mjs && node --check src/gemini-api.mjs && node --check src/opencode-harness.mjs && node --check src/eve-harness.mjs && node --check src/antigravity-cli.mjs && node --check src/secret-store.mjs && node --check src/api-key-profiles.mjs && node --check src/oauth-profiles.mjs && node --check src/mcp-registry.mjs && node --check src/terminal-logo.mjs && node --check src/terminal-ui.mjs && node --check src/index.mjs && node --check bin/omni.mjs && node --check src/project-context.mjs && node --check src/agent-workspace.mjs && node --check src/agent-terminal.mjs && node --check src/workspace-server.mjs && node --check scripts/artifacts.mjs && node --check scripts/atlas.mjs && npm run artifacts:check",
+      "file": "package.json",
+      "line": 30
+    },
+    {
+      "name": "build",
+      "command": "esbuild bin/omni.mjs --bundle --platform=node --format=esm --packages=external --outfile=dist/omni.mjs",
+      "file": "package.json",
+      "line": 31
+    },
+    {
+      "name": "lint",
+      "command": "eslint bin/omni.mjs src/core.mjs src/adapters.mjs src/chat-store.mjs src/openai-chat.mjs src/openai-auth.mjs src/openrouter-chat.mjs src/codex-chat.mjs src/claude-code.mjs src/harness-swap.mjs src/chat-runner.mjs src/anthropic-api.mjs src/gemini-api.mjs src/opencode-harness.mjs src/antigravity-cli.mjs src/secret-store.mjs src/api-key-profiles.mjs src/oauth-profiles.mjs src/mcp-registry.mjs test/api-key-profiles.test.mjs test/oauth-profiles.test.mjs test/secret-store.test.mjs test/antigravity-cli.test.mjs test/chat.test.mjs test/cli-output.test.mjs test/cli.test.mjs test/openai-auth.test.mjs test/openai-oauth-live.test.mjs test/codex.test.mjs test/codex-harness.test.mjs test/claude.test.mjs test/harness-swap.test.mjs test/auto-router.test.mjs test/mcp.test.mjs test/openrouter-chat.test.mjs test/anthropic-api.test.mjs test/gemini-api.test.mjs test/opencode-harness.test.mjs test/core.test.mjs test/package-surface.test.mjs test-fixtures/mock-harness-adapter.mjs src/terminal-logo.mjs src/terminal-ui.mjs test/terminal-ui.test.mjs src/project-context.mjs src/agent-workspace.mjs src/agent-terminal.mjs src/workspace-server.mjs test/agent-workspace.test.mjs test/browser-pane.test.mjs scripts/verify-workspace-ui.mjs",
+      "file": "package.json",
+      "line": 32
+    },
+    {
+      "name": "format:check",
+      "command": "prettier --check bin/omni.mjs src/core.mjs src/adapters.mjs src/chat-store.mjs src/openai-chat.mjs src/openai-auth.mjs src/openrouter-chat.mjs src/codex-chat.mjs src/claude-code.mjs src/harness-swap.mjs src/chat-runner.mjs src/anthropic-api.mjs src/gemini-api.mjs src/opencode-harness.mjs src/antigravity-cli.mjs src/secret-store.mjs src/api-key-profiles.mjs src/oauth-profiles.mjs src/mcp-registry.mjs test/api-key-profiles.test.mjs test/oauth-profiles.test.mjs test/secret-store.test.mjs test/antigravity-cli.test.mjs test/chat.test.mjs test/cli-output.test.mjs test/cli.test.mjs test/openai-auth.test.mjs test/openai-oauth-live.test.mjs test/codex.test.mjs test/codex-harness.test.mjs test/claude.test.mjs test/harness-swap.test.mjs test/auto-router.test.mjs test/mcp.test.mjs test/openrouter-chat.test.mjs test/anthropic-api.test.mjs test/gemini-api.test.mjs test/opencode-harness.test.mjs test/core.test.mjs test/package-surface.test.mjs test-fixtures/mock-harness-adapter.mjs src/terminal-logo.mjs src/terminal-ui.mjs test/terminal-ui.test.mjs src/project-context.mjs src/agent-workspace.mjs src/agent-terminal.mjs src/workspace-server.mjs test/agent-workspace.test.mjs test/browser-pane.test.mjs scripts/verify-workspace-ui.mjs",
+      "file": "package.json",
+      "line": 33
+    },
+    {
+      "name": "format",
+      "command": "prettier --write bin/omni.mjs src/core.mjs src/adapters.mjs src/chat-store.mjs src/openai-chat.mjs src/openai-auth.mjs src/openrouter-chat.mjs src/codex-chat.mjs src/claude-code.mjs src/harness-swap.mjs src/chat-runner.mjs src/anthropic-api.mjs src/gemini-api.mjs src/opencode-harness.mjs src/antigravity-cli.mjs src/secret-store.mjs src/api-key-profiles.mjs src/oauth-profiles.mjs src/mcp-registry.mjs test/api-key-profiles.test.mjs test/oauth-profiles.test.mjs test/secret-store.test.mjs test/antigravity-cli.test.mjs test/chat.test.mjs test/cli-output.test.mjs test/cli.test.mjs test/openai-auth.test.mjs test/openai-oauth-live.test.mjs test/codex.test.mjs test/codex-harness.test.mjs test/claude.test.mjs test/harness-swap.test.mjs test/auto-router.test.mjs test/mcp.test.mjs test/openrouter-chat.test.mjs test/anthropic-api.test.mjs test/gemini-api.test.mjs test/opencode-harness.test.mjs test/core.test.mjs test/package-surface.test.mjs test-fixtures/mock-harness-adapter.mjs src/terminal-logo.mjs src/terminal-ui.mjs test/terminal-ui.test.mjs src/project-context.mjs src/agent-workspace.mjs src/agent-terminal.mjs src/workspace-server.mjs test/agent-workspace.test.mjs test/browser-pane.test.mjs scripts/verify-workspace-ui.mjs",
+      "file": "package.json",
+      "line": 34
+    },
+    {
+      "name": "gui:install",
+      "command": "npm install --prefix web",
+      "file": "package.json",
+      "line": 35
+    },
+    {
+      "name": "gui:build",
+      "command": "npm run build --prefix web",
+      "file": "package.json",
+      "line": 36
+    },
+    {
+      "name": "gui",
+      "command": "node bin/omni.mjs gui",
+      "file": "package.json",
+      "line": 37
+    },
+    {
+      "name": "gui:verify",
+      "command": "node scripts/verify-workspace-ui.mjs",
+      "file": "package.json",
+      "line": 38
+    },
+    {
+      "name": "build:all",
+      "command": "npm run build && npm run gui:build",
+      "file": "package.json",
+      "line": 39
+    },
+    {
+      "name": "artifacts",
+      "command": "node scripts/artifacts.mjs",
+      "file": "package.json",
+      "line": 40
+    },
+    {
+      "name": "artifacts:check",
+      "command": "node scripts/artifacts.mjs check",
+      "file": "package.json",
+      "line": 41
+    },
+    {
+      "name": "atlas:generate",
+      "command": "node scripts/atlas.mjs generate",
+      "file": "package.json",
+      "line": 42
+    },
+    {
+      "name": "atlas:check",
+      "command": "node scripts/atlas.mjs check",
+      "file": "package.json",
+      "line": 43
+    },
+    {
+      "name": "dev",
+      "command": "vite --host 127.0.0.1",
+      "file": "web/package.json",
+      "line": 6
+    },
+    {
+      "name": "build",
+      "command": "tsc --noEmit && vite build",
+      "file": "web/package.json",
+      "line": 7
+    },
+    {
+      "name": "preview",
+      "command": "vite preview --host 127.0.0.1",
+      "file": "web/package.json",
+      "line": 8
+    }
+  ],
+  "documents": [
+    {
+      "path": ".context/agents/README.md",
+      "title": "Agent Handbook",
+      "line": 1
+    },
+    {
+      "path": ".context/artifacts/README.md",
+      "title": "Artefacts partagés",
+      "line": 1
+    },
+    {
+      "path": ".context/docs/README.md",
+      "title": "Omni Documentation Index",
+      "line": 1
+    },
+    {
+      "path": ".context/plans/README.md",
+      "title": "Collaboration Plans",
+      "line": 1
+    },
+    {
+      "path": ".context/plans/claude-mcp-harness.md",
+      "title": "Claude harness MCP integration Plan",
+      "line": 102
+    },
+    {
+      "path": ".context/skills/README.md",
+      "title": "Skills",
+      "line": 1
+    },
+    {
+      "path": "AGENTS.md",
+      "title": "Instructions de travail Omni",
+      "line": 1
+    },
+    {
+      "path": "CHANGELOG.md",
+      "title": "Changelog",
+      "line": 1
+    },
+    {
+      "path": "README.md",
+      "title": "Omni",
+      "line": 1
+    },
+    {
+      "path": "VERIFICATION.md",
+      "title": "Vérification et tests à refaire",
+      "line": 44
+    },
+    {
+      "path": "WORKSPACE.md",
+      "title": "Omni Workspace",
+      "line": 1
+    }
+  ],
+  "env": [],
+  "externalHosts": [
+    {
+      "host": "github.com",
+      "file": "scripts/verify-editor-ui.mjs",
+      "line": 67
+    },
+    {
+      "host": "auth.openai.com",
+      "file": "src/openai-auth.mjs",
+      "line": 24
+    },
+    {
+      "host": "api.openai.com",
+      "file": "src/openai-auth.mjs",
+      "line": 25
+    },
+    {
+      "host": "api.openai.com",
+      "file": "src/openai-chat.mjs",
+      "line": 24
+    },
+    {
+      "host": "openrouter.ai",
+      "file": "src/openrouter-chat.mjs",
+      "line": 6
+    },
+    {
+      "host": "github.com",
+      "file": "src/workspace-server.mjs",
+      "line": 1405
+    },
+    {
+      "host": "www.w3.org",
+      "file": "web/src/components/agent-icons.tsx",
+      "line": 11
+    },
+    {
+      "host": "www.w3.org",
+      "file": "web/src/components/agent-icons.tsx",
+      "line": 27
+    },
+    {
+      "host": "www.w3.org",
+      "file": "web/src/components/agent-icons.tsx",
+      "line": 267
+    },
+    {
+      "host": "www.w3.org",
+      "file": "web/src/components/agent-icons.tsx",
+      "line": 297
+    },
+    {
+      "host": "duckduckgo.com",
+      "file": "web/src/components/browser-pane.tsx",
+      "line": 61
+    },
+    {
+      "host": "github.com",
+      "file": "web/src/components/browser-pane.tsx",
+      "line": 107
+    },
+    {
+      "host": "developer.mozilla.org",
+      "file": "web/src/components/browser-pane.tsx",
+      "line": 113
+    },
+    {
+      "host": "tailwindcss.com",
+      "file": "web/src/components/browser-pane.tsx",
+      "line": 119
+    },
+    {
+      "host": "cloud.google.com",
+      "file": "web/src/components/browser-pane.tsx",
+      "line": 125
+    }
+  ],
+  "outboundCalls": [
+    {
+      "file": "bin/omni.mjs",
+      "line": 1765
+    },
+    {
+      "file": "src/openai-auth.mjs",
+      "line": 372
+    },
+    {
+      "file": "src/openai-auth.mjs",
+      "line": 539
+    },
+    {
+      "file": "src/openai-auth.mjs",
+      "line": 619
+    },
+    {
+      "file": "src/openai-chat.mjs",
+      "line": 24
+    },
+    {
+      "file": "src/workspace-server.mjs",
+      "line": 267
+    },
+    {
+      "file": "web/src/components/terminal-pane.tsx",
+      "line": 105
+    },
+    {
+      "file": "web/src/lib/api.ts",
+      "line": 70
+    }
+  ],
+  "tests": {
+    "count": 29,
+    "sample": [
+      "test/agent-workspace.test.mjs",
+      "test/anthropic-api.test.mjs",
+      "test/antigravity-cli.test.mjs",
+      "test/api-key-profiles.test.mjs",
+      "test/artifact-preview.test.mjs",
+      "test/artifacts.test.mjs",
+      "test/atlas-service.test.mjs",
+      "test/atlas.test.mjs",
+      "test/auto-router.test.mjs",
+      "test/browser-pane.test.mjs",
+      "test/chat.test.mjs",
+      "test/claude.test.mjs",
+      "test/cli-output.test.mjs",
+      "test/cli.test.mjs",
+      "test/codex-harness.test.mjs",
+      "test/codex.test.mjs",
+      "test/core.test.mjs",
+      "test/eve-harness.test.mjs",
+      "test/gemini-api.test.mjs",
+      "test/harness-swap.test.mjs"
+    ]
+  },
   "capabilities": [],
-  "tables": [],
-  "config": []
+  "tables": []
 }
