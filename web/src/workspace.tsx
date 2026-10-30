@@ -168,6 +168,12 @@ type AtlasStatus = {
   present: boolean;
   path: string;
   digest?: string;
+  stack?: string[];
+  sourceFiles?: number;
+  entryPoints?: number;
+  scripts?: number;
+  documents?: number;
+  externalHosts?: number;
   capabilities?: number;
   tables?: number;
 };
@@ -2695,7 +2701,9 @@ export function App() {
                     <div>
                       <strong>atlas/</strong>
                       <span>
-                        {atlas.capabilities} capacités · {atlas.tables} tables
+                        {(atlas.stack ?? []).join(" · ") || "stack non détectée"} ·{" "}
+                        {atlas.sourceFiles} fichiers · {atlas.entryPoints} points
+                        d'entrée · {atlas.scripts} scripts
                       </span>
                     </div>
                     <Check />
