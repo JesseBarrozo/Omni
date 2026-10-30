@@ -31,3 +31,11 @@ Les scripts `build`, `lint`, `format` et `format:check` sont déclarés dans le 
 - `web/` — interface React/Vite, composants shadcn/Radix et réutilisation Orca MIT.
 - `test/` — tests de contrats et d’intégration locale ; validations live opt-in documentées dans `WORKSPACE.md` et `VERIFICATION.md`.
 - `Omni_PRD.md`, `AUDIT.md`, `CHANGELOG.md` — exigences, état observé et historique des phases.
+
+## Contexte partagé du harness
+
+Ce dépôt est le harness. Le projet cartographié par défaut est le dépôt voisin `second-brain-1.4.0` ; `ATLAS_PROJECT` en change la cible.
+
+- `scripts/atlas.mjs` génère l'atlas du projet (`atlas/` dans ce projet). Chaque fait cite `chemin:ligne`. Lire `atlas/README.md` du projet avant de nommer un fichier, une capacité, une table ou une variable d'environnement, et ouvrir la ligne citée pour confirmer. Régénérer avec `npm run atlas:generate` après un changement de capacités, de schéma, de configuration ou d'hôtes sortants.
+- `.context/artifacts/` contient les plans et rapports partagés entre agents. Les ajouter avec `npm run artifacts -- add …` (voir `.context/artifacts/README.md`), jamais en copiant les fichiers à la main.
+- `npm run check` vérifie les deux outils : `artifacts:check` et `atlas:check`. `atlas:check` échoue si le dépôt voisin est absent.

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "artifacts": [
+    {
+      "id": "harness-improvement-plan",
+      "title": "Harness improvement plan",
+      "kind": "plan",
+      "description": "Plan for improving the agent harness: provider-neutral, phased, with the decisions taken and the Invokta removal.",
+      "file": "harness-improvement-plan.html",
+      "sha256": "00e836ed7e8f077f22e7848ee34d13f6bc305e941e18a03c04193858de7d7cc2",
+      "bytes": 29368,
+      "author": "claude-code",
+      "sourceUrl": "https://claude.ai/artifact/MMrrShZRjPxZV9cRyjekpV",
+      "createdAt": "2026-10-30T18:31:59.514Z",
+      "updatedAt": "2026-10-30T18:31:59.514Z"
+    }
+  ]
+}

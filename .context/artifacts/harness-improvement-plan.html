@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Plan d'amélioration du harness</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: single reading column, findings first, plan by phase, decisions last. */
+:root {
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --fg: #1d1f24;
+  --muted: #5b616b;
+  --line: #d9d7cf;
+  --accent: #2f5d50;
+  --warn: #9a5b12;
+  --code-bg: #ecebe5;
+  --font-display: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171b;
+    --surface: #1d2025;
+    --fg: #e6e4dd;
+    --muted: #9ea4ad;
+    --line: #353a42;
+    --accent: #8cc7b5;
+    --warn: #e0a95c;
+    --code-bg: #262a31;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171b;
+  --surface: #1d2025;
+  --fg: #e6e4dd;
+  --muted: #9ea4ad;
+  --line: #353a42;
+  --accent: #8cc7b5;
+  --warn: #e0a95c;
+  --code-bg: #262a31;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.2; margin: 0 0 12px; }
+h1 { font-size: 2rem; }
+h2 { font-size: 1.4rem; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.1rem; font-family: var(--font-body); font-weight: 650; }
+p, li { font-size: 0.97rem; }
+p { margin: 0 0 12px; max-width: 65ch; }
+.meta { color: var(--muted); font-size: 0.85rem; letter-spacing: 0.02em; }
+.summary { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 18px 20px; }
+.summary ul { margin: 8px 0 0; padding-left: 18px; }
+.summary li + li { margin-top: 6px; }
+code { font-family: var(--font-mono); font-size: 0.85em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th, td { text-align: left; padding: 10px 12px; vertical-align: top; border-bottom: 1px solid var(--line); }
+th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+.phase { display: flex; flex-direction: column; gap: 10px; }
+.phase-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; }
+.tag { font-size: 0.75rem; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 1px 9px; white-space: nowrap; }
+.tag.warn { color: var(--warn); border-color: var(--warn); }
+ol.steps, ul.steps { padding-left: 20px; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+pre { background: var(--code-bg); border-radius: 6px; padding: 12px 14px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; margin: 0; }
+.decisions li { margin-bottom: 8px; }
+@media (prefers-reduced-motion: no-preference) { main > section { animation: none; } }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <p class="meta">Written for: l'équipe Second Brain (développeurs qui utilisent Claude Code et Codex sur ce dépôt). Projet analysé : second-brain-1.4.0.</p>
+  <h1>Plan d'amélioration du harness</h1>
+  <p>Le « harness » ici désigne tout ce qui cadre l'agent IA sur ce dépôt : instructions (<code>AGENTS.md</code>/<code>CLAUDE.md</code>), skills, configuration MCP, permissions, hooks, sous-agents, et les contrôles qui valident un changement.</p>
+</header>
+
+<section class="summary">
+  <p><strong>Périmètre révisé.</strong> Ce dépôt sert de base de départ et n'est pas utilisable en l'état. Le projet ne fera aucun appel à Hostinger ni à Invokta.</p>
+  <p><strong>Résumé.</strong> Le socle est bon : une seule source d'instructions, des règles d'architecture précises et une CI qui exécute typecheck, tests et build. Les faiblesses se trouvent surtout côté Claude Code et côté application des règles. Les règles d'<code>AGENTS.md</code> ne sont pas imposées par la configuration. Rien n'empêche une session de finir sans <code>npm run check</code>. Le skill de développement n'est pas dans l'emplacement que Claude Code lit. Enfin, un serveur MCP est lancé sans version épinglée.</p>
+  <ul>
+    <li>Aucun <code>.claude/</code> partagé : pas de <code>settings.json</code>, pas de permissions, pas de hooks, pas de sous-agents.</li>
+    <li>Le skill <code>develop-invokta-project</code> vit dans <code>.agents/skills/</code> (format Codex). Claude Code ne le découvre pas.</li>
+    <li>Un MCP <code>hostinger-vps</code> est configuré, et le framework <code>@invokta/*</code> est au cœur de l'engine. Décidé : Hostinger est retiré, Invokta sera retiré (phase R).</li>
+    <li>Le dépôt n'est pas un dépôt git dans ce dossier, et <code>node_modules</code> est absent : aucune vérification locale n'est possible sans installation.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>1. Constats</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Constat</th><th>Preuve dans le dépôt</th><th>Risque</th><th>Gravité</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Règles non imposées</td>
+          <td><code>AGENTS.md</code> demande <code>npm run check</code> avant de finir et RED/GREEN/REFACTOR. Aucun hook ne l'exécute.</td>
+          <td>Un changement peut être livré non vérifié.</td>
+          <td><span class="tag warn">Élevée</span></td>
+        </tr>
+        <tr>
+          <td>MCP Hostinger hors périmètre</td>
+          <td><code>.mcp.json</code> et <code>.codex/config.toml</code> : <code>hostinger-api-mcp@latest</code>, lancé avec <code>--yes</code>.</td>
+          <td>Code tiers non épinglé, avec un jeton VPS. Le projet ne doit pas appeler Hostinger.</td>
+          <td><span class="tag warn">Élevée</span></td>
+        </tr>
+        <tr>
+          <td>Skill invisible pour Claude Code</td>
+          <td>Seul <code>.agents/skills/develop-invokta-project/</code> existe. Aucun <code>.claude/skills/</code>.</td>
+          <td>Le workflow d'architecture n'est pas chargé dans la session Claude.</td>
+          <td><span class="tag">Moyenne</span></td>
+        </tr>
+        <tr>
+          <td>Framework Invokta couplé</td>
+          <td><code>@invokta/core</code> et <code>@invokta/mcp</code> sont importés par <code>engine.ts</code>, <code>mcp-http.ts</code>, <code>http-auth.ts</code> et des tests. Le CLI <code>invokta-deploy</code> génère <code>deploy/healthcheck.mjs</code>.</td>
+          <td>Dépendance à un outil externe dans le chemin d'exécution. Retrait décidé : phase R.</td>
+          <td><span class="tag warn">Élevée</span></td>
+        </tr>
+        <tr>
+          <td>Appels sortants</td>
+          <td>OpenRouter (<code>openrouter-provider.ts</code>, <code>model-configuration.ts</code>), Slack et Telegram (<code>notification-provider.ts</code>), publication de release (<code>apps/server/src/release/publisher.ts</code>).</td>
+          <td>Données envoyées à des tiers. Les API des fournisseurs LLM sont autorisées ; Slack, Telegram et la publication de release restent à confirmer.</td>
+          <td><span class="tag warn">Élevée</span></td>
+        </tr>
+        <tr>
+          <td>Aucun réglage partagé</td>
+          <td><code>.gitignore</code> exclut <code>.claude/settings.local.json</code>, mais aucun <code>settings.json</code> partagé n'existe.</td>
+          <td>Chaque développeur reconfigure permissions et garde-fous. Les prompts de permission deviennent bruyants.</td>
+          <td><span class="tag">Moyenne</span></td>
+        </tr>
+        <tr>
+          <td>Zones sensibles sans garde-fou</td>
+          <td><code>apps/engine/src/http-auth.ts</code> doit rester fail-closed. Les règles sont écrites en prose seulement.</td>
+          <td>Une modification accidentelle peut ouvrir l'authentification.</td>
+          <td><span class="tag">Moyenne</span></td>
+        </tr>
+        <tr>
+          <td>Environnement non prêt</td>
+          <td><code>node_modules</code> absent. Pas de <code>.git</code> dans ce dossier. <code>.DS_Store</code> présent et non ignoré.</td>
+          <td>L'agent ne peut pas exécuter <code>npm run check</code> sans étapes manuelles. Fichiers parasites dans les commits.</td>
+          <td><span class="tag">Faible</span></td>
+        </tr>
+        <tr>
+          <td>Nommage hérité</td>
+          <td>Le skill et <code>openai.yaml</code> parlent d'« Invokta Action Engine ». Le produit s'appelle Second Brain. Les paquets <code>@invokta/*</code> sont des dépendances externes légitimes.</td>
+          <td>Confusion pour l'agent sur le nom du projet.</td>
+          <td><span class="tag">Faible</span></td>
+        </tr>
+        <tr>
+          <td>Pas de sous-agents spécialisés</td>
+          <td>Plusieurs règles sont vérifiables mécaniquement : parité des catalogues i18n, parité des titres <code>docs/*.pt-BR.md</code>, surface des capacités.</td>
+          <td>Contrôles manuels, oubliés en revue.</td>
+          <td><span class="tag">Faible</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="meta" style="margin-top:12px">Points forts à conserver : <code>CLAUDE.md</code> est un lien symbolique vers <code>AGENTS.md</code> (une seule source). La CI tourne sur GitHub avec un job PostgreSQL. Les tests d'architecture existent déjà (<code>engine-boundary.test.ts</code>, <code>no-legacy.test.ts</code>, <code>monorepo-layout.test.ts</code>).</p>
+</section>
+
+<section>
+  <h2>2. Plan d'implémentation</h2>
+  <p>Phases 0 à 4, plus la phase R (retrait d'Invokta). Chaque phase est indépendante et réversible, sauf indication contraire.</p>
+
+  <div class="phase">
+    <div class="phase-head"><h3>Phase 0 : Base vérifiable</h3><span class="tag">~30 min</span></div>
+    <ol class="steps">
+      <li>Exécuter <code>npm ci</code> puis <code>npm run check</code> à la racine. Noter l'état de référence (vert ou non) avant toute modification.</li>
+      <li>Auditer les appels sortants : recenser les <code>fetch</code> et les hôtes dans <code>apps/</code>, puis documenter la liste blanche. Les API des fournisseurs LLM sont autorisées ; les autres hôtes sont à confirmer. Ce dépôt de base n'est pas la cible : on part de son code pour le nôtre.</li>
+      <li>Ajouter <code>.DS_Store</code> à <code>.gitignore</code> et retirer le fichier du suivi s'il est versionné.</li>
+      <li>Documenter dans <code>AGENTS.md</code> les commandes par workspace et le prérequis Docker pour <code>test:postgres</code>.</li>
+    </ol>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><h3>Phase 1 : Sécurité et configuration partagée</h3><span class="tag">~2 h</span></div>
+    <ol class="steps">
+      <li>Supprimer l'entrée <code>hostinger-vps</code> de <code>.mcp.json</code> et de <code>.codex/config.toml</code>. Supprimer <code>.mcp.json</code> s'il ne contient plus rien.</li>
+      <li>Créer <code>.claude/settings.json</code> (versionné) avec des permissions minimales : autoriser les scripts de lecture et de test (<code>npm run typecheck</code>, <code>npm test</code>, <code>npm run check</code>) ; demander confirmation pour <code>git push</code>, <code>rm -rf</code> et les commandes <code>npm publish</code> ; interdire la lecture de <code>.env*</code>.</li>
+      <li>Déplacer tout réglage personnel vers <code>.claude/settings.local.json</code>, déjà ignoré par Git.</li>
+    </ol>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><h3>Phase 2 : Un seul emplacement pour les skills</h3><span class="tag">~1 h</span></div>
+    <ol class="steps">
+      <li>Garder <code>.agents/skills/</code> comme source canonique, puisque Codex le lit déjà.</li>
+      <li>Exposer le même contenu à Claude Code via un lien symbolique <code>.claude/skills → ../.agents/skills</code>. Vérifier que Claude Code le détecte dans une session neuve.</li>
+      <li>Corriger la description du skill et <code>openai.yaml</code> pour désigner notre projet, et non « Invokta » ni « Second Brain ».</li>
+      <li>Ajouter un skill <code>second-brain-mcp</code> côté dépôt si le contenu de <code>apps/admin/src/content/agent-resources/</code> doit aussi guider les agents qui travaillent sur le code.</li>
+    </ol>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><h3>Phase 3 : Faire appliquer les règles</h3><span class="tag">~half-day</span></div>
+    <ol class="steps">
+      <li><strong>Hook <code>Stop</code></strong> : si des fichiers ont été modifiés pendant la session, lancer le typecheck du workspace touché et bloquer la fin tant qu'il échoue. Garder un garde <code>stop_hook_active</code> pour éviter les boucles.</li>
+      <li><strong>Hook <code>PreToolUse</code></strong> sur <code>Edit|Write</code> : demander confirmation pour <code>apps/engine/src/http-auth.ts</code>, <code>direct.ts</code> et <code>mcp-http.ts</code>, les trois fichiers protégés par <code>AGENTS.md</code>.</li>
+      <li><strong>Hook <code>SessionStart</code></strong> : si <code>node_modules</code> est absent, lancer <code>npm ci</code> et l'annoncer dans le contexte.</li>
+      <li>Transformer en tests les règles mécaniques : parité des clés <code>en.ts</code> / <code>pt-BR.ts</code> / <code>es.ts</code> (déjà couvert par le type <code>Catalog</code>, à confirmer), et parité des titres entre <code>docs/*.md</code> et <code>docs/*.pt-BR.md</code>.</li>
+    </ol>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><h3>Phase 4 : Sous-agents de revue</h3><span class="tag">~2 h</span></div>
+    <ol class="steps">
+      <li><code>.claude/agents/contract-reviewer.md</code> : vérifie les identifiants de capacités, schémas, accès et annotations contre le snapshot de la phase R, en lecture seule.</li>
+      <li><code>.claude/agents/i18n-reviewer.md</code> : repère le copy en dur dans les composants de <code>apps/admin/</code>, en lecture seule.</li>
+      <li><code>.claude/agents/docs-sync.md</code> : signale les documents en anglais modifiés sans leur traduction <code>pt-BR</code> dans le même changement.</li>
+    </ol>
+    <p class="meta">Ces sous-agents n'ont que des outils de lecture. Ils ne modifient jamais le code.</p>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><h3>Phase R : Retrait du framework Invokta</h3><span class="tag warn">~1 à 2 jours</span></div>
+    <p class="meta">Décidé. Peut suivre la phase 0. Les phases 3 et 4 et l'atlas s'appuient sur son résultat.</p>
+    <ol class="steps">
+      <li><strong>Inventaire.</strong> Lister chaque import <code>@invokta</code>, chaque test, script et fichier généré. Points connus : <code>engine.ts</code>, <code>mcp-http.ts</code>, <code>http-auth.ts</code>, <code>apps/server/src/services/admin/engine.ts</code>, <code>admin-access.ts</code>, une vingtaine de tests.</li>
+      <li><strong>Figer la référence.</strong> Extraire de <code>invokta.mcp.json</code> un snapshot des 64 capacités : identifiant, schémas d'entrée et de sortie, accès, délai. Ce snapshot devient le contrat de compatibilité, à ne pas modifier pendant le retrait.</li>
+      <li><strong>Tests d'abord (RED).</strong> Un test compare le snapshot au registre. Un second échoue tant que <code>@invokta</code> reste dans <code>apps/*/src</code> ou dans les manifestes.</li>
+      <li><strong>Remplacer le noyau (GREEN).</strong> <code>defineCapability</code> et <code>engine.invoke</code> deviennent des modules du projet, avec les mêmes signatures. Les règles d'<code>AGENTS.md</code> restent : un seul chemin <code>engine.invoke</code>, pas de registre global, pas de chargement dynamique.</li>
+      <li><strong>Transport MCP.</strong> Remplacer le transport d'<code>mcp-http.ts</code> par le SDK MCP officiel, sans logique métier dans le fichier. <code>direct.ts</code> reste une simple entrée.</li>
+      <li><strong>Adapter le serveur.</strong> Porter <code>apps/server/src/services/admin/engine.ts</code> et <code>admin-access.ts</code> sur le nouveau module.</li>
+      <li><strong>Supprimer l'outillage.</strong> Retirer les dépendances <code>@invokta/*</code> de <code>apps/engine/package.json</code> et <code>apps/server/package.json</code>, puis régénérer le lock avec un seul <code>package-lock.json</code>. Supprimer <code>invokta.mcp.json</code>, <code>apps/engine/invokta.deploy.json</code> et <code>deploy/healthcheck.mjs</code>. Retirer les scripts <code>check:mcp</code>, <code>devtools*</code>, <code>deploy:probe</code>. Mettre à jour <code>release-please-config.json</code>, le <code>Dockerfile</code> (copie de <code>invokta.mcp.json</code>) et <code>deploy/DEPLOYMENT.md</code>.</li>
+      <li><strong>Vérifier.</strong> <code>npm run check</code> vert, snapshot inchangé, et <code>grep</code> de <code>@invokta</code> vide, hors <code>CHANGELOG.md</code> et l'historique git.</li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <h2>3. Atlas du projet : un second brain pour les agents</h2>
+  <p>Objectif : donner aux agents une carte vérifiée du dépôt, pour qu'ils trouvent vite le bon fichier et répondent sans inventer de noms, de capacités ni de variables d'environnement. L'atlas est versionné dans le dépôt, généré à partir du code quand c'est possible, et testé contre lui. Il ne remplace pas le second brain produit (le runtime MCP) : c'est une mémoire de développement pour les agents qui modifient ce code.</p>
+
+  <div class="phase">
+    <div class="phase-head"><h3>Principes</h3></div>
+    <ul class="steps">
+      <li><strong>Vérité par le code.</strong> Tout ce qui peut être extrait du code l'est par un générateur : capacités, schémas de données, variables d'environnement, carte des workspaces. Un humain ne recopie rien à la main.</li>
+      <li><strong>Chaque affirmation cite sa source.</strong> Format <code>apps/engine/src/capabilities/tasks.ts:42</code>. Un contrôle vérifie que la référence existe encore.</li>
+      <li><strong>Dire « inconnu » plutôt qu'inventer.</strong> Si un point n'est pas documenté ou pas trouvable dans le code, l'atlas le marque <code>non documenté</code>, et les agents doivent répondre de la même façon.</li>
+      <li><strong>Chargement progressif.</strong> Un point d'entrée court (<code>atlas/README.md</code>) est lu en premier. Les pages détaillées ne sont ouvertes qu'à la demande, pour garder le contexte léger.</li>
+      <li><strong>Neutralité fournisseur.</strong> Aucune page ne cite un modèle, un format de prompt ou une fonctionnalité propre à Anthropic, OpenAI, Google ou un autre fournisseur. Les pages sont du Markdown et du JSON, avec des liens relatifs.</li>
+      <li><strong>Budget de contexte.</strong> Les fenêtres de contexte varient selon les modèles. Le point d'entrée reste court, et chaque page se lit seule, sans import implicite.</li>
+      <li><strong>Anglais.</strong> Selon <code>AGENTS.md</code>, le contenu du projet est en anglais. L'atlas suit cette règle, même si le plan est rédigé en français.</li>
+    </ul>
+  </div>
+
+  <div class="table-wrap" style="margin-top:12px">
+    <table>
+      <thead><tr><th>Fichier</th><th>Contenu</th><th>Origine</th></tr></thead>
+      <tbody>
+        <tr><td><code>atlas/README.md</code></td><td>Point d'entrée : comment naviguer, règles de citation, liste des pages.</td><td>Rédigé à la main, court</td></tr>
+        <tr><td><code>atlas/map.md</code></td><td>Workspaces, points d'entrée (<code>engine.ts</code>, <code>mcp-http.ts</code>, <code>direct.ts</code>), frontières, flux de requête.</td><td>Généré, complété à la main</td></tr>
+        <tr><td><code>atlas/capabilities.md</code></td><td>Les 64 capacités : identifiant, domaine, fichier source, accès, délai.</td><td>Généré depuis <code>apps/engine/src/capabilities/</code> et le snapshot de la phase R</td></tr>
+        <tr><td><code>atlas/data-model.md</code></td><td>Tables, relations, migrations 0000 à 0009.</td><td>Généré depuis le schéma Drizzle</td></tr>
+        <tr><td><code>atlas/config.md</code></td><td>Variables d'environnement, valeurs par défaut, usage.</td><td>Généré depuis <code>.env.example</code> et <code>environment-configuration.ts</code></td></tr>
+        <tr><td><code>atlas/recipes.md</code></td><td>« Pour ajouter une capacité / une migration / une page admin : fichiers à toucher et tests à écrire ».</td><td>Rédigé à la main, chemins validés</td></tr>
+        <tr><td><code>atlas/external-dependencies.md</code></td><td>Liste blanche des appels sortants autorisés. Tout autre hôte est une erreur.</td><td>Généré par audit des <code>fetch</code> et des hôtes</td></tr>
+        <tr><td><code>atlas/glossary.md</code></td><td>Termes du domaine : brain, capability, dreaming, brain pack, ingestion, handoff, embedding space.</td><td>Rédigé à la main, chaque terme sourcé</td></tr>
+        <tr><td><code>atlas/index.json</code></td><td>Index lisible par machine : symbole vers fichier et ligne. Pour la recherche rapide.</td><td>Généré</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="phase" style="margin-top:16px">
+    <div class="phase-head"><h3>Mécanismes anti-hallucination</h3></div>
+    <ol class="steps">
+      <li><strong>Génération reproductible.</strong> <code>tools/atlas/generate.mjs</code> réécrit les pages générées. Une exécution sans changement de code ne doit produire aucun diff.</li>
+      <li><strong>Contrôle de dérive.</strong> <code>npm run atlas:check</code> régénère, compare et échoue si un fichier généré n'est pas commité. Il vérifie aussi que chaque <code>chemin:ligne</code> cité existe, et que la liste des capacités du snapshot égale celle enregistrée dans <code>engine.ts</code>.</li>
+      <li><strong>En-tête de fraîcheur.</strong> Chaque page générée indique le SHA du commit et le hash des sources utilisées.</li>
+      <li><strong>Consigne dans <code>AGENTS.md</code>.</strong> Une ligne : « Avant d'affirmer un nom, une capacité ou une configuration, consulter <code>atlas/README.md</code> ; si l'atlas ne le contient pas, lire le code et signaler le gap. »</li>
+      <li><strong>Adaptateurs optionnels.</strong> Un hook <code>SessionStart</code> (Claude Code), ou l'équivalent d'un autre outil, peut injecter le résumé de <code>atlas/README.md</code>. Ce n'est jamais une condition de correction : sans lui, l'agent lit <code>AGENTS.md</code> puis l'atlas.</li>
+      <li><strong>Mise à jour neutre.</strong> La logique vit dans <code>tools/atlas/</code>, en scripts Node sans appel à un modèle. Un sous-agent <code>atlas-keeper</code> n'est qu'un adaptateur par outil : il appelle ces scripts et écrit dans <code>atlas/</code>.</li>
+    </ol>
+  </div>
+
+  <div class="table-wrap" style="margin-top:16px">
+    <table>
+      <thead><tr><th>Mécanisme</th><th>Approche neutre</th><th>Adaptation par outil</th></tr></thead>
+      <tbody>
+        <tr><td>Pointeur d'instructions</td><td><code>AGENTS.md</code> est le fichier canonique, lu par Codex.</td><td><code>CLAUDE.md</code> et <code>GEMINI.md</code> sont des liens symboliques vers lui. Vérifier le nom lu par chaque outil et sa version.</td></tr>
+        <tr><td>Skills</td><td>Le contenu vit dans <code>atlas/</code> et <code>tools/atlas/</code>, en texte simple.</td><td><code>.agents/skills/</code> et <code>.claude/skills/</code> ne font que pointer vers ce contenu.</td></tr>
+        <tr><td>Hooks</td><td>Aucune correction ne dépend d'un hook.</td><td>Claude Code : <code>SessionStart</code>. Pour les autres outils, aucun équivalent garanti : on se passe du hook.</td></tr>
+        <tr><td>Sous-agents</td><td>Logique dans des scripts, sans modèle.</td><td><code>.claude/agents/</code> pour Claude, équivalents à définir pour les autres outils.</td></tr>
+        <tr><td>Génération</td><td>Déterministe, sans appel LLM : aucun coût ni dépendance fournisseur.</td><td>Aucune.</td></tr>
+        <tr><td>Évaluation (phase E)</td><td>Le même jeu de 20 questions pour tous.</td><td>Lancé avec chaque fournisseur retenu. Dépend de la liste blanche des appels sortants.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="meta" style="margin-top:12px">Le produit passe déjà par OpenRouter, qui route vers plusieurs fournisseurs. Ce chemin est à documenter dans <code>atlas/external-dependencies.md</code>, et ne remplace pas une couverture directe de chaque fournisseur.</p>
+
+  <div class="phase" style="margin-top:16px">
+    <div class="phase-head"><h3>Phases de réalisation</h3></div>
+    <ol class="steps">
+      <li><strong>A. Générateurs</strong> (~1 jour) : capacités, schéma de données, configuration, map. Sortie : pages générées et <code>index.json</code>.</li>
+      <li><strong>B. Pages manuelles</strong> (~half-day) : README, recipes, glossary, chaque affirmation sourcée.</li>
+      <li><strong>C. Contrôles</strong> (~half-day) : <code>atlas:check</code> branché sur <code>npm run check</code> et sur la CI.</li>
+      <li><strong>D. Câblage agent</strong> (~2 h) : ligne dans <code>AGENTS.md</code>, hook <code>SessionStart</code>, sous-agent <code>atlas-keeper</code>.</li>
+      <li><strong>E. Évaluation</strong> (~half-day) : 20 questions avec réponses attendues et sources (« Quelle capacité crée un rappel ? », « Quelle variable active le mode OAuth ? »). Rejouer le même jeu avec chaque fournisseur retenu, et mesurer le taux de réponses inventées avec et sans atlas, avant de considérer l'atlas utile.</li>
+    </ol>
+  </div>
+
+  <p class="meta" style="margin-top:12px">Point à vérifier : le générateur peut s'appuyer sur l'API du compilateur TypeScript. Il faut confirmer qu'elle est disponible dans les workspaces, sinon l'ajouter comme dépendance du workspace concerné.</p>
+</section>
+
+<section>
+  <h2>4. Exemple de configuration</h2>
+  <p>Extrait indicatif de <code>.claude/settings.json</code>. Les noms exacts des règles doivent être vérifiés avec la version de Claude Code utilisée par l'équipe.</p>
+  <pre>{
+  "permissions": {
+    "allow": [
+      "Bash(npm run typecheck:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run check:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(npm publish:*)",
+      "Bash(rm -rf:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  }
+}</pre>
+</section>
+
+<section>
+  <h2>5. Décisions</h2>
+  <p>Tranchées par l'équipe, en suivant les recommandations. Une question reste ouverte.</p>
+  <ol class="decisions">
+    <li><strong>Framework Invokta : retiré.</strong> Décidé. Réalisé par la phase R. Le serveur MCP passera par le SDK officiel ; ce choix reste à confirmer au moment de l'implémentation.</li>
+    <li><strong>Appels sortants : API des fournisseurs LLM autorisées.</strong> Décidé pour OpenRouter, Anthropic, OpenAI, Google et les autres fournisseurs de modèles. <em>Ouvert :</em> Slack, Telegram et la publication de release. Sans réponse, ces hôtes restent interdits.</li>
+    <li><strong>Trois fichiers protégés : confirmation demandée.</strong> Décidé. Le hook <code>PreToolUse</code> demande une confirmation, sans bloquer.</li>
+    <li><strong>Hook <code>Stop</code> : typecheck en fin de session.</strong> Décidé. Le check complet reste en CI.</li>
+    <li><strong>Atlas dans le dépôt.</strong> Décidé. La publication comme pack pour les clients MCP viendra après la phase E, avec un accord séparé.</li>
+    <li><strong>Fournisseurs évalués : Anthropic et OpenAI d'abord, Google si le budget le permet.</strong> Décidé.</li>
+    <li><strong>Seuil de réussite : moins de 5 % de réponses inventées, et 100 % de citations valides.</strong> Décidé, sur les 20 questions de la phase E.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>6. Vérification</h2>
+  <p>Ce plan est fondé sur la lecture des fichiers. Je n'ai pas exécuté <code>npm run check</code> : <code>node_modules</code> est absent. La phase 0 doit établir l'état de référence avant toute modification.</p>
+  <ul>
+    <li>Après la phase 1 : ouvrir une session neuve, vérifier qu'aucun prompt ne demande <code>npm run check</code>, et que le MCP démarre avec la version épinglée.</li>
+    <li>Après la phase 2 : vérifier que le skill apparaît dans la liste des skills de Claude Code.</li>
+    <li>Après la phase R : <code>npm run check</code> vert, snapshot des 64 capacités inchangé, et aucun <code>@invokta</code> restant hors historique.</li>
+    <li>Après la phase 3 : introduire volontairement une erreur de type et confirmer que le hook <code>Stop</code> bloque la fin de session.</li>
+  </ul>
+</section>
+
+</main>
+</body>
+</html>
