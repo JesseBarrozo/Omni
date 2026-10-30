@@ -18,8 +18,14 @@ export function atlasStatus(rootPath) {
     present: true,
     path: ATLAS_DIR,
     digest: index.digest,
-    capabilities: index.capabilities.length,
-    tables: index.tables.length,
+    stack: index.stack ?? [],
+    sourceFiles: index.sourceFiles ?? 0,
+    entryPoints: index.entryPoints?.length ?? 0,
+    scripts: index.scripts?.length ?? 0,
+    documents: index.documents?.length ?? 0,
+    externalHosts: new Set((index.externalHosts ?? []).map((site) => site.host)).size,
+    capabilities: index.capabilities?.length ?? 0,
+    tables: index.tables?.length ?? 0,
   };
 }
 
