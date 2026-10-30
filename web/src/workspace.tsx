@@ -148,6 +148,7 @@ import { SettingsPanel } from "@/components/settings-panel";
 import { AwakeStatusSegment } from "@/components/awake-status-segment";
 import { GitHistory, type GitCommit } from "@/components/git-history";
 import { FileIcon } from "@/components/file-icon";
+import { FileTree } from "@/components/file-tree";
 import {
   PermissionModePicker,
   type PermissionMode,
@@ -265,8 +266,6 @@ export function App() {
   const [atlas, setAtlas] = useState<AtlasStatus | null>(null);
   const [atlasBusy, setAtlasBusy] = useState(false);
   const [atlasError, setAtlasError] = useState("");
-  const [files, setFiles] = useState<FileEntry[]>([]);
-  const [filePath, setFilePath] = useState(".");
   const [git, setGit] = useState<Git | null>(null);
   const [panel, setPanel] = useState(true);
   const [connected, setConnected] = useState(false);
@@ -743,21 +742,6 @@ export function App() {
     return () => controller.abort();
   }, [projectId, contextVersion, loadSessions]);
   useEffect(() => {
-    if (!projectId) return;
-    const controller = new AbortController();
-    api<FileEntry[]>(
-      `/projects/${projectId}/files?path=${encodeURIComponent(filePath)}`,
-      undefined,
-      controller.signal,
-    )
-      .then((value) => {
-        if (projectRef.current === projectId && !controller.signal.aborted)
-          setFiles(value);
-      })
-      .catch((e) => !controller.signal.aborted && report(e));
-    return () => controller.abort();
-  }, [projectId, filePath, contextVersion]);
-  useEffect(() => {
     const source = new EventSource("/api/events");
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);
@@ -1042,8 +1026,6 @@ export function App() {
   function selectProject(id: string) {
     projectRef.current = id;
     setProjectId(id);
-    setFilePath(".");
-    setFiles([]);
     setContext(null);
     setAtlas(null);
     setAtlasError("");
@@ -1131,8 +1113,6 @@ export function App() {
       ) {
         setContext(null);
         setGit(null);
-        setFiles([]);
-        setFilePath(".");
         setContextVersion((version) => version + 1);
       }
       setEditingProject(null);
@@ -1212,10 +1192,7 @@ export function App() {
     } catch (error) { report(error); }
   }
   async function openFile(entry: FileEntry) {
-    if (entry.directory) {
-      setFilePath(entry.path);
-      return;
-    }
+    if (entry.directory) return;
     persistActiveChatTab();
     const id = `${projectId}::${entry.path}`;
     if (openFileTabs.some((file) => file.id === id)) {
@@ -2733,34 +2710,14 @@ export function App() {
             <TabsContent value="files">
               <section className="inspector-section">
                 <div className="section-label">EXPLORATEUR</div>
-                {filePath !== "." && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setFilePath(
-                        filePath.includes("/")
-                          ? filePath.split("/").slice(0, -1).join("/")
-                          : ".",
-                      )
-                    }
-                  >
-                    ← Dossier parent
-                  </Button>
-                )}
-                <div className="file-list">
-                  {files.map((file) => (
-                    <Button
-                      variant="ghost"
-                      key={file.path}
-                      onClick={() => void openFile(file)}
-                    >
-                      <FileIcon path={file.path} directory={file.directory} />
-                      <span className="truncate">{file.name}</span>
-                      {file.directory && <ChevronRight />}
-                    </Button>
-                  ))}
-                </div>
+                <FileTree
+                  projectId={projectId}
+                  refreshKey={contextVersion}
+                  activePath={
+                    openFileTabs.find((tab) => tab.id === activeTabId)?.path ?? null
+                  }
+                  onOpenFile={(entry) => void openFile(entry)}
+                />
               </section>
             </TabsContent>
             <TabsContent value="git">

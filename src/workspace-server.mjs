@@ -20,6 +20,7 @@ import {
 import { redactSecrets } from "./core.mjs";
 import { atlasStatus, generateAtlas } from "./atlas-service.mjs";
 import { PREVIEW_HEADERS, isPreviewablePath } from "./artifact-preview.mjs";
+import { createEntry, deleteEntry, renameEntry } from "./file-operations.mjs";
 import { McpRegistry } from "./mcp-registry.mjs";
 import { ApiKeyProfiles } from "./api-key-profiles.mjs";
 import { AwakeController } from "./awake-controller.mjs";
@@ -677,8 +678,25 @@ export async function startWorkspaceServer({
         return;
       }
       const projectMatch = path.match(
-        /^\/api\/projects\/([^/]+)\/(conversations|context|atlas|atlas-generate|artifact-raw|files|file|git|git-branch|git-stage|git-unstage|git-stage-all|git-unstage-all|git-commit|git-generate-message|git-file-diff|git-fetch|git-pull|git-push|git-commit-detail|github-prs|github-tasks|summary)$/,
+        /^\/api\/projects\/([^/]+)\/(conversations|context|atlas|atlas-generate|artifact-raw|file-create|file-rename|file-delete|files|file|git|git-branch|git-stage|git-unstage|git-stage-all|git-unstage-all|git-commit|git-generate-message|git-file-diff|git-fetch|git-pull|git-push|git-commit-detail|github-prs|github-tasks|summary)$/,
       );
+      if (
+        projectMatch &&
+        ["file-create", "file-rename", "file-delete"].includes(projectMatch[2]) &&
+        request.method === "POST"
+      ) {
+        const project = store.project(projectMatch[1]);
+        const body = await jsonBody(request, 10000);
+        const root = project.rootPath;
+        const result =
+          projectMatch[2] === "file-create"
+            ? await createEntry({ root, parent: body.parent ?? "", name: body.name, directory: Boolean(body.directory), isHidden: hidden })
+            : projectMatch[2] === "file-rename"
+              ? await renameEntry({ root, from: body.from, to: body.to, isHidden: hidden })
+              : await deleteEntry({ root, path: body.path, isHidden: hidden });
+        send(response, 200, result);
+        return;
+      }
       if (
         projectMatch &&
         projectMatch[2] === "artifact-raw" &&

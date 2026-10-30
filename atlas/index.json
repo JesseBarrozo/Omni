@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generator": "tools/atlas/generate.mjs",
-  "digest": "07c27f0e1903d0f4",
+  "digest": "a6bc2f7872188d53",
   "stack": [
     "node"
   ],
-  "sourceFiles": 83,
+  "sourceFiles": 86,
   "manifests": [
     {
       "path": "package.json",
@@ -45,7 +45,7 @@
     },
     {
       "name": "check",
-      "command": "node --check src/cli-output.mjs && node --check src/core.mjs && node --check src/adapters.mjs && node --check src/chat-store.mjs && node --check src/openai-chat.mjs && node --check src/openai-auth.mjs && node --check src/openrouter-chat.mjs && node --check src/codex-chat.mjs && node --check src/claude-code.mjs && node --check src/harness-swap.mjs && node --check src/chat-runner.mjs && node --check src/anthropic-api.mjs && node --check src/gemini-api.mjs && node --check src/opencode-harness.mjs && node --check src/eve-harness.mjs && node --check src/antigravity-cli.mjs && node --check src/secret-store.mjs && node --check src/api-key-profiles.mjs && node --check src/oauth-profiles.mjs && node --check src/mcp-registry.mjs && node --check src/terminal-logo.mjs && node --check src/terminal-ui.mjs && node --check src/index.mjs && node --check bin/omni.mjs && node --check src/project-context.mjs && node --check src/agent-workspace.mjs && node --check src/agent-terminal.mjs && node --check src/workspace-server.mjs && node --check scripts/artifacts.mjs && node --check scripts/atlas.mjs && npm run artifacts:check",
+      "command": "node --check src/cli-output.mjs && node --check src/core.mjs && node --check src/adapters.mjs && node --check src/chat-store.mjs && node --check src/openai-chat.mjs && node --check src/openai-auth.mjs && node --check src/openrouter-chat.mjs && node --check src/codex-chat.mjs && node --check src/claude-code.mjs && node --check src/harness-swap.mjs && node --check src/chat-runner.mjs && node --check src/anthropic-api.mjs && node --check src/gemini-api.mjs && node --check src/opencode-harness.mjs && node --check src/eve-harness.mjs && node --check src/antigravity-cli.mjs && node --check src/secret-store.mjs && node --check src/api-key-profiles.mjs && node --check src/oauth-profiles.mjs && node --check src/mcp-registry.mjs && node --check src/terminal-logo.mjs && node --check src/terminal-ui.mjs && node --check src/index.mjs && node --check bin/omni.mjs && node --check src/project-context.mjs && node --check src/agent-workspace.mjs && node --check src/agent-terminal.mjs && node --check src/workspace-server.mjs && node --check scripts/artifacts.mjs && node --check scripts/atlas.mjs && npm run artifacts:check && npm run atlas:check",
       "file": "package.json",
       "line": 30
     },
@@ -117,13 +117,13 @@
     },
     {
       "name": "atlas:generate",
-      "command": "node scripts/atlas.mjs generate",
+      "command": "node scripts/atlas.mjs generate .",
       "file": "package.json",
       "line": 42
     },
     {
       "name": "atlas:check",
-      "command": "node scripts/atlas.mjs check",
+      "command": "node scripts/atlas.mjs check .",
       "file": "package.json",
       "line": 43
     },
@@ -233,7 +233,7 @@
     {
       "host": "github.com",
       "file": "src/workspace-server.mjs",
-      "line": 1405
+      "line": 1423
     },
     {
       "host": "www.w3.org",
@@ -304,7 +304,7 @@
     },
     {
       "file": "src/workspace-server.mjs",
-      "line": 267
+      "line": 268
     },
     {
       "file": "web/src/components/terminal-pane.tsx",
@@ -316,7 +316,7 @@
     }
   ],
   "tests": {
-    "count": 29,
+    "count": 31,
     "sample": [
       "test/agent-workspace.test.mjs",
       "test/anthropic-api.test.mjs",
@@ -336,8 +336,8 @@
       "test/codex.test.mjs",
       "test/core.test.mjs",
       "test/eve-harness.test.mjs",
-      "test/gemini-api.test.mjs",
-      "test/harness-swap.test.mjs"
+      "test/file-operations.test.mjs",
+      "test/file-tree-model.test.mjs"
     ]
   },
   "capabilities": [],

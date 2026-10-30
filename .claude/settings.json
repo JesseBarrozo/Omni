@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && npm run -s atlas:generate > /dev/null || echo \"atlas: régénération échouée, lancer npm run atlas:generate\" >&2"
+          }
+        ]
+      }
+    ]
+  }
+}
