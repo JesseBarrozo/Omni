@@ -139,6 +139,17 @@ export function buildResumeSummary({ events, conversation, git }) {
   const latestCheckpoint = events
     .filter((event) => event.type === "session.checkpointed")
     .at(-1);
+  const taskEvents = events.filter((event) => event.type.startsWith("task."));
+  const activeTasks = [];
+  for (const event of taskEvents) {
+    const taskId =
+      event.payload?.taskId ?? event.payload?.id ?? event.payload?.sessionId;
+    if (!taskId) continue;
+    const index = activeTasks.findIndex((task) => task.taskId === taskId);
+    if (event.type === "task.started" || event.type === "task.updated") {
+      if (index < 0) activeTasks.push({ taskId, ...event.payload });
+    } else if (index >= 0) activeTasks.splice(index, 1);
+  }
 
   return redactSecrets({
     objective: userMessages[0]?.content ?? conversation.title,
@@ -160,6 +171,7 @@ export function buildResumeSummary({ events, conversation, git }) {
     activeOperations: {
       tools: pendingTools,
       commands: activeCommands,
+      tasks: activeTasks,
     },
     previousCheckpointId: latestCheckpoint?.id ?? null,
   });
@@ -189,9 +201,12 @@ export class HarnessSwapService {
     const summary = buildResumeSummary({ events, conversation, git });
     if (
       summary.activeOperations.tools.length ||
-      summary.activeOperations.commands.length
+      summary.activeOperations.commands.length ||
+      summary.activeOperations.tasks.length
     )
-      throw new Error("Harness swap blocked while a tool or command is active");
+      throw new Error(
+        "Harness swap blocked while a tool or command is active (or task active)",
+      );
     if (summary.permissions.active.length)
       throw new Error("Harness swap blocked while a permission is unresolved");
     const target = this.adapters.get(toHarnessId);

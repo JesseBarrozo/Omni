@@ -19,10 +19,16 @@ Install dependencies with `npm install`. `npm run build`, `npm run lint`, `npm r
 
 ## Existing commands
 
+L’interface agentique est disponible : `omni` ouvre le terminal en mode Agent (Codex par défaut), et `omni gui` ouvre la GUI locale avec le même runtime, SQLite, contexte de projet, outils MCP et approbations. Première installation de la GUI : `npm run gui:install && npm run gui:build`. Guide et preuves de validation : [WORKSPACE.md](WORKSPACE.md).
+
+Pour appeler Omni directement comme une commande système, exécutez `npm link` une fois depuis ce dossier. `omni` ouvre ensuite une interface plein écran dans le dossier courant. `--harness`, `--model`, `--project` et les variables `OMNI_DEFAULT_HARNESS`, `OMNI_DEFAULT_MODEL`, `OMNI_PROJECT` permettent de fixer la sélection. Commandes interactives : `/help`, `/harness`, `/model`, `/clear`, `/status`, `/quit`. Alt+Entrée insère une nouvelle ligne, ↑/↓ parcourt les messages saisis, PgUp/PgDn parcourt la conversation, Échap ou Ctrl+C interrompt une réponse. Les approbations ponctuelles utilisent les touches y/n. Le chat sans outils reste une sélection explicite (`omni --chat` ou `omni chat …`).
+
 ```sh
 npm test
 npm run check
 node ./bin/omni.mjs help
+omni
+OMNI_PROJECT=./my-project OMNI_DEFAULT_MODEL=gpt-5.6-luna omni
 node ./bin/omni.mjs init
 node ./bin/omni.mjs status --json
 node ./bin/omni.mjs providers refresh --json
@@ -105,7 +111,7 @@ The CLI stores projects, conversations, messages, streamed partial responses and
 
 Import an export into a project with `node ./bin/omni.mjs conversation import --project PROJECT_ID_OR_PATH ./conversation.json`. Imported session events are historical records; Omni gives the imported conversation and its messages fresh IDs, preserves the transcript, and never replays an action.
 
-Use `OMNI_DATA_DIR` to point local data to a different directory. SQLite data uses restrictive local file permissions but is not encrypted. OpenAI credentials are resolved in this order: ChatGPT OAuth, `OPENAI_API_KEY`, then the active stored API-key profile. OpenAI, OpenRouter, Anthropic API, and Gemini API support named profiles through `auth key set|list|use|remove PROVIDER`; set reads stdin only, profile names and authentication source are shown without key values, and removal requires `--yes`. Existing `default` keyring identities remain supported. Environment variables override the active stored profile; API keys are not copied into SQLite or logs.
+Use `OMNI_DATA_DIR` to point local data to a different directory. SQLite data uses restrictive local file permissions but is not encrypted. Eve is an optional durable Harness: set `OMNI_EVE_URL` and, when required, `OMNI_EVE_AUTH_TOKEN`, then run `omni run --harness eve --prompt "..."`. `omni run --conversation ID` resumes the latest Eve session from its persisted stream cursor; `omni cancel --conversation ID` requests cooperative cancellation. Inspect Eve tasks with `omni task list --conversation ID --json`, or cancel one with `omni task cancel --conversation ID --task TASK_ID`. `OMNI_EVE_SANDBOX=true` and `OMNI_EVE_COMPUTER_USE=true` only advertise capabilities; Eve remains responsible for enforcing isolation and approvals. Disable the integration by disabling the `eve` Harness in the registry; existing events and sessions remain preserved. OpenAI credentials are resolved in this order: ChatGPT OAuth, `OPENAI_API_KEY`, then the active stored API-key profile. OpenAI, OpenRouter, Anthropic API, and Gemini API support named profiles through `auth key set|list|use|remove PROVIDER`; set reads stdin only, profile names and authentication source are shown without key values, and removal requires `--yes`. Existing `default` keyring identities remain supported. Environment variables override the active stored profile; API keys are not copied into SQLite or logs.
 
 ## Project status
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { homedir } from "node:os";
 import { readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { ChatStore } from "../src/chat-store.mjs";
@@ -12,6 +12,7 @@ import { OpenRouterAuth, OpenRouterChat } from "../src/openrouter-chat.mjs";
 import { AnthropicApiAuth, AnthropicApiChat } from "../src/anthropic-api.mjs";
 import { GeminiApiAuth, GeminiApiChat } from "../src/gemini-api.mjs";
 import { OpenCodeHarness } from "../src/opencode-harness.mjs";
+import { EveHarness } from "../src/eve-harness.mjs";
 import { McpRegistry } from "../src/mcp-registry.mjs";
 import {
   AntigravityCliChat,
@@ -33,6 +34,10 @@ import {
 import { runChatTurn } from "../src/chat-runner.mjs";
 import { OAuthProfiles } from "../src/oauth-profiles.mjs";
 import { HarnessSwapService } from "../src/harness-swap.mjs";
+import { terminalLogo } from "../src/terminal-logo.mjs";
+import { TerminalUI } from "../src/terminal-ui.mjs";
+import { agentTerminal } from "../src/agent-terminal.mjs";
+import { startWorkspaceServer } from "../src/workspace-server.mjs";
 import {
   AutoRouter,
   ModelRegistry,
@@ -127,7 +132,13 @@ const print = (value) =>
     `${typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n`,
   );
 const args = process.argv.slice(2);
-const command = args.shift() || "help";
+const command =
+  !args.length ||
+  (args[0].startsWith("--") && !["--help", "--version"].includes(args[0]))
+    ? stdin.isTTY
+      ? "direct"
+      : "help"
+    : args.shift();
 let jsonRunOutput = false;
 const option = (name, fallback = null) => {
   const index = args.indexOf(name);
@@ -140,9 +151,40 @@ const emitRunEvent = (type, payload = {}) => {
   if (jsonRunOutput) writeRunEvent(type, payload);
 };
 const help = () =>
-  print(
-    `Omni Universal AI Harness\n\nCommands:\n  init\n  status [--json]\n  auth status\n  auth login openai|codex|claude|antigravity\n  auth login codex|claude [--profile NAME]\n  auth profile list codex|claude [--json]\n  auth profile use codex|claude --profile NAME\n  auth profile remove codex|claude --profile NAME --yes\n  auth key set openai --stdin [--profile NAME]\n  auth key set openrouter|anthropic|google --stdin [--profile NAME]\n  auth key list openai|openrouter|anthropic|google [--json]\n  auth key use openai|openrouter|anthropic|google --profile NAME\n  auth key remove openai|openrouter|anthropic|google [--profile NAME] [--yes]\n  mcp add --name NAME --command CMD [--args-json JSON] [--env-names A,B] [--cwd PATH]\n  mcp add --name NAME --transport http --url URL [--header-env HEADER=ENV] [--env-names A,B]\n  mcp list [--json]\n  mcp tools --server NAME --conversation ID\n  mcp call --server NAME --tool NAME --conversation ID --input-file PATH\n  mcp remove --server NAME [--yes]\n  providers list [--json]\n  providers refresh [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  providers enable|disable --provider ID\n  harnesses list [--json]\n  harnesses refresh [--harness codex|claude-code|opencode] [--json]\n  harnesses enable|disable --harness ID\n  tools list --conversation ID|--project ID_OR_PATH [--json]\n  permissions list --conversation ID|--project ID_OR_PATH [--json]\n  usage report --conversation ID|--project ID_OR_PATH [--month YYYY-MM] [--json]\n  project create --name NAME [--path PATH]\n  models list [--provider codex|claude|openai|openrouter|anthropic|google|antigravity|opencode] [--json]\n  models enable|disable --provider ID --model ID [--auto-only]\n  chat --project ID_OR_PATH --model MODEL [--conversation ID]\n  auto plan --project ID_OR_PATH [--require-mcp SERVER[,SERVER]] [--json] PROMPT\n  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--require-mcp SERVER[,SERVER]] [--conversation ID] [--json] PROMPT\n  swap --conversation ID --harness claude|codex|opencode [--model MODEL]\n  resume CONVERSATION_ID [--model MODEL]\n  conversation search --query TEXT [--project ID_OR_PATH] [--json]\n  conversation export CONVERSATION_ID\n  conversation import --project ID_OR_PATH FILE`,
-  );
+  print(`Omni Universal AI Harness
+
+Commands:
+  omni [--harness codex|claude|opencode|eve] [--model MODEL] [--project PATH]
+  agent [--conversation ID] [--harness ID] [--model MODEL]
+  gui [--port 4318] [--project PATH] [--no-open]
+  logo
+  init
+  status [--json]
+  auth status
+  auth login openai|codex|claude|antigravity
+  auth profile list|use|remove PROVIDER [--profile NAME]
+  auth key set openai --stdin [--profile NAME]
+  auth key set openrouter|anthropic|google --stdin [--profile NAME]
+  auth key list openai|openrouter|anthropic|google [--json]
+  auth key use|remove PROVIDER [--profile NAME]
+  mcp add|list|tools|call|remove ...
+  providers list|refresh|enable|disable ...
+  harnesses list [--json]
+  harnesses refresh [--harness codex|claude-code|opencode|eve] [--json]
+  harnesses enable|disable --harness ID
+  tools list --conversation ID|--project ID_OR_PATH [--json]
+  permissions list --conversation ID|--project ID_OR_PATH [--json]
+  usage report --conversation ID|--project ID_OR_PATH [--month YYYY-MM] [--json]
+  project create --name NAME [--path PATH]
+  models list [--provider PROVIDER] [--json]
+  chat --project ID_OR_PATH --model MODEL [--conversation ID]
+  auto plan --project ID_OR_PATH [--json] PROMPT
+  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|eve|--auto] [--conversation ID] [--json] PROMPT
+  cancel --conversation ID
+  task list|get|cancel --conversation ID [--task TASK_ID] [--json]
+  swap --conversation ID --harness claude|codex|opencode|eve [--model MODEL]
+  resume CONVERSATION_ID [--model MODEL]
+  conversation search|export|import ...`);
 
 async function autoRoute(prompt, project, { requiredMcpServers = [] } = {}) {
   const registry = new ModelRegistry();
@@ -671,7 +713,9 @@ function createHarnessRun(harnessId, conversation, modelId) {
               model: modelId,
               requestPermission,
             })
-          : null;
+          : harnessId === "eve"
+            ? new EveHarness({ store, requestPermission })
+            : null;
   if (!adapter) {
     rl.close();
     throw new Error(`Harness Auto non pris en charge: ${harnessId}`);
@@ -867,6 +911,14 @@ async function refreshHarness(harnessId) {
       store,
       executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode",
     });
+  } else if (harnessId === "eve") {
+    providerId = "eve";
+    integration = "Eve durable HTTP channel";
+    authenticated = Boolean(process.env.OMNI_EVE_URL);
+    adapter = new EveHarness({
+      store,
+      baseUrl: process.env.OMNI_EVE_URL ?? "http://127.0.0.1:0",
+    });
   } else throw new Error(`Harness non pris en charge: ${harnessId}`);
   const capabilities = await adapter.capabilities();
   let status = authenticated ? "unavailable" : "disconnected";
@@ -959,7 +1011,10 @@ async function prepareAutoCandidate(decision, conversation) {
 }
 
 async function swapHarness(conversationId, harnessId, requestedModel) {
-  if (!conversationId || !["claude", "codex", "opencode"].includes(harnessId))
+  if (
+    !conversationId ||
+    !["claude", "codex", "opencode", "eve"].includes(harnessId)
+  )
     throw new Error(
       "Usage: omni swap --conversation ID --harness claude|codex|opencode [--model MODEL]",
     );
@@ -968,7 +1023,9 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
       ? "claude-code"
       : harnessId === "opencode"
         ? "opencode"
-        : "codex";
+        : harnessId === "eve"
+          ? "eve"
+          : "codex";
   assertHarnessEnabled(registryHarnessId);
   const conversation = store.conversation(conversationId);
   const project = store.project(conversation.projectId);
@@ -1009,14 +1066,16 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
             executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode",
             requestPermission,
           })
-        : new CodexHarness({
-            store,
-            env: oauthEnv("codex"),
-            cwd: project.rootPath ?? process.cwd(),
-            model: model === "codex" ? undefined : model,
-            requestPermission,
-            mcpRegistry: mcpRegistry(),
-          });
+        : harnessId === "eve"
+          ? new EveHarness({ store, requestPermission })
+          : new CodexHarness({
+              store,
+              env: oauthEnv("codex"),
+              cwd: project.rootPath ?? process.cwd(),
+              model: model === "codex" ? undefined : model,
+              requestPermission,
+              mcpRegistry: mcpRegistry(),
+            });
   try {
     const service = new HarnessSwapService({
       store,
@@ -1085,11 +1144,17 @@ async function chat(
                 : model.startsWith("google:")
                   ? createGeminiApiChat()
                   : createOpenAIChat());
-  const rl = createInterface({
-    input: stdin,
-    output: jsonRunOutput ? process.stderr : stdout,
-    terminal: Boolean(stdin.isTTY),
-  });
+  const ui =
+    !initialPrompt && !jsonRunOutput && stdin.isTTY && stdout.isTTY
+      ? new TerminalUI({ model, cwd: project.rootPath ?? process.cwd() })
+      : null;
+  const rl =
+    ui ??
+    createInterface({
+      input: stdin,
+      output: jsonRunOutput ? process.stderr : stdout,
+      terminal: Boolean(stdin.isTTY),
+    });
   let controller = null;
   const interrupt = () => controller?.abort();
   process.on("SIGINT", interrupt);
@@ -1097,7 +1162,8 @@ async function chat(
   const send = async (prompt) => {
     if (!prompt.trim()) return;
     controller = new AbortController();
-    if (!jsonRunOutput) stdout.write("Omni: ");
+    if (ui) ui.startAnswer(prompt);
+    else if (!jsonRunOutput) stdout.write("\nOmni › ");
     try {
       const result = await runChatTurn({
         store,
@@ -1108,11 +1174,15 @@ async function chat(
         signal: controller.signal,
         onDelta: (delta) => {
           if (jsonRunOutput) writeRunEvent("message.delta", { delta });
+          else if (ui) ui.delta(delta);
           else stdout.write(delta);
         },
         onUsage: (usage) => emitRunEvent("usage.updated", usage),
       });
-      if (!initialPrompt || !jsonRunOutput)
+      if (ui) {
+        if (result.status === "interrupted")
+          ui.notice("Réponse interrompue · texte partiel conservé.");
+      } else if (!initialPrompt || !jsonRunOutput)
         stdout.write(
           result.status === "interrupted"
             ? "\n[Réponse interrompue; le texte partiel est conservé.]\n"
@@ -1120,27 +1190,147 @@ async function chat(
         );
       return result.status;
     } catch (error) {
-      throw error;
+      if (!ui) throw error;
+      ui.notice(redactError(error.message));
     } finally {
       controller = null;
+      ui?.finish();
     }
   };
   try {
+    if (ui && conversation.messages?.length) {
+      ui.messages = conversation.messages.map(({ role, content }) => ({
+        role,
+        text: content,
+      }));
+      ui.render();
+    }
     if (initialPrompt) {
       return await send(initialPrompt);
     }
     if (!stdin.isTTY)
       throw new Error("La conversation interactive nécessite un terminal TTY");
     while (true) {
-      const prompt = await rl.question("Vous: ");
+      const prompt = await rl.question("\x1b[1;37m›\x1b[0m ");
+      if (prompt.trim() === "/help") {
+        const text =
+          "Commandes : /help · /clear · /status · /quit\nAlt+Entrée : nouvelle ligne · ↑/↓ : historique de saisie\nPgUp/PgDn : parcourir la conversation · Échap : interrompre la réponse";
+        if (ui) ui.notice(text);
+        else print(text);
+        continue;
+      }
+      if (prompt.trim() === "/clear") {
+        ui?.clear();
+        continue;
+      }
+      if (prompt.trim() === "/status") {
+        const text = `Modèle : ${model}\nProjet : ${project.rootPath ?? process.cwd()}\nConversation : ${conversation.id}\nMode : chat fournisseur`;
+        if (ui) ui.notice(text);
+        else print(text);
+        continue;
+      }
       if (["/quit", "/exit"].includes(prompt.trim())) break;
+      if (prompt.trim().startsWith("/")) {
+        if (ui)
+          ui.notice(
+            "Commande inconnue. /help affiche les commandes disponibles.",
+          );
+        continue;
+      }
       await send(prompt);
     }
   } finally {
     process.off("SIGINT", interrupt);
     rl.off("SIGINT", interrupt);
     rl.close();
+    if (ui) stdout.write(`Reprendre : omni resume ${conversation.id}\n`);
   }
+}
+
+async function launchDirectChat() {
+  if (!stdin.isTTY) {
+    help();
+    return;
+  }
+  const requestedProject = process.env.OMNI_PROJECT;
+  let project = null;
+  if (requestedProject) project = store.project(requestedProject);
+  else {
+    try {
+      project = store.project(process.cwd());
+    } catch {
+      project = store.createProject(basename(process.cwd()), process.cwd());
+    }
+  }
+  let model = process.env.OMNI_DEFAULT_MODEL;
+  if (!model) {
+    try {
+      await refreshProvider("openai");
+    } catch {}
+    model = store.modelRegistry("openai", { availableOnly: true })[0]?.id;
+  }
+  if (!model)
+    throw new Error(
+      "Aucun modèle disponible. Définissez OMNI_DEFAULT_MODEL ou lancez `omni models list --provider openai`.",
+    );
+  assertManualSelectionEnabled(model);
+  const conversation = store.createConversation(
+    project.id,
+    "Nouvelle conversation",
+    model,
+  );
+  await chat(conversation, model);
+}
+
+async function launchAgentWorkspace() {
+  if (!stdin.isTTY || !stdout.isTTY)
+    throw new Error(
+      "Le mode Agent interactif nécessite un terminal. Utilisez omni run pour une exécution ponctuelle.",
+    );
+  const existingId = option("--conversation");
+  let conversation = existingId ? store.recoverConversation(existingId) : null;
+  const prior = conversation
+    ? store
+        .listEvents(conversation.id)
+        .filter((e) => e.type === "session.started" && e.payload.harnessId)
+        .at(-1)?.payload.harnessId
+    : null;
+  let harnessId = option(
+    "--harness",
+    process.env.OMNI_DEFAULT_HARNESS ?? prior ?? "codex",
+  );
+  if (harnessId === "claude") harnessId = "claude-code";
+  const model = option(
+    "--model",
+    process.env.OMNI_DEFAULT_MODEL ??
+      conversation?.modelId ??
+      (harnessId === "claude-code" ? "claude" : harnessId),
+  );
+  if (!conversation) {
+    const projectArg = option(
+      "--project",
+      process.env.OMNI_PROJECT ?? process.cwd(),
+    );
+    let project;
+    try {
+      project = store.project(projectArg);
+    } catch {
+      const cwd = resolve(projectArg);
+      if (!statSync(cwd).isDirectory())
+        throw new Error("Dossier projet invalide.");
+      try {
+        project = store.project(cwd);
+      } catch {
+        project = store.createProject(basename(cwd), cwd);
+      }
+    }
+    conversation = store.createConversation(
+      project.id,
+      "Nouvelle session Agent",
+      model,
+    );
+  }
+  await agentTerminal({ store, dataDir, conversation, harnessId, model });
 }
 
 async function runClaudeHarness(conversation, prompt, preparedRun = null) {
@@ -1446,8 +1636,179 @@ async function runOpenCodeHarness(conversation, prompt, preparedRun = null) {
   }
 }
 
+async function runEveHarness(conversation, prompt, preparedRun = null) {
+  const project = store.project(conversation.projectId);
+  const { adapter, rl } =
+    preparedRun ?? createHarnessRun("eve", conversation, conversation.modelId);
+  const controller = new AbortController();
+  const interrupt = () => controller.abort();
+  process.on("SIGINT", interrupt);
+  rl.on("SIGINT", interrupt);
+  store.addMessage(conversation.id, "user", prompt);
+  const assistantId = store.addMessage(
+    conversation.id,
+    "assistant",
+    "",
+    "streaming",
+  );
+  let answer = "";
+  let interrupted = false;
+  let completed = false;
+  try {
+    store.setStatus(conversation.id, "running");
+    await adapter.initialize();
+    const sessionRef = store
+      .listEvents(conversation.id)
+      .filter(
+        (event) =>
+          (event.type === "session.started" &&
+            event.payload.harnessId === "eve") ||
+          (event.type === "harness.changed" &&
+            event.payload.toHarnessId === "eve"),
+      )
+      .at(-1);
+    const sessionId =
+      sessionRef?.payload.sessionId ?? sessionRef?.payload.targetSessionId;
+    const session = sessionId
+      ? await adapter.resumeSession(sessionId, {
+          conversationId: conversation.id,
+        })
+      : await adapter.createSession({
+          conversationId: conversation.id,
+          cwd: project.rootPath ?? process.cwd(),
+        });
+    for await (const event of adapter.run({
+      conversationId: conversation.id,
+      sessionId: session.id,
+      prompt,
+      signal: controller.signal,
+    })) {
+      if (event.type === "message.delta") {
+        answer += event.payload.delta;
+        store.appendMessageDelta(assistantId, event.payload.delta);
+        if (jsonRunOutput)
+          writeRunEvent("message.delta", { delta: event.payload.delta });
+        else stdout.write(event.payload.delta);
+      } else if (event.type === "tool.started") {
+        emitRunEvent("tool.started", { toolName: event.payload.toolName });
+      } else if (event.type === "tool.completed") {
+        emitRunEvent("tool.completed", { toolName: event.payload.toolName });
+      } else if (event.type === "tool.failed") {
+        emitRunEvent("tool.failed", { toolName: event.payload.toolName });
+      } else if (event.type === "permission.requested") {
+        emitRunEvent("permission.requested", {
+          requestId: event.payload.requestId,
+        });
+      } else if (event.type === "session.interrupted") {
+        interrupted = true;
+      } else if (event.type === "session.failed") {
+        throw new Error(event.payload.error ?? "Eve a échoué pendant le tour");
+      } else if (event.type === "session.completed") {
+        completed = true;
+      } else if (event.type === "usage.updated") {
+        emitRunEvent("usage.updated", event.payload);
+      }
+    }
+    if (!interrupted && !completed)
+      throw new Error("Eve a terminé sans confirmer le tour");
+    if (!interrupted) {
+      const checkpoint = await adapter.checkpoint(session.id);
+      emitRunEvent("session.checkpointed", { checkpointId: checkpoint.id });
+    }
+    store.setMessage(
+      assistantId,
+      answer,
+      interrupted ? "interrupted" : "completed",
+    );
+    store.setStatus(conversation.id, interrupted ? "interrupted" : "completed");
+    if (!jsonRunOutput)
+      stdout.write(interrupted ? "\n[Exécution interrompue.]\n" : "\n");
+    return interrupted ? "interrupted" : "completed";
+  } catch (error) {
+    const wasInterrupted = controller.signal.aborted;
+    store.setMessage(
+      assistantId,
+      answer,
+      wasInterrupted ? "interrupted" : "failed",
+    );
+    store.setStatus(conversation.id, wasInterrupted ? "interrupted" : "failed");
+    if (wasInterrupted) return "interrupted";
+    throw error;
+  } finally {
+    process.off("SIGINT", interrupt);
+    rl.off("SIGINT", interrupt);
+    rl.close();
+    await adapter.dispose();
+  }
+}
+
 try {
-  if (command === "help") help();
+  if (command === "direct") {
+    if (hasFlag("--chat")) await launchDirectChat();
+    else await launchAgentWorkspace();
+  } else if (command === "agent") await launchAgentWorkspace();
+  else if (command === "gui") {
+    const port = Number(option("--port", "4318"));
+    if (!Number.isInteger(port) || port < 0 || port > 65535)
+      throw new Error("Port invalide.");
+    let app;
+    try {
+      app = await startWorkspaceServer({
+        store,
+        dataDir,
+        cwd: resolve(option("--project", process.cwd())),
+        port,
+      });
+    } catch (error) {
+      if (error.code !== "EADDRINUSE" || !port) throw error;
+      const url = `http://127.0.0.1:${port}`;
+      const state = await fetch(`${url}/api/state`, {
+        signal: AbortSignal.timeout(2000),
+      })
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null);
+      if (
+        !state ||
+        typeof state.version !== "string" ||
+        !Array.isArray(state.projects) ||
+        !Array.isArray(state.harnesses) ||
+        !state.harnesses.some((h) => h.id === "codex")
+      ) {
+        throw new Error(
+          `Le port ${port} est déjà utilisé par un autre service. Choisissez un autre port avec --port.`,
+        );
+      }
+      app = { url, existing: true };
+    }
+    print(
+      app.existing
+        ? `Omni Workspace est déjà lancé · ${app.url}${hasFlag("--project") ? "\nSélectionnez le projet dans l’interface existante." : ""}`
+        : `Omni Workspace · ${app.url}\nCtrl+C pour arrêter.`,
+    );
+    if (!hasFlag("--no-open")) {
+      const { execFile } = await import("node:child_process");
+      const opener =
+        process.platform === "darwin"
+          ? "open"
+          : process.platform === "win32"
+            ? "explorer"
+            : "xdg-open";
+      execFile(opener, [app.url], () => {}).unref();
+    }
+    if (!app.existing) {
+      await new Promise((resolve) => {
+        process.once("SIGINT", resolve);
+        process.once("SIGTERM", resolve);
+      });
+      await app.close();
+    }
+  } else if (command === "logo")
+    print(
+      terminalLogo({
+        color: Boolean(stdout.isTTY) && !Object.hasOwn(process.env, "NO_COLOR"),
+      }),
+    );
+  else if (command === "help") help();
   else if (command === "init") print(`Initialisé: ${dataDir}`);
   else if (command === "status") {
     const status = { dataDir, ...store.count(), projects: store.projects() };
@@ -2043,7 +2404,7 @@ try {
     const requested = option("--harness");
     const harnesses = requested
       ? [requested]
-      : ["codex", "claude-code", "opencode"];
+      : ["codex", "claude-code", "opencode", "eve"];
     const results = [];
     for (const harnessId of harnesses)
       results.push(await refreshHarness(harnessId));
@@ -2250,6 +2611,99 @@ try {
           `${record.createdAt} · ${record.providerId ?? record.harnessId ?? "provider inconnu"} · ${record.costUsd === null ? "coût inconnu" : `${record.costUsd} USD`}`,
         );
     }
+  } else if (
+    command === "task" &&
+    ["list", "get", "cancel"].includes(args[0])
+  ) {
+    const conversationId = option("--conversation");
+    if (!conversationId) throw new Error("task exige --conversation ID");
+    const events = store.listEvents(conversationId);
+    const tasks = new Map();
+    for (const event of events) {
+      if (!event.type.startsWith("task.")) continue;
+      const payload = event.payload ?? {};
+      const taskId = payload.taskId ?? payload.id ?? payload.sessionId;
+      if (!taskId) continue;
+      const previous = tasks.get(taskId) ?? {
+        id: taskId,
+        conversationId,
+        harnessId: payload.harnessId ?? "eve",
+        sessionId: payload.sessionId ?? null,
+      };
+      tasks.set(taskId, {
+        ...previous,
+        ...payload,
+        id: taskId,
+        state:
+          event.type === "task.started"
+            ? "running"
+            : event.type === "task.completed"
+              ? "completed"
+              : event.type === "task.failed"
+                ? "failed"
+                : event.type === "task.cancelled"
+                  ? "cancelled"
+                  : (payload.state ?? previous.state ?? "unknown"),
+        updatedAt: event.createdAt,
+      });
+    }
+    const taskId = option("--task") ?? args[1];
+    if (args[0] === "get" && !taskId)
+      throw new Error("task get exige --task ID");
+    if (args[0] === "cancel") {
+      const task = tasks.get(taskId);
+      if (!task) throw new Error(`Tâche inconnue: ${taskId}`);
+      if (task.harnessId !== "eve" || !task.sessionId)
+        throw new Error("Cette tâche ne peut pas être annulée par Eve");
+      const adapter = new EveHarness({ store });
+      await adapter.interrupt(task.sessionId);
+      store.appendEvent(conversationId, "task.cancelled", {
+        ...task,
+        taskId,
+        reason: "user requested",
+      });
+      print({ ...task, id: taskId, state: "cancelled" });
+    } else {
+      const result =
+        args[0] === "get" ? tasks.get(taskId) : [...tasks.values()];
+      hasFlag("--json")
+        ? print(result ?? null)
+        : (Array.isArray(result) ? result : [result]).forEach(
+            (task) =>
+              task &&
+              print(
+                `${task.id} · ${task.state} · ${task.sessionId ?? "sans session"}`,
+              ),
+          );
+    }
+  } else if (command === "cancel") {
+    const conversationId = option("--conversation") ?? args[0];
+    if (!conversationId) throw new Error("cancel exige --conversation ID");
+    const conversation = store.conversation(conversationId);
+    const session = store
+      .listEvents(conversationId)
+      .filter(
+        (event) =>
+          event.type === "session.started" &&
+          event.payload?.harnessId === "eve",
+      )
+      .at(-1);
+    if (!session?.payload?.sessionId)
+      throw new Error("Aucune session Eve active pour cette conversation");
+    const adapter = new EveHarness({ store });
+    await adapter.interrupt(session.payload.sessionId);
+    store.appendEvent(conversationId, "session.interrupted", {
+      harnessId: "eve",
+      sessionId: session.payload.sessionId,
+      reason: "user requested",
+    });
+    if (conversation.status === "running")
+      store.setStatus(conversationId, "interrupted");
+    print({
+      conversationId,
+      sessionId: session.payload.sessionId,
+      cancelled: true,
+    });
   } else if (command === "project" && args[0] === "create") {
     const name = option("--name");
     if (!name) throw new Error("--name est requis");
@@ -2367,7 +2821,7 @@ try {
       )
     )
       throw new Error("Nom de serveur MCP requis invalide.");
-    if (harness && !["claude", "codex", "opencode"].includes(harness))
+    if (harness && !["claude", "codex", "opencode", "eve"].includes(harness))
       throw new Error(`Harness non pris en charge: ${harness}`);
     if (autoMode && (harness || option("--model")))
       throw new Error("--auto choisit seul le modèle et le harness");
@@ -2384,7 +2838,9 @@ try {
           ? (conversation?.modelId ?? "codex")
           : harness === "opencode"
             ? (conversation?.modelId ?? "opencode")
-            : (conversation?.modelId ?? null);
+            : harness === "eve"
+              ? (conversation?.modelId ?? "eve")
+              : (conversation?.modelId ?? null);
     let model = option("--model", defaultModel);
     const projectArg = option("--project");
     const project = conversation
@@ -2442,7 +2898,9 @@ try {
             ? "claude-code"
             : harness === "opencode"
               ? "opencode"
-              : "codex",
+              : harness === "eve"
+                ? "eve"
+                : "codex",
         );
     }
     if (conversation) {
@@ -2541,6 +2999,8 @@ try {
         runStatus = await runCodexHarness(conversation, prompt, preparedRun);
       else if (harness === "opencode")
         runStatus = await runOpenCodeHarness(conversation, prompt, preparedRun);
+      else if (harness === "eve")
+        runStatus = await runEveHarness(conversation, prompt, preparedRun);
       else
         runStatus = await chat(
           conversation,

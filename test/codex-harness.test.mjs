@@ -29,6 +29,24 @@ const sdkStdioPath = new URL(
   import.meta.url,
 ).href;
 
+test("Codex applies full access and resets its sandbox on later turns", async () => {
+  for (const mode of ["full", "ask"]) {
+    const requests = [];
+    const harness = new CodexHarness({ store: { appendEvent() {}, listEvents() { return []; } }, permissionMode: mode });
+    harness.server = { request: async (method, params) => {
+      requests.push({ method, params });
+      if (method === "thread/start") return { thread: { id: "thread" } };
+      if (method === "turn/start") throw new Error("captured turn");
+      return {};
+    } };
+    const session = await harness.createSession({ conversationId: "conversation" });
+    await assert.rejects(async () => { for await (const _event of harness.run({ sessionId: session.id, conversationId: "conversation", prompt: "test" })) {} }, /captured turn/);
+    assert.equal(requests[0].params.sandbox, mode === "full" ? "danger-full-access" : "read-only");
+    assert.deepEqual(requests[1].params.sandboxPolicy, mode === "full" ? { type: "dangerFullAccess" } : { type: "readOnly", networkAccess: false });
+    assert.equal(requests[1].params.approvalPolicy, mode === "full" ? "never" : "on-request");
+  }
+});
+
 test("CodexHarness satisfies the adapter contract and reports real capabilities", async () => {
   const harness = new CodexHarness({ store: {} });
   assert.equal(assertHarnessAdapter(harness), harness);

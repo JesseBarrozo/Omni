@@ -9,3 +9,6 @@ dist/
 .context/cache/semantic/
 .context/**/archive/
 .DS_Store
+web/dist/
+test-results/
+playwright-report/

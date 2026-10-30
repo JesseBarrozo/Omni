@@ -405,6 +405,7 @@ export class CodexHarness {
     executable = "codex",
     cwd = process.cwd(),
     model,
+    permissionMode = "ask",
     requestPermission = async () => false,
     mcpRegistry = null,
     env = process.env,
@@ -414,6 +415,7 @@ export class CodexHarness {
     this.executable = executable;
     this.cwd = cwd;
     this.model = model;
+    this.permissionMode = permissionMode;
     this.requestPermission = requestPermission;
     this.mcpRegistry = mcpRegistry;
     this.env = env;
@@ -525,8 +527,8 @@ export class CodexHarness {
     await this.initialize({ conversationId });
     const response = await this.server.request("thread/start", {
       cwd,
-      approvalPolicy: "on-request",
-      sandbox: "read-only",
+      approvalPolicy: this.permissionMode === "full" ? "never" : "on-request",
+      sandbox: this.permissionMode === "full" ? "danger-full-access" : "read-only",
       ...(model && model !== "codex" ? { model } : {}),
     });
     const session = {
@@ -567,8 +569,8 @@ export class CodexHarness {
     await this.server.request("thread/resume", {
       threadId: sessionId,
       cwd,
-      approvalPolicy: "on-request",
-      sandbox: "read-only",
+      approvalPolicy: this.permissionMode === "full" ? "never" : "on-request",
+      sandbox: this.permissionMode === "full" ? "danger-full-access" : "read-only",
       ...(model && model !== "codex" ? { model } : {}),
     });
     const session = {
@@ -745,9 +747,14 @@ export class CodexHarness {
     const started = await this.server.request("turn/start", {
       threadId: session.id,
       input: [{ type: "text", text: promptText, text_elements: [] }],
-      approvalPolicy: "on-request",
+      approvalPolicy: this.permissionMode === "full" ? "never" : "on-request",
+      sandboxPolicy: this.permissionMode === "full" ? { type: "dangerFullAccess" } : { type: "readOnly", networkAccess: false },
     });
-    const active = { turnId: started.turn.id, interruptSent: false };
+    const active = {
+      turnId: started.turn.id,
+      interruptSent: false,
+      messageItemId: null,
+    };
     this.activeTurns.set(session.id, active);
     try {
       while (true) {
@@ -765,6 +772,18 @@ export class CodexHarness {
           continue;
 
         if (event.method === "item/agentMessage/delta") {
+          if (
+            active.messageItemId &&
+            params.itemId &&
+            active.messageItemId !== params.itemId
+          ) {
+            yield {
+              conversationId,
+              type: "message.delta",
+              payload: { sessionId: session.id, delta: "\n\n" },
+            };
+          }
+          if (params.itemId) active.messageItemId = params.itemId;
           yield {
             conversationId,
             type: "message.delta",

@@ -14,14 +14,20 @@ Omni est le produit autonome de ce dossier. `Omni_PRD.md` décrit la cible; `AUD
 
 - `npm test` — tests unitaires Node intégrés.
 - `npm run check` — vérification syntaxique Node.
-- `npm start` — aide du CLI actuel; pas encore de `chat` ou `run`.
+- `npm start` — interface Agent interactive dans un TTY ; aide hors TTY.
+- `omni gui` — GUI web locale sur le runtime partagé.
+- `npm run gui:build` — typecheck TypeScript et build Vite de la GUI.
+- `npm run build:all` — build du CLI et de la GUI.
 
-Le manifeste ne déclare ni `build`, ni `lint`, ni `format`. Ne rapporte pas ces commandes comme réussies.
+Les scripts `build`, `lint`, `format` et `format:check` sont déclarés dans le manifeste actuel. Ne les rapporte comme réussis qu’après les avoir exécutés.
 
 ## Organisation
 
 - `src/core.mjs` — classes locales de conversation, événements, routage et permissions; lire l’audit pour leurs limites.
 - `src/adapters.mjs` — contrat et adaptateur mock réservé aux tests.
 - `bin/omni.mjs` — commandes CLI existantes.
-- `test/` — tests unitaires; pas de test d’intégration réel à ce stade.
+- `src/agent-workspace.mjs` — runtime partagé CLI/GUI, sessions, contexte, approbations et adaptateurs officiels.
+- `src/workspace-server.mjs` — API loopback et événements SSE de la GUI.
+- `web/` — interface React/Vite, composants shadcn/Radix et réutilisation Orca MIT.
+- `test/` — tests de contrats et d’intégration locale ; validations live opt-in documentées dans `WORKSPACE.md` et `VERIFICATION.md`.
 - `Omni_PRD.md`, `AUDIT.md`, `CHANGELOG.md` — exigences, état observé et historique des phases.

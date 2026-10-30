@@ -68,6 +68,7 @@ function queryOptions({
   resume,
   tools,
   canUseTool,
+  fullAccess = false,
   mcpServers = {},
   env = process.env,
 }) {
@@ -77,8 +78,12 @@ function queryOptions({
     ...(sessionId ? { sessionId } : {}),
     ...(resume ? { resume } : {}),
     tools,
-    permissionMode: canUseTool ? "default" : "dontAsk",
+    permissionMode: fullAccess ? "bypassPermissions" : canUseTool ? "default" : "dontAsk",
+    ...(fullAccess ? { allowDangerouslySkipPermissions: true } : {}),
     ...(canUseTool ? { canUseTool } : {}),
+    ...(canUseTool
+      ? { systemPrompt: { type: "preset", preset: "claude_code" } }
+      : {}),
     settingSources: [],
     strictMcpConfig: true,
     mcpServers,
@@ -248,6 +253,7 @@ export class ClaudeCodeHarness {
     store,
     cwd = process.cwd(),
     model,
+    permissionMode = "ask",
     requestPermission = async () => false,
     mcpRegistry = null,
     sdk = null,
@@ -256,6 +262,7 @@ export class ClaudeCodeHarness {
     this.store = store;
     this.cwd = cwd;
     this.model = model;
+    this.permissionMode = permissionMode;
     this.requestPermission = requestPermission;
     this.mcpRegistry = mcpRegistry;
     this.sdk = sdk;
@@ -524,6 +531,7 @@ export class ClaudeCodeHarness {
             resume: newSession ? undefined : session.id,
             tools: toolNames,
             canUseTool,
+            fullAccess: this.permissionMode === "full",
             mcpServers,
             env: this.env,
           }),

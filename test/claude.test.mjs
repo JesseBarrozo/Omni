@@ -19,6 +19,16 @@ import { createServer } from "node:http";
 import { ChatStore } from "../src/chat-store.mjs";
 import { McpRegistry } from "../src/mcp-registry.mjs";
 
+test("Claude full access enables the SDK bypass permission mode", async () => {
+  let options;
+  const sdk = { query(input) { options = input.options; throw new Error("captured options"); } };
+  const harness = new ClaudeCodeHarness({ sdk, permissionMode: "full" });
+  await assert.rejects(async () => { for await (const _event of harness.run({ conversationId: "conversation", prompt: "test" })) {} }, /captured options/);
+  assert.equal(options.permissionMode, "bypassPermissions");
+  assert.equal(options.allowDangerouslySkipPermissions, true);
+  await harness.dispose();
+});
+
 test("Claude auth status hides CLI output and handles missing CLI", () => {
   assert.deepEqual(claudeAuthStatus({ executable: "/missing/omni-claude" }), {
     provider: "claude",
