@@ -218,20 +218,48 @@ test("workspace gates each action, refuses reused approvals and cancels unresolv
 });
 
 test("permission modes apply to adapter requests for the selected turn", async () => {
-  const f = fixture(), p = probe();
-  const workspace = new AgentWorkspace({ store: f.store, dataDir: join(f.dir, "data"), adapterFactory: adapterFactory(p, { approval: true }) });
+  const f = fixture(),
+    p = probe();
+  const workspace = new AgentWorkspace({
+    store: f.store,
+    dataDir: join(f.dir, "data"),
+    adapterFactory: adapterFactory(p, { approval: true }),
+  });
   try {
     let pending = 0;
-    workspace.on("event", (event) => { if (event.type === "approval.requested") pending++; });
-    await workspace.run({ conversationId: f.conversation.id, prompt: "Deny", permissionMode: "deny" });
+    workspace.on("event", (event) => {
+      if (event.type === "approval.requested") pending++;
+    });
+    await workspace.run({
+      conversationId: f.conversation.id,
+      prompt: "Deny",
+      permissionMode: "deny",
+    });
     assert.equal(p.approved, false);
     assert.equal(existsSync(join(f.root, "approved.txt")), false);
-    await workspace.run({ conversationId: f.conversation.id, prompt: "Allow", permissionMode: "allow" });
+    await workspace.run({
+      conversationId: f.conversation.id,
+      prompt: "Allow",
+      permissionMode: "allow",
+    });
     assert.equal(p.approved, true);
-    assert.equal(readFileSync(join(f.root, "approved.txt"), "utf8"), "executed once");
+    assert.equal(
+      readFileSync(join(f.root, "approved.txt"), "utf8"),
+      "executed once",
+    );
     assert.equal(pending, 0);
-    await assert.rejects(workspace.run({ conversationId: f.conversation.id, prompt: "Invalid", permissionMode: "invalid" }), /permission invalide/i);
-  } finally { await workspace.close(); f.close(); }
+    await assert.rejects(
+      workspace.run({
+        conversationId: f.conversation.id,
+        prompt: "Invalid",
+        permissionMode: "invalid",
+      }),
+      /permission invalide/i,
+    );
+  } finally {
+    await workspace.close();
+    f.close();
+  }
 });
 
 test("workspace refuses concurrent runs and reports failed adapters without inventing success", async () => {
@@ -358,27 +386,52 @@ test("GUI API shares SQLite, serves real context/files and rejects cross-origin 
     execFileSync("git", ["config", "user.email", "test@example.invalid"], {
       cwd: f.root,
     });
-    response = await post(`/projects/${f.project.id}/git-generate-message`, { harnessId: "codex", model: "codex" });
+    response = await post(`/projects/${f.project.id}/git-generate-message`, {
+      harnessId: "codex",
+      model: "codex",
+    });
     assert.equal(response.status, 200);
     assert.match(p.prompt, /saved/);
-    assert.equal(execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: f.root, encoding: "utf8" }), "");
+    assert.equal(
+      execFileSync("git", ["diff", "--cached", "--name-only"], {
+        cwd: f.root,
+        encoding: "utf8",
+      }),
+      "",
+    );
     response = await post(`/projects/${f.project.id}/git-stage`, {
       path: "editable.txt",
     });
     assert.equal(response.status, 200);
-    response = await post(`/projects/${f.project.id}/git-unstage`, { path: "editable.txt" });
+    response = await post(`/projects/${f.project.id}/git-unstage`, {
+      path: "editable.txt",
+    });
     assert.equal(response.status, 200);
     assert.equal(readFileSync(join(f.root, "editable.txt"), "utf8"), "saved\n");
-    response = await post(`/projects/${f.project.id}/git-stage`, { path: "editable.txt" });
+    response = await post(`/projects/${f.project.id}/git-stage`, {
+      path: "editable.txt",
+    });
     assert.equal(response.status, 200);
-    response = await fetch(app.url + `/api/projects/${f.project.id}/git-file-diff?path=editable.txt&staged=true`);
+    response = await fetch(
+      app.url +
+        `/api/projects/${f.project.id}/git-file-diff?path=editable.txt&staged=true`,
+    );
     assert.match((await response.json()).content, /saved/);
-    response = await post(`/projects/${f.project.id}/git-generate-message`, { harnessId: "codex", model: "codex" });
+    response = await post(`/projects/${f.project.id}/git-generate-message`, {
+      harnessId: "codex",
+      model: "codex",
+    });
     assert.equal(response.status, 200);
-    assert.equal((await response.json()).message, "Réponse réelle du contrat de test.");
+    assert.equal(
+      (await response.json()).message,
+      "Réponse réelle du contrat de test.",
+    );
     assert.equal(p.approved, false);
     assert.match(p.prompt, /saved/);
-    assert.equal(f.store.conversations(f.project.id, { archived: true }).length, 0);
+    assert.equal(
+      f.store.conversations(f.project.id, { archived: true }).length,
+      0,
+    );
     response = await post(`/projects/${f.project.id}/git-commit`, {
       message: "Initial test",
     });
@@ -395,10 +448,15 @@ test("GUI API shares SQLite, serves real context/files and rejects cross-origin 
     assert.equal(git.history[0].author, "Omni test");
     assert.deepEqual(git.history[0].parents, []);
     assert.ok(git.history[0].refs.includes("feature-test"));
-    response = await fetch(app.url + `/api/projects/${f.project.id}/git-commit-detail?hash=${git.history[0].id}`);
+    response = await fetch(
+      app.url +
+        `/api/projects/${f.project.id}/git-commit-detail?hash=${git.history[0].id}`,
+    );
     assert.equal(response.status, 200);
     assert.match((await response.json()).content, /Initial test/);
-    response = await fetch(app.url + `/api/projects/${f.project.id}/git-commit-detail?hash=HEAD`);
+    response = await fetch(
+      app.url + `/api/projects/${f.project.id}/git-commit-detail?hash=HEAD`,
+    );
     assert.equal(response.status, 400);
     response = await fetch(app.url + `/api/projects/${f.project.id}/summary`);
     assert.equal((await response.json()).branch, "feature-test");
@@ -461,25 +519,39 @@ test("GUI API shares SQLite, serves real context/files and rejects cross-origin 
 
 test("workspace API discovers, opens and safely removes Git worktrees", async () => {
   const f = fixture();
-  const git = (args, cwd = f.root) => execFileSync("git", args, { cwd, stdio: "ignore" });
+  const git = (args, cwd = f.root) =>
+    execFileSync("git", args, { cwd, stdio: "ignore" });
   git(["init"]);
   git(["config", "user.name", "Omni Test"]);
   git(["config", "user.email", "omni@example.invalid"]);
   git(["add", "."]);
   git(["commit", "-m", "initial"]);
-  const app = await startWorkspaceServer({ store: f.store, dataDir: join(f.dir, "data"), cwd: f.root, port: 0 });
-  const endpoint = `/api/projects/${f.project.id}`;
-  const post = (action, body) => fetch(`${app.url}${endpoint}/${action}`, {
-    method: "POST", headers: { "content-type": "application/json", "x-omni-request": "1" }, body: JSON.stringify(body),
+  const app = await startWorkspaceServer({
+    store: f.store,
+    dataDir: join(f.dir, "data"),
+    cwd: f.root,
+    port: 0,
   });
+  const endpoint = `/api/projects/${f.project.id}`;
+  const post = (action, body) =>
+    fetch(`${app.url}${endpoint}/${action}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-omni-request": "1" },
+      body: JSON.stringify(body),
+    });
   const target = join(f.dir, "feature-worktree");
   try {
-    let response = await post("worktree-create", { path: target, branch: "feature/omni" });
+    let response = await post("worktree-create", {
+      path: target,
+      branch: "feature/omni",
+    });
     assert.equal(response.status, 201, await response.text());
     let summary = await (await fetch(`${app.url}${endpoint}/summary`)).json();
     assert.equal(summary.worktrees.length, 2);
     assert.equal(summary.worktrees[0].mainWorktree, true);
-    const created = summary.worktrees.find((item) => item.branch === "feature/omni");
+    const created = summary.worktrees.find(
+      (item) => item.branch === "feature/omni",
+    );
     assert.ok(created?.projectId);
     response = await post("remove", {});
     assert.equal(response.status, 200);
@@ -490,9 +562,19 @@ test("workspace API discovers, opens and safely removes Git worktrees", async ()
     assert.equal(existsSync(target), true);
     assert.equal(f.store.projects().length, 0);
     assert.equal((await post("restore", {})).status, 200);
-    assert.equal((await fetch(`${app.url}/api/projects/${created.projectId}/restore`, {
-      method: "POST", headers: { "content-type": "application/json", "x-omni-request": "1" }, body: "{}",
-    })).status, 200);
+    assert.equal(
+      (
+        await fetch(`${app.url}/api/projects/${created.projectId}/restore`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-omni-request": "1",
+          },
+          body: "{}",
+        })
+      ).status,
+      200,
+    );
     response = await post("worktree-open", { path: created.path });
     assert.equal((await response.json()).id, created.projectId);
     writeFileSync(join(target, "untracked.txt"), "unsaved work");
@@ -505,7 +587,11 @@ test("workspace API discovers, opens and safely removes Git worktrees", async ()
     assert.equal(existsSync(target), false);
     summary = await (await fetch(`${app.url}${endpoint}/summary`)).json();
     assert.equal(summary.worktrees.length, 1);
-    assert.ok(f.store.archivedProjects().some((project) => project.id === created.projectId));
+    assert.ok(
+      f.store
+        .archivedProjects()
+        .some((project) => project.id === created.projectId),
+    );
   } finally {
     await app.close();
     f.close();
@@ -514,10 +600,23 @@ test("workspace API discovers, opens and safely removes Git worktrees", async ()
 
 test("conversations can be renamed, archived, restored and explicitly deleted", async () => {
   const f = fixture();
-  const app = await startWorkspaceServer({ store: f.store, dataDir: join(f.dir, "data"), cwd: f.root, port: 0 });
+  const app = await startWorkspaceServer({
+    store: f.store,
+    dataDir: join(f.dir, "data"),
+    cwd: f.root,
+    port: 0,
+  });
   const base = `${app.url}/api/conversations/${f.conversation.id}`;
-  const post = (path, body = {}) => fetch(`${base}/${path}`, { method: "POST", headers: { "content-type": "application/json", "x-omni-request": "1" }, body: JSON.stringify(body) });
-  const list = (archived = false) => fetch(`${app.url}/api/projects/${f.project.id}/conversations?archived=${archived}`).then((r) => r.json());
+  const post = (path, body = {}) =>
+    fetch(`${base}/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-omni-request": "1" },
+      body: JSON.stringify(body),
+    });
+  const list = (archived = false) =>
+    fetch(
+      `${app.url}/api/projects/${f.project.id}/conversations?archived=${archived}`,
+    ).then((r) => r.json());
   try {
     f.store.addMessage(f.conversation.id, "user", "secret conversation");
     let response = await post("rename", { title: "Nouveau titre" });
@@ -526,8 +625,18 @@ test("conversations can be renamed, archived, restored and explicitly deleted", 
     assert.equal(response.status, 200);
     assert.equal((await list()).length, 0);
     assert.equal((await list(true)).length, 1);
-    assert.equal(f.store.searchConversations("Nouveau", f.project.id).length, 0);
-    response = await fetch(`${app.url}/api/runs`, { method: "POST", headers: { "content-type": "application/json", "x-omni-request": "1" }, body: JSON.stringify({ conversationId: f.conversation.id, prompt: "test" }) });
+    assert.equal(
+      f.store.searchConversations("Nouveau", f.project.id).length,
+      0,
+    );
+    response = await fetch(`${app.url}/api/runs`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-omni-request": "1" },
+      body: JSON.stringify({
+        conversationId: f.conversation.id,
+        prompt: "test",
+      }),
+    });
     assert.equal(response.status, 400);
     assert.equal((await post("restore")).status, 200);
     assert.equal((await list()).length, 1);
@@ -537,38 +646,80 @@ test("conversations can be renamed, archived, restored and explicitly deleted", 
     f.store.setStatus(f.conversation.id, "completed");
     assert.equal((await post("delete")).status, 200);
     assert.throws(() => f.store.conversation(f.conversation.id), /introuvable/);
-    assert.equal(f.store.db.prepare("SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?").get(f.conversation.id).n, 0);
-    assert.equal(f.store.db.prepare("SELECT COUNT(*) AS n FROM conversation_events WHERE conversation_id = ?").get(f.conversation.id).n, 0);
+    assert.equal(
+      f.store.db
+        .prepare("SELECT COUNT(*) AS n FROM messages WHERE conversation_id = ?")
+        .get(f.conversation.id).n,
+      0,
+    );
+    assert.equal(
+      f.store.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM conversation_events WHERE conversation_id = ?",
+        )
+        .get(f.conversation.id).n,
+      0,
+    );
     const other = f.store.createConversation(f.project.id, "Other", "codex");
     f.store.addMessage(other.id, "user", "protected");
-    assert.throws(() => f.store.db.prepare("DELETE FROM conversation_events WHERE conversation_id = ?").run(other.id), /append-only/);
-  } finally { await app.close(); f.close(); }
+    assert.throws(
+      () =>
+        f.store.db
+          .prepare("DELETE FROM conversation_events WHERE conversation_id = ?")
+          .run(other.id),
+      /append-only/,
+    );
+  } finally {
+    await app.close();
+    f.close();
+  }
 });
 
 test("source control stages and unstages changes safely and shows file diffs", async () => {
   const f = fixture();
-  const git = (args) => execFileSync("git", args, { cwd: f.root, encoding: "utf8" });
-  git(["init", "-q"]); git(["config", "user.name", "Test"]); git(["config", "user.email", "test@example.invalid"]);
+  const git = (args) =>
+    execFileSync("git", args, { cwd: f.root, encoding: "utf8" });
+  git(["init", "-q"]);
+  git(["config", "user.name", "Test"]);
+  git(["config", "user.email", "test@example.invalid"]);
   writeFileSync(join(f.root, "base.txt"), "before\n");
-  git(["add", "base.txt"]); git(["commit", "-qm", "initial"]);
+  git(["add", "base.txt"]);
+  git(["commit", "-qm", "initial"]);
   writeFileSync(join(f.root, "base.txt"), "after\n");
   writeFileSync(join(f.root, "new.txt"), "new file\n");
   writeFileSync(join(f.root, ".env"), "PRIVATE=secret\n");
-  const app = await startWorkspaceServer({ store: f.store, dataDir: join(f.dir, "data"), cwd: f.root, port: 0 });
+  const app = await startWorkspaceServer({
+    store: f.store,
+    dataDir: join(f.dir, "data"),
+    cwd: f.root,
+    port: 0,
+  });
   const base = `${app.url}/api/projects/${f.project.id}`;
-  const post = (action, body = {}) => fetch(`${base}/${action}`, { method: "POST", headers: { "content-type": "application/json", "x-omni-request": "1" }, body: JSON.stringify(body) });
+  const post = (action, body = {}) =>
+    fetch(`${base}/${action}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-omni-request": "1" },
+      body: JSON.stringify(body),
+    });
   try {
-    let response = await fetch(`${base}/git-file-diff?path=base.txt&staged=false`);
+    let response = await fetch(
+      `${base}/git-file-diff?path=base.txt&staged=false`,
+    );
     assert.match((await response.json()).content, /after/);
     response = await fetch(`${base}/git-file-diff?path=new.txt&untracked=true`);
     assert.match((await response.json()).content, /new file/);
     assert.equal((await post("git-stage-all")).status, 200);
     const staged = git(["diff", "--cached", "--name-only"]);
-    assert.match(staged, /base.txt/); assert.match(staged, /new.txt/); assert.doesNotMatch(staged, /\.env/);
+    assert.match(staged, /base.txt/);
+    assert.match(staged, /new.txt/);
+    assert.doesNotMatch(staged, /\.env/);
     assert.equal((await post("git-unstage-all")).status, 200);
     assert.equal(git(["diff", "--cached", "--name-only"]), "");
     assert.equal(readFileSync(join(f.root, "base.txt"), "utf8"), "after\n");
     assert.equal(readFileSync(join(f.root, "new.txt"), "utf8"), "new file\n");
     assert.equal((await post("git-stage", { path: "../outside" })).status, 400);
-  } finally { await app.close(); f.close(); }
+  } finally {
+    await app.close();
+    f.close();
+  }
 });

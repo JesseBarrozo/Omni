@@ -78,7 +78,11 @@ function queryOptions({
     ...(sessionId ? { sessionId } : {}),
     ...(resume ? { resume } : {}),
     tools,
-    permissionMode: fullAccess ? "bypassPermissions" : canUseTool ? "default" : "dontAsk",
+    permissionMode: fullAccess
+      ? "bypassPermissions"
+      : canUseTool
+        ? "default"
+        : "dontAsk",
     ...(fullAccess ? { allowDangerouslySkipPermissions: true } : {}),
     ...(canUseTool ? { canUseTool } : {}),
     ...(canUseTool

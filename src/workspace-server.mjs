@@ -28,14 +28,24 @@ const hidden = (name) =>
   /^(?:\.git|node_modules|dist|\.env(?:\..*)?|credentials.*|secrets?.*|\.ssh|\.aws|\.codex|\.omni)$/i.test(
     name,
   ) || /\.(?:pem|key|p12|sqlite\d?|db)$/i.test(name);
-const validGitPath = (path) => typeof path === "string" && path.length > 0 && !isAbsolute(path) && !path.includes("\0") && !path.split(/[\\/]/).some((part) => hidden(part) || part === ".." || part === "");
+const validGitPath = (path) =>
+  typeof path === "string" &&
+  path.length > 0 &&
+  !isAbsolute(path) &&
+  !path.includes("\0") &&
+  !path
+    .split(/[\\/]/)
+    .some((part) => hidden(part) || part === ".." || part === "");
 function parseGitStatus(output) {
-  const records = output.split("\0"), changes = [];
+  const records = output.split("\0"),
+    changes = [];
   for (let i = 0; i < records.length; i++) {
     const row = records[i];
     if (!row) continue;
-    const code = row.slice(0, 2), path = row.slice(3);
-    const oldPath = code.includes("R") || code.includes("C") ? records[++i] : undefined;
+    const code = row.slice(0, 2),
+      path = row.slice(3);
+    const oldPath =
+      code.includes("R") || code.includes("C") ? records[++i] : undefined;
     changes.push({ code, path, ...(oldPath ? { oldPath } : {}) });
   }
   return changes;
@@ -58,17 +68,39 @@ const keyProviders = {
   google: ["Omni Gemini API Key", "Google"],
 };
 async function gitWorktrees(cwd) {
-  const { stdout } = await exec("git", ["worktree", "list", "--porcelain", "-z"], {
-    cwd, timeout: 5000, maxBuffer: 1024 * 1024,
-  });
-  return stdout.split("\0\0").filter(Boolean).map((record, index) => {
-    const fields = record.split("\0");
-    const path = fields.find((line) => line.startsWith("worktree "))?.slice(9);
-    const branch = fields.find((line) => line.startsWith("branch refs/heads/"))?.slice(18);
-    return { path, branch: branch || "HEAD détachée", mainWorktree: index === 0,
-      locked: fields.some((line) => line === "locked" || line.startsWith("locked ")),
-      prunable: fields.some((line) => line === "prunable" || line.startsWith("prunable ")) };
-  }).filter((entry) => entry.path);
+  const { stdout } = await exec(
+    "git",
+    ["worktree", "list", "--porcelain", "-z"],
+    {
+      cwd,
+      timeout: 5000,
+      maxBuffer: 1024 * 1024,
+    },
+  );
+  return stdout
+    .split("\0\0")
+    .filter(Boolean)
+    .map((record, index) => {
+      const fields = record.split("\0");
+      const path = fields
+        .find((line) => line.startsWith("worktree "))
+        ?.slice(9);
+      const branch = fields
+        .find((line) => line.startsWith("branch refs/heads/"))
+        ?.slice(18);
+      return {
+        path,
+        branch: branch || "HEAD détachée",
+        mainWorktree: index === 0,
+        locked: fields.some(
+          (line) => line === "locked" || line.startsWith("locked "),
+        ),
+        prunable: fields.some(
+          (line) => line === "prunable" || line.startsWith("prunable "),
+        ),
+      };
+    })
+    .filter((entry) => entry.path);
 }
 async function jsonBody(request, limit = 256000) {
   let data = "";
@@ -113,7 +145,8 @@ export async function startWorkspaceServer({
       } else client.write(`data: ${JSON.stringify(event)}\n\n`);
     }
   };
-  awake.onChange = (status) => broadcast({ type: "awake.status", payload: status });
+  awake.onChange = (status) =>
+    broadcast({ type: "awake.status", payload: status });
   const onWorkspaceEvent = (event) => {
     awake.setActiveRuns(workspace.active.size);
     broadcast(event);
@@ -209,6 +242,67 @@ export async function startWorkspaceServer({
         const result = await awake.setMode(body.mode);
         send(response, 200, result);
         broadcast({ type: "awake.status", payload: result });
+        return;
+      }
+      if (path === "/api/browser/proxy" && request.method === "GET") {
+        const target = url.searchParams.get("url");
+        if (!target) {
+          send(response, 400, { error: "Paramètre url manquant." });
+          return;
+        }
+        let targetUrl;
+        try {
+          targetUrl = new URL(target);
+          if (!["http:", "https:"].includes(targetUrl.protocol)) {
+            throw new Error("Protocole non pris en charge.");
+          }
+        } catch (err) {
+          send(response, 400, { error: `URL invalide: ${err.message}` });
+          return;
+        }
+        try {
+          const fetchResponse = await fetch(targetUrl.href, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Omni/1.0",
+              Accept:
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+              "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+            },
+            redirect: "follow",
+            signal: AbortSignal.timeout(10000),
+          });
+          const contentType =
+            fetchResponse.headers.get("content-type") || "text/html";
+          if (contentType.includes("text/html")) {
+            let html = await fetchResponse.text();
+            const baseTag = `<base href="${targetUrl.href}">`;
+            if (html.includes("<head>")) {
+              html = html.replace("<head>", `<head>${baseTag}`);
+            } else if (html.includes("<head ")) {
+              html = html.replace(/<head[^>]*>/, `$&${baseTag}`);
+            } else {
+              html = `${baseTag}${html}`;
+            }
+            response.writeHead(fetchResponse.status, {
+              "content-type": "text/html; charset=utf-8",
+              "x-content-type-options": "nosniff",
+              "access-control-allow-origin": "*",
+            });
+            response.end(html);
+          } else {
+            const buffer = Buffer.from(await fetchResponse.arrayBuffer());
+            response.writeHead(fetchResponse.status, {
+              "content-type": contentType,
+              "access-control-allow-origin": "*",
+            });
+            response.end(buffer);
+          }
+        } catch (err) {
+          send(response, 502, {
+            error: `Échec du chargement proxy: ${err.message}`,
+          });
+        }
         return;
       }
       if (path === "/api/skills" && request.method === "GET") {
@@ -349,8 +443,17 @@ export async function startWorkspaceServer({
           } catch {
             // Un dossier supprimé ou sans Git reste retirable.
           }
-          const removed = store.projects().filter((item) => item.rootPath && paths.some((path) => path && resolve(path) === resolve(item.rootPath)));
-          if (!removed.some((item) => item.id === project.id)) removed.push(project);
+          const removed = store
+            .projects()
+            .filter(
+              (item) =>
+                item.rootPath &&
+                paths.some(
+                  (path) => path && resolve(path) === resolve(item.rootPath),
+                ),
+            );
+          if (!removed.some((item) => item.id === project.id))
+            removed.push(project);
           store.db.transaction(() => {
             for (const item of removed) store.archiveProject(item.id);
           })();
@@ -441,31 +544,54 @@ export async function startWorkspaceServer({
         });
         return;
       }
-      const worktreeAction = path.match(/^\/api\/projects\/([^/]+)\/worktree-(open|create|remove)$/);
+      const worktreeAction = path.match(
+        /^\/api\/projects\/([^/]+)\/worktree-(open|create|remove)$/,
+      );
       if (worktreeAction && request.method === "POST") {
         const project = store.project(worktreeAction[1]);
         const cwd = await projectRoot(project.rootPath);
         const body = await jsonBody(request);
-        if (typeof body.path !== "string" || !isAbsolute(body.path) || body.path.includes("\0"))
-          throw new Error("Un chemin absolu est requis pour l’espace de travail.");
+        if (
+          typeof body.path !== "string" ||
+          !isAbsolute(body.path) ||
+          body.path.includes("\0")
+        )
+          throw new Error(
+            "Un chemin absolu est requis pour l’espace de travail.",
+          );
         const target = resolve(body.path);
         if (worktreeAction[2] === "create") {
           if (typeof body.branch !== "string" || !body.branch.trim())
             throw new Error("Le nom de la nouvelle branche est requis.");
-          await exec("git", ["check-ref-format", "--branch", body.branch], { cwd, timeout: 3000 });
-          const exists = await stat(target).then(() => true, (error) => {
-            if (error.code === "ENOENT") return false;
-            throw error;
+          await exec("git", ["check-ref-format", "--branch", body.branch], {
+            cwd,
+            timeout: 3000,
           });
+          const exists = await stat(target).then(
+            () => true,
+            (error) => {
+              if (error.code === "ENOENT") return false;
+              throw error;
+            },
+          );
           if (exists) throw new Error("Le dossier cible existe déjà.");
-          await exec("git", ["worktree", "add", "-b", body.branch, "--", target, "HEAD"], { cwd, timeout: 120000 });
+          await exec(
+            "git",
+            ["worktree", "add", "-b", body.branch, "--", target, "HEAD"],
+            { cwd, timeout: 120000 },
+          );
           const added = await ensureProject(store, target);
           store.restoreProject(added.id);
           send(response, 201, added);
           return;
         }
-        const worktree = (await gitWorktrees(cwd)).find((item) => resolve(item.path) === target);
-        if (!worktree) throw new Error("Cet espace n’appartient pas au dépôt Git du projet.");
+        const worktree = (await gitWorktrees(cwd)).find(
+          (item) => resolve(item.path) === target,
+        );
+        if (!worktree)
+          throw new Error(
+            "Cet espace n’appartient pas au dépôt Git du projet.",
+          );
         if (worktreeAction[2] === "open") {
           const opened = await ensureProject(store, target);
           store.restoreProject(opened.id);
@@ -473,13 +599,30 @@ export async function startWorkspaceServer({
           return;
         }
         if (worktree.mainWorktree || worktree.locked || target === resolve(cwd))
-          throw new Error("Cet espace de travail ne peut pas être supprimé depuis ce projet.");
-        const registered = store.projects().find((item) => item.rootPath && resolve(item.rootPath) === target);
-        if (registered && [...workspace.active.keys()].some((id) => store.conversation(id).projectId === registered.id))
-          throw new Error("Arrêtez les agents actifs dans cet espace avant de le supprimer.");
-        await exec("git", ["worktree", "remove", "--", target], { cwd, timeout: 120000 });
+          throw new Error(
+            "Cet espace de travail ne peut pas être supprimé depuis ce projet.",
+          );
+        const registered = store
+          .projects()
+          .find((item) => item.rootPath && resolve(item.rootPath) === target);
+        if (
+          registered &&
+          [...workspace.active.keys()].some(
+            (id) => store.conversation(id).projectId === registered.id,
+          )
+        )
+          throw new Error(
+            "Arrêtez les agents actifs dans cet espace avant de le supprimer.",
+          );
+        await exec("git", ["worktree", "remove", "--", target], {
+          cwd,
+          timeout: 120000,
+        });
         if (registered) store.archiveProject(registered.id);
-        send(response, 200, { removed: true, projectId: registered?.id ?? null });
+        send(response, 200, {
+          removed: true,
+          projectId: registered?.id ?? null,
+        });
         return;
       }
       const projectMatch = path.match(
@@ -498,16 +641,31 @@ export async function startWorkspaceServer({
             timeout: 3000,
           });
           const [gitDir, commonDir] = await Promise.all([
-            exec("git", ["rev-parse", "--absolute-git-dir"], { cwd, timeout: 3000 }),
-            exec("git", ["rev-parse", "--git-common-dir"], { cwd, timeout: 3000 }),
+            exec("git", ["rev-parse", "--absolute-git-dir"], {
+              cwd,
+              timeout: 3000,
+            }),
+            exec("git", ["rev-parse", "--git-common-dir"], {
+              cwd,
+              timeout: 3000,
+            }),
           ]);
           const worktrees = await gitWorktrees(cwd);
           const registeredProjects = store.projects();
           send(response, 200, {
             available: true,
             branch: result.stdout.trim() || "HEAD détachée",
-            mainWorktree: resolve(gitDir.stdout.trim()) === resolve(cwd, commonDir.stdout.trim()),
-            worktrees: worktrees.map((item) => ({ ...item, projectId: registeredProjects.find((p) => p.rootPath && resolve(p.rootPath) === resolve(item.path))?.id ?? null })),
+            mainWorktree:
+              resolve(gitDir.stdout.trim()) ===
+              resolve(cwd, commonDir.stdout.trim()),
+            worktrees: worktrees.map((item) => ({
+              ...item,
+              projectId:
+                registeredProjects.find(
+                  (p) =>
+                    p.rootPath && resolve(p.rootPath) === resolve(item.path),
+                )?.id ?? null,
+            })),
           });
         } catch {
           send(response, 200, { available: false, branch: null });
@@ -610,7 +768,18 @@ export async function startWorkspaceServer({
       if (
         projectMatch &&
         request.method === "POST" &&
-        ["git-branch", "git-stage", "git-unstage", "git-stage-all", "git-unstage-all", "git-commit", "git-generate-message", "git-fetch", "git-pull", "git-push"].includes(projectMatch[2])
+        [
+          "git-branch",
+          "git-stage",
+          "git-unstage",
+          "git-stage-all",
+          "git-unstage-all",
+          "git-commit",
+          "git-generate-message",
+          "git-fetch",
+          "git-pull",
+          "git-push",
+        ].includes(projectMatch[2])
       ) {
         const body = await jsonBody(request);
         const project = store.project(projectMatch[1]);
@@ -642,47 +811,170 @@ export async function startWorkspaceServer({
               ? ["switch", "-c", body.name]
               : ["switch", "--", body.name],
           );
-        } else if (["git-fetch", "git-pull", "git-push"].includes(projectMatch[2])) {
+        } else if (
+          ["git-fetch", "git-pull", "git-push"].includes(projectMatch[2])
+        ) {
           const command = projectMatch[2].slice(4);
           await gitExec(command === "pull" ? ["pull", "--ff-only"] : [command]);
         } else if (projectMatch[2] === "git-generate-message") {
-          const names = (await gitExec(["diff", "--cached", "--name-only", "-z"])).stdout.split("\0").filter(Boolean);
-          if (names.some((name) => !validGitPath(name))) throw new Error("Des fichiers privés sont indexés ; retirez-les de l’index avant la génération.");
+          const names = (
+            await gitExec(["diff", "--cached", "--name-only", "-z"])
+          ).stdout
+            .split("\0")
+            .filter(Boolean);
+          if (names.some((name) => !validGitPath(name)))
+            throw new Error(
+              "Des fichiers privés sont indexés ; retirez-les de l’index avant la génération.",
+            );
           const snapshot = async () => {
-            if (names.length) return (await gitExec(["diff", "--cached", "--no-ext-diff", "--no-color", "--", ...names.map((name) => `:(literal)${name}`)])).stdout;
-            const changes = parseGitStatus((await gitExec(["status", "--porcelain=v1", "-z", "--untracked-files=all"])).stdout);
-            const eligible = changes.filter((change) => validGitPath(change.path) && (change.code === "??" || change.code[1] !== " ")).slice(0, 50);
+            if (names.length)
+              return (
+                await gitExec([
+                  "diff",
+                  "--cached",
+                  "--no-ext-diff",
+                  "--no-color",
+                  "--",
+                  ...names.map((name) => `:(literal)${name}`),
+                ])
+              ).stdout;
+            const changes = parseGitStatus(
+              (
+                await gitExec([
+                  "status",
+                  "--porcelain=v1",
+                  "-z",
+                  "--untracked-files=all",
+                ])
+              ).stdout,
+            );
+            const eligible = changes
+              .filter(
+                (change) =>
+                  validGitPath(change.path) &&
+                  (change.code === "??" || change.code[1] !== " "),
+              )
+              .slice(0, 50);
             const tracked = eligible.filter((change) => change.code !== "??");
-            let output = tracked.length ? (await gitExec(["diff", "--no-ext-diff", "--no-color", "--", ...tracked.map((change) => `:(literal)${change.path}`)])).stdout : "";
-            for (const change of eligible.filter((entry) => entry.code === "??")) {
+            let output = tracked.length
+              ? (
+                  await gitExec([
+                    "diff",
+                    "--no-ext-diff",
+                    "--no-color",
+                    "--",
+                    ...tracked.map((change) => `:(literal)${change.path}`),
+                  ])
+                ).stdout
+              : "";
+            for (const change of eligible.filter(
+              (entry) => entry.code === "??",
+            )) {
               const target = await containedFile(cwd, change.path);
-              if (relative(cwd, target).split(/[\\/]/).some(hidden) || !(await stat(target)).isFile()) continue;
-              try { output += (await gitExec(["diff", "--no-index", "--no-color", "--", "/dev/null", target])).stdout; }
-              catch (error) { if (error.code === 1 && typeof error.stdout === "string") output += error.stdout; else throw error; }
+              if (
+                relative(cwd, target).split(/[\\/]/).some(hidden) ||
+                !(await stat(target)).isFile()
+              )
+                continue;
+              try {
+                output += (
+                  await gitExec([
+                    "diff",
+                    "--no-index",
+                    "--no-color",
+                    "--",
+                    "/dev/null",
+                    target,
+                  ])
+                ).stdout;
+              } catch (error) {
+                if (error.code === 1 && typeof error.stdout === "string")
+                  output += error.stdout;
+                else throw error;
+              }
               if (output.length > 100000) break;
             }
             return output;
           };
           const diff = await snapshot();
-          if (!diff.trim()) throw new Error("Aucun changement texte accessible pour la génération.");
-          const result = await workspace.generateCommitMessage({ projectId: project.id, cwd, diff: redactSecrets(diff).slice(0, 100000), harnessId: body.harnessId, model: body.model });
-          const currentNames = (await gitExec(["diff", "--cached", "--name-only", "-z"])).stdout.split("\0").filter(Boolean);
-          if (currentNames.join("\0") !== names.join("\0") || await snapshot() !== diff) throw new Error("Les changements ont changé pendant la génération. Relancez-la.");
+          if (!diff.trim())
+            throw new Error(
+              "Aucun changement texte accessible pour la génération.",
+            );
+          const result = await workspace.generateCommitMessage({
+            projectId: project.id,
+            cwd,
+            diff: redactSecrets(diff).slice(0, 100000),
+            harnessId: body.harnessId,
+            model: body.model,
+          });
+          const currentNames = (
+            await gitExec(["diff", "--cached", "--name-only", "-z"])
+          ).stdout
+            .split("\0")
+            .filter(Boolean);
+          if (
+            currentNames.join("\0") !== names.join("\0") ||
+            (await snapshot()) !== diff
+          )
+            throw new Error(
+              "Les changements ont changé pendant la génération. Relancez-la.",
+            );
           send(response, 200, result);
           return;
-        } else if (["git-stage", "git-unstage", "git-stage-all", "git-unstage-all"].includes(projectMatch[2])) {
-          const stage = ["git-stage", "git-stage-all"].includes(projectMatch[2]);
+        } else if (
+          [
+            "git-stage",
+            "git-unstage",
+            "git-stage-all",
+            "git-unstage-all",
+          ].includes(projectMatch[2])
+        ) {
+          const stage = ["git-stage", "git-stage-all"].includes(
+            projectMatch[2],
+          );
           const all = projectMatch[2].endsWith("-all");
           let paths;
           if (all) {
-            const changes = parseGitStatus((await gitExec(["status", "--porcelain=v1", "-z", "--untracked-files=all"])).stdout);
-            paths = changes.filter((change) => stage ? (change.code === "??" || change.code[1] !== " ") : (change.code !== "??" && change.code[0] !== " ")).flatMap((change) => [change.path, ...(change.oldPath ? [change.oldPath] : [])]).filter(validGitPath);
+            const changes = parseGitStatus(
+              (
+                await gitExec([
+                  "status",
+                  "--porcelain=v1",
+                  "-z",
+                  "--untracked-files=all",
+                ])
+              ).stdout,
+            );
+            paths = changes
+              .filter((change) =>
+                stage
+                  ? change.code === "??" || change.code[1] !== " "
+                  : change.code !== "??" && change.code[0] !== " ",
+              )
+              .flatMap((change) => [
+                change.path,
+                ...(change.oldPath ? [change.oldPath] : []),
+              ])
+              .filter(validGitPath);
           } else {
-            if (!validGitPath(body.path)) throw new Error("Chemin invalide ou privé.");
+            if (!validGitPath(body.path))
+              throw new Error("Chemin invalide ou privé.");
             paths = [body.path];
             if (!stage) {
-              const changes = parseGitStatus((await gitExec(["status", "--porcelain=v1", "-z", "--untracked-files=all"])).stdout);
-              const previous = changes.find((change) => change.path === body.path)?.oldPath;
+              const changes = parseGitStatus(
+                (
+                  await gitExec([
+                    "status",
+                    "--porcelain=v1",
+                    "-z",
+                    "--untracked-files=all",
+                  ])
+                ).stdout,
+              );
+              const previous = changes.find(
+                (change) => change.path === body.path,
+              )?.oldPath;
               if (previous && validGitPath(previous)) paths.push(previous);
             }
           }
@@ -691,8 +983,27 @@ export async function startWorkspaceServer({
             const pathspecs = paths.map((path) => `:(literal)${path}`);
             if (stage) await gitExec(["add", "--", ...pathspecs]);
             else {
-              const hasHead = await gitExec(["rev-parse", "--verify", "HEAD"]).then(() => true, () => false);
-              await gitExec(hasHead ? ["reset", "-q", "HEAD", "--", ...pathspecs] : ["rm", "--cached", "-f", "-r", "--ignore-unmatch", "--", ...pathspecs]);
+              const hasHead = await gitExec([
+                "rev-parse",
+                "--verify",
+                "HEAD",
+              ]).then(
+                () => true,
+                () => false,
+              );
+              await gitExec(
+                hasHead
+                  ? ["reset", "-q", "HEAD", "--", ...pathspecs]
+                  : [
+                      "rm",
+                      "--cached",
+                      "-f",
+                      "-r",
+                      "--ignore-unmatch",
+                      "--",
+                      ...pathspecs,
+                    ],
+              );
             }
           }
         } else {
@@ -787,30 +1098,80 @@ export async function startWorkspaceServer({
         const project = store.project(projectMatch[1]);
         const action = projectMatch[2];
         if (action === "conversations") {
-          send(response, 200, store.conversations(project.id, { archived: url.searchParams.get("archived") === "true" }).reverse());
+          send(
+            response,
+            200,
+            store
+              .conversations(project.id, {
+                archived: url.searchParams.get("archived") === "true",
+              })
+              .reverse(),
+          );
           return;
         }
         const cwd = await projectRoot(project.rootPath);
         if (action === "git-file-diff") {
-          const filePath = url.searchParams.get("path"), staged = url.searchParams.get("staged") === "true", untracked = url.searchParams.get("untracked") === "true";
-          if (!validGitPath(filePath)) throw new Error("Chemin invalide ou privé.");
+          const filePath = url.searchParams.get("path"),
+            staged = url.searchParams.get("staged") === "true",
+            untracked = url.searchParams.get("untracked") === "true";
+          if (!validGitPath(filePath))
+            throw new Error("Chemin invalide ou privé.");
           let result;
           if (untracked) {
             const target = await containedFile(cwd, filePath);
-            if (relative(cwd, target).split(/[\\/]/).some(hidden)) throw new Error("Ce fichier est privé.");
-            if (!(await stat(target)).isFile()) throw new Error("Ce fichier ne peut pas être affiché.");
-            try { result = await exec("git", ["diff", "--no-index", "--no-color", "--", "/dev/null", target], { cwd, timeout: 10000, maxBuffer: 1000000 }); }
-            catch (error) { if (error.code === 1 && typeof error.stdout === "string") result = error; else throw error; }
+            if (relative(cwd, target).split(/[\\/]/).some(hidden))
+              throw new Error("Ce fichier est privé.");
+            if (!(await stat(target)).isFile())
+              throw new Error("Ce fichier ne peut pas être affiché.");
+            try {
+              result = await exec(
+                "git",
+                ["diff", "--no-index", "--no-color", "--", "/dev/null", target],
+                { cwd, timeout: 10000, maxBuffer: 1000000 },
+              );
+            } catch (error) {
+              if (error.code === 1 && typeof error.stdout === "string")
+                result = error;
+              else throw error;
+            }
           } else {
-            result = await exec("git", ["diff", ...(staged ? ["--cached"] : []), "--no-ext-diff", "--no-color", "--", `:(literal)${filePath}`], { cwd, timeout: 10000, maxBuffer: 1000000 });
+            result = await exec(
+              "git",
+              [
+                "diff",
+                ...(staged ? ["--cached"] : []),
+                "--no-ext-diff",
+                "--no-color",
+                "--",
+                `:(literal)${filePath}`,
+              ],
+              { cwd, timeout: 10000, maxBuffer: 1000000 },
+            );
           }
-          send(response, 200, { path: filePath, content: redactSecrets(result.stdout) });
+          send(response, 200, {
+            path: filePath,
+            content: redactSecrets(result.stdout),
+          });
           return;
         }
         if (action === "git-commit-detail") {
           const hash = url.searchParams.get("hash") ?? "";
-          if (!/^[0-9a-f]{40,64}$/i.test(hash)) throw new Error("Identifiant de commit invalide.");
-          const result = await exec("git", ["show", "--format=fuller", "--no-ext-diff", "--no-color", "--stat", "--patch", hash, "--"], { cwd, timeout: 10000, maxBuffer: 2000000 });
+          if (!/^[0-9a-f]{40,64}$/i.test(hash))
+            throw new Error("Identifiant de commit invalide.");
+          const result = await exec(
+            "git",
+            [
+              "show",
+              "--format=fuller",
+              "--no-ext-diff",
+              "--no-color",
+              "--stat",
+              "--patch",
+              hash,
+              "--",
+            ],
+            { cwd, timeout: 10000, maxBuffer: 2000000 },
+          );
           send(response, 200, { hash, content: redactSecrets(result.stdout) });
           return;
         }
@@ -850,10 +1211,20 @@ export async function startWorkspaceServer({
                 cwd,
                 timeout: 5000,
               }).catch(() => ({ stdout: "" })),
-              exec("git", ["log", "-50", "--topo-order", "--format=%H%x00%P%x00%h%x00%s%x00%an%x00%cr%x00%D", "--all"], {
-                cwd,
-                timeout: 5000,
-              }).catch(() => ({ stdout: "" })),
+              exec(
+                "git",
+                [
+                  "log",
+                  "-50",
+                  "--topo-order",
+                  "--format=%H%x00%P%x00%h%x00%s%x00%an%x00%cr%x00%D",
+                  "--all",
+                ],
+                {
+                  cwd,
+                  timeout: 5000,
+                },
+              ).catch(() => ({ stdout: "" })),
               exec("git", ["remote", "get-url", "origin"], {
                 cwd,
                 timeout: 5000,
@@ -865,11 +1236,15 @@ export async function startWorkspaceServer({
                 () => true,
                 () => false,
               ),
-              exec("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], {
-                cwd,
-                timeout: 5000,
-                maxBuffer: 1000000,
-              }),
+              exec(
+                "git",
+                ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+                {
+                  cwd,
+                  timeout: 5000,
+                  maxBuffer: 1000000,
+                },
+              ),
             ]);
             const remoteName = remote.stdout
               .trim()
@@ -888,8 +1263,21 @@ export async function startWorkspaceServer({
                 .split("\n")
                 .filter(Boolean)
                 .map((line) => {
-                  const [id, parents, hash, subject, author, age, refs] = line.split("\0");
-                  return { id, parents: parents ? parents.split(" ") : [], hash, subject: redactSecrets(subject), author: redactSecrets(author), age, refs: refs ? refs.split(", ").map((ref) => ref.replace(/^HEAD -> /, "")) : [] };
+                  const [id, parents, hash, subject, author, age, refs] =
+                    line.split("\0");
+                  return {
+                    id,
+                    parents: parents ? parents.split(" ") : [],
+                    hash,
+                    subject: redactSecrets(subject),
+                    author: redactSecrets(author),
+                    age,
+                    refs: refs
+                      ? refs
+                          .split(", ")
+                          .map((ref) => ref.replace(/^HEAD -> /, ""))
+                      : [],
+                  };
                 }),
               github: {
                 connected: gh,
@@ -988,17 +1376,31 @@ export async function startWorkspaceServer({
           );
           return;
         }
-        if (request.method === "POST" && ["rename", "archive", "restore", "delete"].includes(conversationMatch[2])) {
+        if (
+          request.method === "POST" &&
+          ["rename", "archive", "restore", "delete"].includes(
+            conversationMatch[2],
+          )
+        ) {
           const action = conversationMatch[2];
           const body = await jsonBody(request);
-          if (["archive", "delete"].includes(action) && workspace.active.has(id)) {
-            send(response, 409, { error: "Arrêtez l’agent avant de modifier cette conversation." });
+          if (
+            ["archive", "delete"].includes(action) &&
+            workspace.active.has(id)
+          ) {
+            send(response, 409, {
+              error: "Arrêtez l’agent avant de modifier cette conversation.",
+            });
             return;
           }
-          const result = action === "rename" ? store.renameConversation(id, body.title)
-            : action === "archive" ? store.archiveConversation(id)
-            : action === "restore" ? store.restoreConversation(id)
-            : store.deleteConversation(id);
+          const result =
+            action === "rename"
+              ? store.renameConversation(id, body.title)
+              : action === "archive"
+                ? store.archiveConversation(id)
+                : action === "restore"
+                  ? store.restoreConversation(id)
+                  : store.deleteConversation(id);
           send(response, 200, result);
           return;
         }
@@ -1021,7 +1423,9 @@ export async function startWorkspaceServer({
       if (path === "/api/runs" && request.method === "POST") {
         const body = await jsonBody(request);
         if (store.conversation(body.conversationId).archived)
-          throw new Error("Restaurez cette conversation avant de lancer un agent.");
+          throw new Error(
+            "Restaurez cette conversation avant de lancer un agent.",
+          );
         if (
           typeof body.prompt !== "string" ||
           !body.prompt.trim() ||
@@ -1029,8 +1433,9 @@ export async function startWorkspaceServer({
           !["auto", ...harnessChoices.map((h) => h.id)].includes(
             normalizeHarness(body.harnessId ?? "auto"),
           ) ||
-          (body.model !== undefined && typeof body.model !== "string")
-          || (body.permissionMode !== undefined && !["ask", "allow", "deny", "full"].includes(body.permissionMode))
+          (body.model !== undefined && typeof body.model !== "string") ||
+          (body.permissionMode !== undefined &&
+            !["ask", "allow", "deny", "full"].includes(body.permissionMode))
         ) {
           send(response, 400, { error: "Prompt ou Harness invalide." });
           return;
@@ -1090,7 +1495,7 @@ export async function startWorkspaceServer({
           contentTypes[extname(file)] ?? "application/octet-stream",
         "x-content-type-options": "nosniff",
         "content-security-policy":
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'",
+          "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' data:; connect-src 'self' http: https: ws: wss:; frame-src 'self' http: https: data: blob:; frame-ancestors 'none'; base-uri 'self'",
         "cache-control": "no-cache",
       });
       response.end(content);

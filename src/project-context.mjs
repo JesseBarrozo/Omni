@@ -4,8 +4,15 @@ import { redactSecrets } from "./core.mjs";
 
 export async function projectRoot(path) {
   let root;
-  try { root = await realpath(resolve(path)); }
-  catch (error) { if (error.code === "ENOENT") throw new Error("Le dossier du projet est introuvable. Modifiez son chemin ou archivez le projet."); throw error; }
+  try {
+    root = await realpath(resolve(path));
+  } catch (error) {
+    if (error.code === "ENOENT")
+      throw new Error(
+        "Le dossier du projet est introuvable. Modifiez son chemin ou archivez le projet.",
+      );
+    throw error;
+  }
   if (!(await stat(root)).isDirectory())
     throw new Error("Le projet doit être un dossier existant.");
   return root;

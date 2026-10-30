@@ -2,7 +2,7 @@
 
 ## Orca
 
-`web/src/components/ui/button.tsx` and `web/src/lib/utils.ts` are adapted from the local Orca source tree, `src/renderer/src/components/ui/button.tsx` and `src/renderer/src/lib/utils.ts`. The GUI also follows the workspace layout patterns observed in Orca, without copying its Electron IPC/daemon.
+`web/src/components/ui/button.tsx`, `web/src/lib/utils.ts` and `web/src/components/browser-pane.tsx` are adapted from the local Orca source tree (`src/renderer/src/components/ui/button.tsx`, `src/renderer/src/lib/utils.ts`, `src/renderer/src/components/browser-pane/`). The GUI also follows the workspace layout and browser tab patterns observed in Orca, without copying its Electron IPC/daemon.
 
 MIT License
 

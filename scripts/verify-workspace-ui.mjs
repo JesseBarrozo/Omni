@@ -43,16 +43,37 @@ try {
   await page.keyboard.press("Escape");
   await page.getByRole("tab", { name: "Fichiers", exact: true }).click();
   await page.getByRole("button", { name: "AGENTS.md", exact: true }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("heading", { name: "AGENTS.md", exact: true })
-    .waitFor();
+  await page.getByRole("tab", { name: "AGENTS.md", exact: true }).waitFor();
   await page.screenshot({
     path: ".context/previews/omni-workspace-file-review.png",
     fullPage: true,
   });
-  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Fermer AGENTS.md" }).click();
   await page.getByRole("tab", { name: "Contexte", exact: true }).click();
+
+  // Verify internal browser tab opening (Orca-inspired)
+  await page
+    .getByRole("button", { name: "Ouvrir le navigateur interne" })
+    .first()
+    .click();
+  await page
+    .getByRole("heading", { name: "Navigateur Interne Omni" })
+    .waitFor();
+  await page.getByText("Serveurs Locaux").waitFor();
+  await page.getByText("Vite Dev Server").waitFor();
+  assert.equal(
+    await page.getByRole("tab", { name: /Nouvel onglet/ }).isVisible(),
+    true,
+  );
+  await page.screenshot({
+    path: ".context/previews/omni-workspace-browser.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: /Fermer l'onglet/ }).click();
+  await page
+    .getByRole("heading", { name: "Une idée. Tous vos agents." })
+    .waitFor();
+
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(
     await page.evaluate(

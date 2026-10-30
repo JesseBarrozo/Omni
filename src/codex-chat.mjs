@@ -528,7 +528,8 @@ export class CodexHarness {
     const response = await this.server.request("thread/start", {
       cwd,
       approvalPolicy: this.permissionMode === "full" ? "never" : "on-request",
-      sandbox: this.permissionMode === "full" ? "danger-full-access" : "read-only",
+      sandbox:
+        this.permissionMode === "full" ? "danger-full-access" : "read-only",
       ...(model && model !== "codex" ? { model } : {}),
     });
     const session = {
@@ -570,7 +571,8 @@ export class CodexHarness {
       threadId: sessionId,
       cwd,
       approvalPolicy: this.permissionMode === "full" ? "never" : "on-request",
-      sandbox: this.permissionMode === "full" ? "danger-full-access" : "read-only",
+      sandbox:
+        this.permissionMode === "full" ? "danger-full-access" : "read-only",
       ...(model && model !== "codex" ? { model } : {}),
     });
     const session = {
@@ -748,7 +750,10 @@ export class CodexHarness {
       threadId: session.id,
       input: [{ type: "text", text: promptText, text_elements: [] }],
       approvalPolicy: this.permissionMode === "full" ? "never" : "on-request",
-      sandboxPolicy: this.permissionMode === "full" ? { type: "dangerFullAccess" } : { type: "readOnly", networkAccess: false },
+      sandboxPolicy:
+        this.permissionMode === "full"
+          ? { type: "dangerFullAccess" }
+          : { type: "readOnly", networkAccess: false },
     });
     const active = {
       turnId: started.turn.id,

@@ -53,7 +53,14 @@ import {
   CloudDownload,
   CloudUpload,
   ArrowDownToLine,
+  Globe,
 } from "lucide-react";
+import {
+  BrowserPane,
+  type OpenBrowserTab,
+  type BrowserHistoryEntry,
+  formatBrowserTabTitle,
+} from "@/components/browser-pane";
 import { DropdownMenu } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -242,6 +249,15 @@ export function App() {
   const [workspaceBranch, setWorkspaceBranch] = useState("");
   const [contextVersion, setContextVersion] = useState(0);
   const [openFileTabs, setOpenFileTabs] = useState<OpenFileTab[]>([]);
+  const [openBrowserTabs, setOpenBrowserTabs] = useState<OpenBrowserTab[]>([]);
+  const [browserHistory, setBrowserHistory] = useState<BrowserHistoryEntry[]>(() => {
+    try {
+      const stored = localStorage.getItem("omni_browser_history");
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const [activeTabId, setActiveTabId] = useState("chat");
   const [savingFile, setSavingFile] = useState(false);
   const [fileError, setFileError] = useState("");
@@ -270,6 +286,8 @@ export function App() {
   const speechRecognition = useRef<SpeechRecognitionLike | null>(null);
   const project = state?.projects.find((p) => p.id === projectId);
   const viewFile = openFileTabs.find((file) => file.id === activeTabId) ?? null;
+  const activeBrowserTab =
+    openBrowserTabs.find((tab) => tab.id === activeTabId) ?? null;
   useEffect(() => { commitMessageRef.current = commitMessage; }, [commitMessage]);
   useEffect(() => setPullRequests(null), [projectId]);
   const busy =
@@ -330,6 +348,7 @@ export function App() {
   }, []);
   const newSession = useCallback(() => {
     setPage("chat");
+    setActiveTabId("chat");
     const preferredHarness =
       localStorage.getItem("omni.defaultHarness") || "auto";
     setHarness(preferredHarness);
@@ -345,6 +364,7 @@ export function App() {
   const chooseSession = useCallback(
     async (id: string) => {
       setPage("chat");
+      setActiveTabId("chat");
       selected.current = id;
       setError("");
       setPalette(false);
@@ -507,6 +527,14 @@ export function App() {
       ) {
         e.preventDefault();
         newSession();
+      }
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.key.toLowerCase() === "b" &&
+        !e.shiftKey
+      ) {
+        e.preventDefault();
+        openNewBrowserTab();
       }
       if (
         e.key === "Escape" &&
@@ -831,9 +859,80 @@ export function App() {
     setOpenFileTabs(remaining);
     if (activeTabId === id) {
       const closingIndex = openFileTabs.findIndex((file) => file.id === id);
-      setActiveTabId(openFileTabs[closingIndex - 1]?.id ?? "chat");
+      setActiveTabId(
+        openFileTabs[closingIndex - 1]?.id ??
+          (openBrowserTabs[0]?.id ?? "chat"),
+      );
     }
     setFileError("");
+  }
+  function updateBrowserTab(id: string, update: Partial<OpenBrowserTab>) {
+    setOpenBrowserTabs((tabs) =>
+      tabs.map((tab) => (tab.id === id ? { ...tab, ...update } : tab)),
+    );
+  }
+  function closeBrowserTab(id: string) {
+    const remaining = openBrowserTabs.filter((tab) => tab.id !== id);
+    setOpenBrowserTabs(remaining);
+    if (activeTabId === id) {
+      const closingIndex = openBrowserTabs.findIndex((tab) => tab.id === id);
+      if (closingIndex > 0 && remaining[closingIndex - 1]) {
+        setActiveTabId(remaining[closingIndex - 1].id);
+      } else if (openFileTabs.length > 0) {
+        setActiveTabId(openFileTabs[openFileTabs.length - 1].id);
+      } else {
+        setActiveTabId("chat");
+      }
+    }
+  }
+  const addBrowserHistory = useCallback((url: string, title?: string) => {
+    if (!url || url === "about:blank") return;
+    setBrowserHistory((prev) => {
+      const filtered = prev.filter((item) => item.url !== url);
+      const updated = [
+        {
+          url,
+          title: title || formatBrowserTabTitle(url),
+          timestamp: Date.now(),
+        },
+        ...filtered,
+      ].slice(0, 50);
+      try {
+        localStorage.setItem("omni_browser_history", JSON.stringify(updated));
+      } catch {
+        // quota
+      }
+      return updated;
+    });
+  }, []);
+  const clearBrowserHistory = useCallback(() => {
+    setBrowserHistory([]);
+    try {
+      localStorage.removeItem("omni_browser_history");
+    } catch {
+      // ignore
+    }
+  }, []);
+  function openNewBrowserTab(initialUrl = "about:blank") {
+    const id = `browser-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const title = formatBrowserTabTitle(initialUrl);
+    const newTab: OpenBrowserTab = {
+      id,
+      url: initialUrl,
+      title,
+      mode: "direct",
+      viewportPreset: "desktop",
+      history: [initialUrl],
+      historyIndex: 0,
+      loading: initialUrl !== "about:blank",
+    };
+    setOpenBrowserTabs((tabs) => [...tabs, newTab]);
+    setPage("chat");
+    setActiveTabId(id);
+    if (initialUrl !== "about:blank") {
+      addBrowserHistory(initialUrl, title);
+    }
+    return id;
   }
   function openGitDiff(content: string, label = "HEAD", key = "working") {
     const id = `diff:${projectId}:${key}`;
@@ -1197,6 +1296,15 @@ export function App() {
               <Button
                 variant="ghost"
                 size="icon-sm"
+                title="Ouvrir le navigateur interne (⌘B)"
+                aria-label="Ouvrir le navigateur interne"
+                onClick={() => openNewBrowserTab()}
+              >
+                <Globe />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 title="Actualiser"
                 aria-label="Actualiser"
                 onClick={() => void refresh().catch(report)}
@@ -1260,6 +1368,47 @@ export function App() {
                 </button>
               </div>
             ))}
+            {openBrowserTabs.map((browserTab) => (
+              <div
+                className={cn(
+                  "workspace-tab",
+                  activeTabId === browserTab.id && "is-active",
+                )}
+                key={browserTab.id}
+              >
+                <button
+                  role="tab"
+                  aria-selected={activeTabId === browserTab.id}
+                  title={browserTab.url}
+                  onClick={() => setActiveTabId(browserTab.id)}
+                >
+                  <Globe />
+                  <span>
+                    {browserTab.title ||
+                      formatBrowserTabTitle(browserTab.url)}
+                  </span>
+                  {browserTab.loading && (
+                    <LoaderCircle className="animate-spin text-muted-foreground w-3 h-3 ml-0.5" />
+                  )}
+                </button>
+                <button
+                  className="workspace-tab-close"
+                  aria-label={`Fermer l'onglet ${browserTab.title}`}
+                  title="Fermer l’onglet"
+                  onClick={() => closeBrowserTab(browserTab.id)}
+                >
+                  <X />
+                </button>
+              </div>
+            ))}
+            <button
+              className="workspace-tab-add"
+              aria-label="Ouvrir un nouvel onglet de navigation"
+              title="Nouveau navigateur interne (⌘B)"
+              onClick={() => openNewBrowserTab()}
+            >
+              <Plus />
+            </button>
           </nav>
           <div className="conversation-surface">
             {viewFile ? (
@@ -1385,6 +1534,18 @@ export function App() {
                   )}
                 </div>
               </section>
+            ) : activeBrowserTab ? (
+              <BrowserPane
+                tab={activeBrowserTab}
+                onUpdateTab={(updates) =>
+                  updateBrowserTab(activeBrowserTab.id, updates)
+                }
+                onCloseTab={() => closeBrowserTab(activeBrowserTab.id)}
+                onOpenNewTab={(url) => openNewBrowserTab(url)}
+                history={browserHistory}
+                onAddHistory={addBrowserHistory}
+                onClearHistory={clearBrowserHistory}
+              />
             ) : activeTabId === "chat" ? (
               <>
                 {!messages.length ? (
@@ -2160,6 +2321,33 @@ export function App() {
                 >
                   <Plug />
                   Connexions MCP
+                </CommandItem>
+                <CommandItem
+                  onSelect={() => {
+                    openNewBrowserTab();
+                    setPalette(false);
+                  }}
+                >
+                  <Globe />
+                  Ouvrir le navigateur interne<CommandShortcut>⌘ B</CommandShortcut>
+                </CommandItem>
+                <CommandItem
+                  onSelect={() => {
+                    openNewBrowserTab("http://localhost:5173");
+                    setPalette(false);
+                  }}
+                >
+                  <Globe />
+                  Aperçu local Vite (localhost:5173)
+                </CommandItem>
+                <CommandItem
+                  onSelect={() => {
+                    openNewBrowserTab("http://localhost:3000");
+                    setPalette(false);
+                  }}
+                >
+                  <Globe />
+                  Aperçu local React / Next (localhost:3000)
                 </CommandItem>
               </CommandGroup>
               <CommandGroup heading="Conversations">

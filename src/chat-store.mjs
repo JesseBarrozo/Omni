@@ -136,13 +136,25 @@ export class ChatStore {
       })();
     if (version < 6)
       this.db.transaction(() => {
-        this.db.exec(`CREATE TABLE IF NOT EXISTS archived_projects (project_id TEXT PRIMARY KEY REFERENCES projects(id), archived_at TEXT NOT NULL)`);
-        this.db.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (6, ?)").run(new Date().toISOString());
+        this.db.exec(
+          `CREATE TABLE IF NOT EXISTS archived_projects (project_id TEXT PRIMARY KEY REFERENCES projects(id), archived_at TEXT NOT NULL)`,
+        );
+        this.db
+          .prepare(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (6, ?)",
+          )
+          .run(new Date().toISOString());
       })();
     if (version < 7)
       this.db.transaction(() => {
-        this.db.exec(`CREATE TABLE IF NOT EXISTS archived_conversations (conversation_id TEXT PRIMARY KEY REFERENCES conversations(id), archived_at TEXT NOT NULL)`);
-        this.db.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (7, ?)").run(new Date().toISOString());
+        this.db.exec(
+          `CREATE TABLE IF NOT EXISTS archived_conversations (conversation_id TEXT PRIMARY KEY REFERENCES conversations(id), archived_at TEXT NOT NULL)`,
+        );
+        this.db
+          .prepare(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (7, ?)",
+          )
+          .run(new Date().toISOString());
       })();
     try {
       chmodSync(file, 0o600);
@@ -417,7 +429,9 @@ export class ChatStore {
   }
   projects() {
     return this.db
-      .prepare("SELECT * FROM projects WHERE id NOT IN (SELECT project_id FROM archived_projects) ORDER BY created_at")
+      .prepare(
+        "SELECT * FROM projects WHERE id NOT IN (SELECT project_id FROM archived_projects) ORDER BY created_at",
+      )
       .all()
       .map((r) => ({
         id: r.id,
@@ -427,30 +441,60 @@ export class ChatStore {
       }));
   }
   archivedProjects() {
-    return this.db.prepare("SELECT p.id, p.name, p.root_path AS rootPath, p.created_at AS createdAt, a.archived_at AS archivedAt FROM projects p JOIN archived_projects a ON a.project_id = p.id ORDER BY a.archived_at DESC").all();
+    return this.db
+      .prepare(
+        "SELECT p.id, p.name, p.root_path AS rootPath, p.created_at AS createdAt, a.archived_at AS archivedAt FROM projects p JOIN archived_projects a ON a.project_id = p.id ORDER BY a.archived_at DESC",
+      )
+      .all();
   }
   updateProject(id, { name, rootPath }) {
     const project = this.project(id);
     if (project.id !== id) throw new Error("Identifiant de projet invalide.");
-    if (typeof name !== "string" || !name.trim() || name.trim().length > 120) throw new Error("Le nom doit contenir entre 1 et 120 caractères.");
-    const running = this.db.prepare("SELECT 1 FROM conversations WHERE project_id = ? AND status = 'running' LIMIT 1").get(id);
-    if (rootPath !== project.rootPath && running) throw new Error("Arrêtez les agents actifs avant de modifier le dossier.");
-    const duplicate = this.db.prepare("SELECT id FROM projects WHERE root_path = ? AND id <> ?").get(rootPath, id);
-    if (duplicate) throw new Error("Ce dossier est déjà associé à un autre projet, y compris archivé.");
-    this.db.prepare("UPDATE projects SET name = ?, root_path = ? WHERE id = ?").run(name.trim(), rootPath, id);
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 120)
+      throw new Error("Le nom doit contenir entre 1 et 120 caractères.");
+    const running = this.db
+      .prepare(
+        "SELECT 1 FROM conversations WHERE project_id = ? AND status = 'running' LIMIT 1",
+      )
+      .get(id);
+    if (rootPath !== project.rootPath && running)
+      throw new Error(
+        "Arrêtez les agents actifs avant de modifier le dossier.",
+      );
+    const duplicate = this.db
+      .prepare("SELECT id FROM projects WHERE root_path = ? AND id <> ?")
+      .get(rootPath, id);
+    if (duplicate)
+      throw new Error(
+        "Ce dossier est déjà associé à un autre projet, y compris archivé.",
+      );
+    this.db
+      .prepare("UPDATE projects SET name = ?, root_path = ? WHERE id = ?")
+      .run(name.trim(), rootPath, id);
     return this.project(id);
   }
   archiveProject(id) {
     const project = this.project(id);
     if (project.id !== id) throw new Error("Identifiant de projet invalide.");
-    if (this.db.prepare("SELECT 1 FROM conversations WHERE project_id = ? AND status = 'running' LIMIT 1").get(id)) throw new Error("Arrêtez les agents actifs avant d’archiver le projet.");
-    this.db.prepare("INSERT OR IGNORE INTO archived_projects VALUES (?, ?)").run(id, new Date().toISOString());
+    if (
+      this.db
+        .prepare(
+          "SELECT 1 FROM conversations WHERE project_id = ? AND status = 'running' LIMIT 1",
+        )
+        .get(id)
+    )
+      throw new Error("Arrêtez les agents actifs avant d’archiver le projet.");
+    this.db
+      .prepare("INSERT OR IGNORE INTO archived_projects VALUES (?, ?)")
+      .run(id, new Date().toISOString());
     return project;
   }
   restoreProject(id) {
     const project = this.project(id);
     if (project.id !== id) throw new Error("Identifiant de projet invalide.");
-    this.db.prepare("DELETE FROM archived_projects WHERE project_id = ?").run(id);
+    this.db
+      .prepare("DELETE FROM archived_projects WHERE project_id = ?")
+      .run(id);
     return project;
   }
   createConversation(projectId, title, modelId) {
@@ -646,7 +690,13 @@ export class ChatStore {
       modelId: c.model_id,
       createdAt: c.created_at,
       updatedAt: c.updated_at,
-      archived: Boolean(this.db.prepare("SELECT 1 FROM archived_conversations WHERE conversation_id = ?").get(id)),
+      archived: Boolean(
+        this.db
+          .prepare(
+            "SELECT 1 FROM archived_conversations WHERE conversation_id = ?",
+          )
+          .get(id),
+      ),
       messages: this.db
         .prepare(
           "SELECT id, role, content, status, created_at AS createdAt FROM messages WHERE conversation_id = ? ORDER BY rowid",
@@ -665,32 +715,47 @@ export class ChatStore {
     this.conversation(id);
     if (typeof title !== "string" || !title.trim() || title.trim().length > 120)
       throw new Error("Le titre doit contenir entre 1 et 120 caractères.");
-    this.db.prepare("UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?")
+    this.db
+      .prepare(
+        "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
+      )
       .run(title.trim(), new Date().toISOString(), id);
     return this.conversation(id);
   }
   archiveConversation(id) {
     const conversation = this.conversation(id);
-    if (conversation.status === "running") throw new Error("Arrêtez l’agent avant d’archiver la conversation.");
-    this.db.prepare("INSERT OR IGNORE INTO archived_conversations VALUES (?, ?)").run(id, new Date().toISOString());
+    if (conversation.status === "running")
+      throw new Error("Arrêtez l’agent avant d’archiver la conversation.");
+    this.db
+      .prepare("INSERT OR IGNORE INTO archived_conversations VALUES (?, ?)")
+      .run(id, new Date().toISOString());
     return this.conversation(id);
   }
   restoreConversation(id) {
     this.conversation(id);
-    this.db.prepare("DELETE FROM archived_conversations WHERE conversation_id = ?").run(id);
+    this.db
+      .prepare("DELETE FROM archived_conversations WHERE conversation_id = ?")
+      .run(id);
     return this.conversation(id);
   }
   deleteConversation(id) {
     const conversation = this.conversation(id);
-    if (conversation.status === "running") throw new Error("Arrêtez l’agent avant de supprimer la conversation.");
+    if (conversation.status === "running")
+      throw new Error("Arrêtez l’agent avant de supprimer la conversation.");
     // The event log stays append-only except for an explicitly requested whole-conversation deletion.
     this.db.transaction(() => {
       this.db.exec("DROP TRIGGER conversation_events_no_delete");
-      this.db.prepare("DELETE FROM conversation_events WHERE conversation_id = ?").run(id);
+      this.db
+        .prepare("DELETE FROM conversation_events WHERE conversation_id = ?")
+        .run(id);
       this.db.prepare("DELETE FROM messages WHERE conversation_id = ?").run(id);
-      this.db.prepare("DELETE FROM archived_conversations WHERE conversation_id = ?").run(id);
+      this.db
+        .prepare("DELETE FROM archived_conversations WHERE conversation_id = ?")
+        .run(id);
       this.db.prepare("DELETE FROM conversations WHERE id = ?").run(id);
-      this.db.exec("CREATE TRIGGER conversation_events_no_delete BEFORE DELETE ON conversation_events BEGIN SELECT RAISE(ABORT, 'conversation events are append-only'); END");
+      this.db.exec(
+        "CREATE TRIGGER conversation_events_no_delete BEFORE DELETE ON conversation_events BEGIN SELECT RAISE(ABORT, 'conversation events are append-only'); END",
+      );
     })();
     return { id, deleted: true };
   }

@@ -5,7 +5,11 @@ export default [
     rules: {
       "no-unused-vars": [
         "error",
-        { argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+        {
+          varsIgnorePattern: "^_",
+          argsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
       ],
       "no-constant-condition": "error",
     },
