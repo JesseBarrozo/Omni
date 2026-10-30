@@ -34,8 +34,8 @@ Les scripts `build`, `lint`, `format` et `format:check` sont déclarés dans le 
 
 ## Contexte partagé du harness
 
-Ce dépôt est le harness. Le projet cartographié par défaut est le dépôt voisin `second-brain-1.4.0` ; `ATLAS_PROJECT` en change la cible.
+Omni est indépendant de tout autre projet : il n'a pas de projet cartographié par défaut. Les dossiers de `.ressources/` sont des références, jamais une cible.
 
-- `scripts/atlas.mjs` génère l'atlas du projet (`atlas/` dans ce projet). Chaque fait cite `chemin:ligne`. Lire `atlas/README.md` du projet avant de nommer un fichier, une capacité, une table ou une variable d'environnement, et ouvrir la ligne citée pour confirmer. Régénérer avec `npm run atlas:generate` après un changement de capacités, de schéma, de configuration ou d'hôtes sortants.
+- `scripts/atlas.mjs <generate|check> <racine-du-projet>` génère l'atlas d'un projet donné, ou utilise `ATLAS_PROJECT`. Sans l'un ou l'autre, la commande échoue. L'atlas est écrit dans `atlas/` du projet cible. Chaque fait cite `chemin:ligne`. Lire `atlas/README.md` du projet avant de nommer un fichier, une capacité, une table ou une variable d'environnement, et ouvrir la ligne citée pour confirmer. Régénérer après un changement de capacités, de schéma, de configuration ou d'hôtes sortants.
 - `.context/artifacts/` contient les plans et rapports partagés entre agents. Les ajouter avec `npm run artifacts -- add …` (voir `.context/artifacts/README.md`), jamais en copiant les fichiers à la main.
-- `npm run check` vérifie les deux outils : `artifacts:check` et `atlas:check`. `atlas:check` échoue si le dépôt voisin est absent.
+- `npm run check` vérifie `artifacts:check`. Les tests de l'atlas tournent avec `npm test` et ne lisent un projet externe que si `ATLAS_PROJECT` est défini.

@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 const GENERATOR = "tools/atlas/generate.mjs";
 const ATLAS_DIR = "atlas";
@@ -23,10 +23,11 @@ const SECRET_KEY = /PASSWORD|SECRET|TOKEN|_KEY|DATABASE_URL/;
 const IGNORED_HOSTS = /^(localhost|127\.0\.0\.1)$|example\.(com|org|net)$|\.example$/;
 const CITATION = /((?:[\w.-]+\/)*[\w.-]+\.(?:ts|tsx|mjs|js|json|md|sql|toml|yml|yaml|sh|html|example)):(\d+)/g;
 
-// The harness (this repository) maps a neighbouring project by default.
-// Set ATLAS_PROJECT to map another checkout.
-export function defaultProject() {
-  return fileURLToPath(new URL("../../second-brain-1.4.0/", import.meta.url));
+// Omni has no default project: it maps only the root it is given, either as
+// the path argument or through ATLAS_PROJECT. Returns null when neither is set.
+export function projectFromArguments(argv, environment = process.env) {
+  const path = argv[1] ?? environment.ATLAS_PROJECT;
+  return path ? resolve(path) : null;
 }
 
 function read(root, relativePath) {
@@ -426,8 +427,14 @@ export function checkAtlas(root) {
 }
 
 function main(argv) {
-  const root = process.env.ATLAS_PROJECT ? resolve(process.env.ATLAS_PROJECT) : defaultProject();
   const command = argv[0] ?? "generate";
+  const root = projectFromArguments(argv);
+  if (!["generate", "check"].includes(command) || !root) {
+    process.stderr.write(
+      "Usage: node scripts/atlas.mjs <generate|check> <project-root>\nOr set ATLAS_PROJECT. There is no default project.\n",
+    );
+    return 1;
+  }
   if (command === "generate") {
     for (const path of writeAtlas(root)) process.stdout.write(`wrote ${path}\n`);
     return 0;
@@ -438,7 +445,6 @@ function main(argv) {
     if (errors.length === 0) process.stdout.write("Atlas is up to date and every citation resolves.\n");
     return errors.length === 0 ? 0 : 1;
   }
-  process.stderr.write("Usage: node tools/atlas/generate.mjs [generate|check]\n");
   return 1;
 }
 

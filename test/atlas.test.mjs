@@ -1,22 +1,23 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { after, describe, it } from "node:test";
 
 import {
   checkAtlas,
   checkCitations,
-  defaultProject,
   generateAtlas,
   parseEngineRegistry,
   parseEnvExample,
   parseTables,
+  projectFromArguments,
   writeAtlas,
 } from "../scripts/atlas.mjs";
 
-const repoRoot = defaultProject();
-const projectPresent = existsSync(repoRoot);
+// Only a project named explicitly is mapped; Omni has no default project.
+const repoRoot = projectFromArguments([], process.env);
+const projectPresent = Boolean(repoRoot);
 const scratch = [];
 
 function fixtureRoot(files) {
@@ -111,11 +112,11 @@ describe("checkCitations", () => {
   });
 });
 
-describe("repository atlas", { skip: !projectPresent && "neighbouring second-brain checkout not found" }, () => {
-  it("registers the 64 documented capabilities", () => {
+describe("ATLAS_PROJECT atlas", { skip: !projectPresent && "set ATLAS_PROJECT to a project root to run" }, () => {
+  it("registers capabilities from the engine registry", () => {
     const pages = generateAtlas(repoRoot);
     const index = JSON.parse(pages.get("atlas/index.json"));
-    assert.equal(index.capabilities.length, 64);
+    assert.ok(index.capabilities.length > 0);
   });
 
   it("keeps the generated pages in step with the sources", () => {
@@ -140,5 +141,16 @@ describe("writeAtlas", () => {
     });
     writeAtlas(root);
     assert.deepEqual(checkAtlas(root), []);
+  });
+});
+
+describe("projectFromArguments", () => {
+  it("has no default project", () => {
+    assert.equal(projectFromArguments(["check"], {}), null);
+  });
+
+  it("takes the path argument first, then ATLAS_PROJECT", () => {
+    assert.equal(projectFromArguments(["check", "/tmp/a"], { ATLAS_PROJECT: "/tmp/b" }), resolve("/tmp/a"));
+    assert.equal(projectFromArguments(["check"], { ATLAS_PROJECT: "/tmp/b" }), resolve("/tmp/b"));
   });
 });
