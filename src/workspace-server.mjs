@@ -18,7 +18,7 @@ import {
   ensureProject,
 } from "./project-context.mjs";
 import { redactSecrets } from "./core.mjs";
-import { atlasStatus, generateAtlas } from "./atlas-service.mjs";
+import { atlasPages, atlasStatus, generateAtlas, readAtlasPage } from "./atlas-service.mjs";
 import { PREVIEW_HEADERS, isPreviewablePath } from "./artifact-preview.mjs";
 import { createEntry, deleteEntry, renameEntry } from "./file-operations.mjs";
 import { McpRegistry } from "./mcp-registry.mjs";
@@ -678,7 +678,7 @@ export async function startWorkspaceServer({
         return;
       }
       const projectMatch = path.match(
-        /^\/api\/projects\/([^/]+)\/(conversations|context|atlas|atlas-generate|artifact-raw|file-create|file-rename|file-delete|files|file|git|git-branch|git-stage|git-unstage|git-stage-all|git-unstage-all|git-commit|git-generate-message|git-file-diff|git-fetch|git-pull|git-push|git-commit-detail|github-prs|github-tasks|summary)$/,
+        /^\/api\/projects\/([^/]+)\/(conversations|context|atlas|atlas-generate|atlas-page|artifact-raw|file-create|file-rename|file-delete|files|file|git|git-branch|git-stage|git-unstage|git-stage-all|git-unstage-all|git-commit|git-generate-message|git-file-diff|git-fetch|git-pull|git-push|git-commit-detail|github-prs|github-tasks|summary)$/,
       );
       if (
         projectMatch &&
@@ -718,7 +718,17 @@ export async function startWorkspaceServer({
         request.method === "GET"
       ) {
         const project = store.project(projectMatch[1]);
-        send(response, 200, atlasStatus(project.rootPath));
+        send(response, 200, { ...atlasStatus(project.rootPath), pages: atlasPages(project.rootPath) });
+        return;
+      }
+      if (
+        projectMatch &&
+        projectMatch[2] === "atlas-page" &&
+        request.method === "GET"
+      ) {
+        const project = store.project(projectMatch[1]);
+        const name = url.searchParams.get("name") ?? "";
+        send(response, 200, { name, text: readAtlasPage(project.rootPath, name) });
         return;
       }
       if (
@@ -729,7 +739,7 @@ export async function startWorkspaceServer({
         await jsonBody(request, 1000);
         const project = store.project(projectMatch[1]);
         const written = generateAtlas(project.rootPath);
-        send(response, 200, { ...atlasStatus(project.rootPath), written });
+        send(response, 200, { ...atlasStatus(project.rootPath), pages: atlasPages(project.rootPath), written });
         return;
       }
       if (

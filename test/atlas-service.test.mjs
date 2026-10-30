@@ -52,3 +52,35 @@ describe("generateAtlas", () => {
     assert.equal(atlasStatus(root).present, true);
   });
 });
+
+import { atlasPages, readAtlasPage } from "../src/atlas-service.mjs";
+
+describe("atlas pages", () => {
+  it("lists the generated pages with their titles", () => {
+    const root = projectRoot({ "pyproject.toml": "[project]\n", "src/main.py": "print(1)\n" });
+    generateAtlas(root);
+    const pages = atlasPages(root);
+    assert.ok(pages.some((page) => page.name === "map.md" && page.title === "Map"));
+    assert.ok(pages.every((page) => page.name.endsWith(".md")));
+  });
+
+  it("returns no pages when the project has no atlas", () => {
+    assert.deepEqual(atlasPages(projectRoot({ "package.json": "{}" })), []);
+  });
+
+  it("reads a page without its generator header", () => {
+    const root = projectRoot({ "pyproject.toml": "[project]\n" });
+    generateAtlas(root);
+    const text = readAtlasPage(root, "map.md");
+    assert.equal(text.startsWith("<!--"), false);
+    assert.match(text, /^# Map/m);
+  });
+
+  it("refuses page names that are not plain atlas pages", () => {
+    const root = projectRoot({ "pyproject.toml": "[project]\n" });
+    generateAtlas(root);
+    for (const name of ["../package.json", "index.json", "sub/map.md", "map.md/..", ""]) {
+      assert.throws(() => readAtlasPage(root, name), undefined, name);
+    }
+  });
+});

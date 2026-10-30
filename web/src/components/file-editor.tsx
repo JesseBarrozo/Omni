@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import Editor, { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker.js?worker";
@@ -52,12 +53,21 @@ export default function FileEditor({
   content,
   readOnly,
   onChange,
+  line,
 }: {
   path: string;
   content: string;
   readOnly: boolean;
   onChange: (value: string) => void;
+  line?: number;
 }) {
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  // Jump to a line requested from elsewhere, such as a citation in the atlas.
+  useEffect(() => {
+    if (!line || !editorRef.current) return;
+    editorRef.current.setPosition({ lineNumber: line, column: 1 });
+    editorRef.current.revealLineInCenter(line);
+  }, [line, path]);
   const extension = path.split(".").at(-1)?.toLowerCase() ?? "";
   return (
     <Editor
@@ -66,6 +76,9 @@ export default function FileEditor({
       value={content}
       onChange={(value) => onChange(value ?? "")}
       theme="vs-dark"
+      onMount={(editor) => {
+        editorRef.current = editor;
+      }}
       options={{
         readOnly,
         automaticLayout: true,

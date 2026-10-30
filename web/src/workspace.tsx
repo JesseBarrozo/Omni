@@ -149,6 +149,7 @@ import { AwakeStatusSegment } from "@/components/awake-status-segment";
 import { GitHistory, type GitCommit } from "@/components/git-history";
 import { FileIcon } from "@/components/file-icon";
 import { FileTree } from "@/components/file-tree";
+import { AtlasViewer } from "@/components/atlas-viewer";
 import {
   PermissionModePicker,
   type PermissionMode,
@@ -170,6 +171,7 @@ type AtlasStatus = {
   path: string;
   digest?: string;
   stack?: string[];
+  pages?: { name: string; title: string }[];
   sourceFiles?: number;
   entryPoints?: number;
   scripts?: number;
@@ -188,6 +190,7 @@ type OpenFileTab = {
   readOnly?: boolean;
   projectId?: string;
   mode: "preview" | "edit";
+  line?: number;
 };
 type OpenTerminalTab = {
   id: string;
@@ -1191,11 +1194,12 @@ export function App() {
       if (projectRef.current === worktree.projectId) selectProject(project.id === worktree.projectId ? result.defaultProjectId : project.id);
     } catch (error) { report(error); }
   }
-  async function openFile(entry: FileEntry) {
+  async function openFile(entry: FileEntry, line?: number) {
     if (entry.directory) return;
     persistActiveChatTab();
     const id = `${projectId}::${entry.path}`;
     if (openFileTabs.some((file) => file.id === id)) {
+      if (line) updateFileTab(id, { line });
       setPage("chat");
       setActiveTabId(id);
       setFileError("");
@@ -1219,6 +1223,7 @@ export function App() {
                 id,
                 original: file.content,
                 projectId,
+                line,
                 mode: /\.mdx?$/i.test(file.path) ? "preview" : "edit",
               },
             ],
@@ -2071,6 +2076,7 @@ export function App() {
                           path={`${viewFile.projectId}/${viewFile.path}`}
                           content={viewFile.content}
                           readOnly={Boolean(viewFile.readOnly)}
+                          line={viewFile.line}
                           onChange={(content) =>
                             updateFileTab(viewFile.id, { content })
                           }
@@ -2705,6 +2711,15 @@ export function App() {
                       : "Créer l'atlas"}
                 </Button>
                 {atlasError && <p className="inspector-hint">{atlasError}</p>}
+                {atlas?.present && projectId && (
+                  <AtlasViewer
+                    projectId={projectId}
+                    pages={atlas.pages ?? []}
+                    onOpenCitation={(path, line) =>
+                      void openFile({ name: path.split("/").at(-1) ?? path, path, directory: false }, line)
+                    }
+                  />
+                )}
               </section>
             </TabsContent>
             <TabsContent value="files">
