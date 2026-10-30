@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "generator": "tools/atlas/generate.mjs",
+  "digest": "e3b0c44298fc1c14",
+  "capabilities": [],
+  "tables": [],
+  "config": []
+}
