@@ -91,7 +91,7 @@ test("SQLite v4 MCP registrations migrate to v5 stdio transport without losing d
       migrated.db
         .prepare("SELECT max(version) version FROM schema_migrations")
         .get().version,
-      5,
+      7,
     );
   } finally {
     migrated.close();

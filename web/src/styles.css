@@ -2826,3 +2826,41 @@ a:focus-visible {
   color: var(--muted-foreground);
   flex-shrink: 0;
 }
+
+/* ==========================================================================
+   Tab Create Dropdown & Terminal Pane (Orca-inspired)
+   ========================================================================== */
+
+.workspace-tab-add.is-open {
+  color: var(--foreground);
+  background: var(--muted);
+  border-color: var(--primary);
+}
+
+.tab-create-dropdown {
+  user-select: none;
+  z-index: 99999 !important;
+}
+
+.terminal-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  background: #09090b;
+}
+
+.terminal-toolbar {
+  user-select: none;
+}
+
+.terminal-output {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.terminal-input-row input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}

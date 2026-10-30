@@ -10,5 +10,6 @@ dist/
 .context/**/archive/
 .DS_Store
 web/dist/
+*.tsbuildinfo
 test-results/
 playwright-report/

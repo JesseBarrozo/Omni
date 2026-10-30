@@ -1,9 +1,9 @@
 import { createServer } from "node:http";
-import { readFile, stat, readdir, open } from "node:fs/promises";
+import { readFile, stat, readdir, open, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { join, extname, relative, resolve, isAbsolute } from "node:path";
+import { join, extname, relative, resolve, isAbsolute, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFile } from "node:child_process";
+import { execFile, exec as execShell } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
 import {
@@ -18,11 +18,14 @@ import {
   ensureProject,
 } from "./project-context.mjs";
 import { redactSecrets } from "./core.mjs";
+import { atlasStatus, generateAtlas } from "./atlas-service.mjs";
+import { PREVIEW_HEADERS, isPreviewablePath } from "./artifact-preview.mjs";
 import { McpRegistry } from "./mcp-registry.mjs";
 import { ApiKeyProfiles } from "./api-key-profiles.mjs";
 import { AwakeController } from "./awake-controller.mjs";
 
 const exec = promisify(execFile);
+const shellExec = promisify(execShell);
 const root = fileURLToPath(new URL("../", import.meta.url));
 const hidden = (name) =>
   /^(?:\.git|node_modules|dist|\.env(?:\..*)?|credentials.*|secrets?.*|\.ssh|\.aws|\.codex|\.omni)$/i.test(
@@ -415,6 +418,54 @@ export async function startWorkspaceServer({
         });
         return;
       }
+      if (path === "/api/terminal/exec" && request.method === "POST") {
+        const body = await jsonBody(request, 100000);
+        if (typeof body.command !== "string" || !body.command.trim()) {
+          throw new Error("Commande manquante.");
+        }
+        let projectCwd;
+        if (body.projectId) {
+          try {
+            const p = store.project(body.projectId);
+            projectCwd = p?.rootPath
+              ? await projectRoot(p.rootPath)
+              : process.cwd();
+          } catch {
+            projectCwd = process.cwd();
+          }
+        } else {
+          projectCwd = projectPath || process.cwd();
+        }
+        const effectiveCwd =
+          body.cwd && typeof body.cwd === "string"
+            ? resolve(projectCwd, body.cwd)
+            : projectCwd;
+        try {
+          const { stdout, stderr } = await shellExec(body.command, {
+            cwd: effectiveCwd,
+            timeout: 60000,
+            maxBuffer: 4 * 1024 * 1024,
+            env: {
+              ...process.env,
+              TERM: "xterm-256color",
+            },
+          });
+          send(response, 200, {
+            stdout: stdout || "",
+            stderr: stderr || "",
+            exitCode: 0,
+            cwd: effectiveCwd,
+          });
+        } catch (error) {
+          send(response, 200, {
+            stdout: error.stdout || "",
+            stderr: error.stderr || error.message || "",
+            exitCode: typeof error.code === "number" ? error.code : 1,
+            cwd: effectiveCwd,
+          });
+        }
+        return;
+      }
       if (path === "/api/projects" && request.method === "POST") {
         const body = await jsonBody(request),
           path = await projectRoot(body.path);
@@ -626,8 +677,43 @@ export async function startWorkspaceServer({
         return;
       }
       const projectMatch = path.match(
-        /^\/api\/projects\/([^/]+)\/(conversations|context|files|file|git|git-branch|git-stage|git-unstage|git-stage-all|git-unstage-all|git-commit|git-generate-message|git-file-diff|git-fetch|git-pull|git-push|git-commit-detail|github-prs|github-tasks|summary)$/,
+        /^\/api\/projects\/([^/]+)\/(conversations|context|atlas|atlas-generate|artifact-raw|files|file|git|git-branch|git-stage|git-unstage|git-stage-all|git-unstage-all|git-commit|git-generate-message|git-file-diff|git-fetch|git-pull|git-push|git-commit-detail|github-prs|github-tasks|summary)$/,
       );
+      if (
+        projectMatch &&
+        projectMatch[2] === "artifact-raw" &&
+        request.method === "GET"
+      ) {
+        const project = store.project(projectMatch[1]);
+        const relativePath = url.searchParams.get("path") ?? "";
+        if (!isPreviewablePath(relativePath))
+          throw new Error("Seuls les artéfacts HTML du projet s'ouvrent ici.");
+        const file = await containedFile(project.rootPath, relativePath);
+        const content = await readFile(file);
+        response.writeHead(200, PREVIEW_HEADERS);
+        response.end(content);
+        return;
+      }
+      if (
+        projectMatch &&
+        projectMatch[2] === "atlas" &&
+        request.method === "GET"
+      ) {
+        const project = store.project(projectMatch[1]);
+        send(response, 200, atlasStatus(project.rootPath));
+        return;
+      }
+      if (
+        projectMatch &&
+        projectMatch[2] === "atlas-generate" &&
+        request.method === "POST"
+      ) {
+        await jsonBody(request, 1000);
+        const project = store.project(projectMatch[1]);
+        const written = generateAtlas(project.rootPath);
+        send(response, 200, { ...atlasStatus(project.rootPath), written });
+        return;
+      }
       if (
         projectMatch &&
         projectMatch[2] === "summary" &&
@@ -1024,10 +1110,14 @@ export async function startWorkspaceServer({
         request.method === "POST"
       ) {
         const body = await jsonBody(request, 2000000);
+        const isDraft =
+          body.revision === "draft" ||
+          body.revision === "new" ||
+          body.create === true;
         if (
           typeof body.path !== "string" ||
           typeof body.content !== "string" ||
-          !/^[a-f0-9]{64}$/.test(body.revision ?? "") ||
+          (!isDraft && !/^[a-f0-9]{64}$/.test(body.revision ?? "")) ||
           Buffer.byteLength(body.content) > 512000 ||
           body.content.includes("\0")
         )
@@ -1038,7 +1128,26 @@ export async function startWorkspaceServer({
           );
         const project = store.project(projectMatch[1]);
         const cwd = await projectRoot(project.rootPath);
-        const target = await containedFile(cwd, body.path);
+        let target;
+        try {
+          target = await containedFile(cwd, body.path);
+        } catch (err) {
+          if (isDraft) {
+            const resolved = resolve(cwd, body.path);
+            const rel = relative(cwd, resolved);
+            if (
+              rel === ".." ||
+              rel.startsWith(".." + sep) ||
+              isAbsolute(body.path) ||
+              rel.split(/[\\/]/).some(hidden)
+            ) {
+              throw new Error("Ce chemin sort du projet ou est privé.");
+            }
+            target = resolved;
+          } else {
+            throw err;
+          }
+        }
         if (relative(cwd, target).split(/[\\/]/).some(hidden))
           throw new Error(
             "Ce fichier est privé ou exclu du navigateur de fichiers.",
@@ -1050,6 +1159,18 @@ export async function startWorkspaceServer({
           return;
         }
         savingFiles.add(target);
+        if (isDraft) {
+          try {
+            await writeFile(target, Buffer.from(body.content, "utf8"));
+            send(response, 200, {
+              path: body.path,
+              revision: revision(body.content),
+            });
+          } finally {
+            savingFiles.delete(target);
+          }
+          return;
+        }
         let file;
         try {
           file = await open(target, "r+");
@@ -1426,6 +1547,15 @@ export async function startWorkspaceServer({
           throw new Error(
             "Restaurez cette conversation avant de lancer un agent.",
           );
+        if (
+          body.permissionMode === "accept-edits" ||
+          body.permissionMode === "auto"
+        ) {
+          body.permissionMode = "allow";
+        }
+        if (body.permissionMode === "full-access") {
+          body.permissionMode = "full";
+        }
         if (
           typeof body.prompt !== "string" ||
           !body.prompt.trim() ||

@@ -391,6 +391,9 @@ export class AgentWorkspace extends EventEmitter {
     signal,
     runId = randomUUID(),
   }) {
+    if (permissionMode === "accept-edits" || permissionMode === "auto")
+      permissionMode = "allow";
+    if (permissionMode === "full-access") permissionMode = "full";
     if (!["ask", "allow", "deny", "full"].includes(permissionMode))
       throw new Error("Mode de permission invalide.");
     harnessId = normalizeHarness(harnessId);

@@ -1,9 +1,37 @@
 import { chromium } from "playwright";
 import { mkdir } from "node:fs/promises";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
+import { ChatStore } from "../src/chat-store.mjs";
+import { AgentWorkspace } from "../src/agent-workspace.mjs";
+import { startWorkspaceServer } from "../src/workspace-server.mjs";
+
 process.chdir(fileURLToPath(new URL("../", import.meta.url)));
-const url = process.env.OMNI_GUI_TEST_URL ?? "http://127.0.0.1:4318";
+
+let serverInstance = null;
+let tempDir = null;
+let url = process.env.OMNI_GUI_TEST_URL;
+if (!url) {
+  tempDir = mkdtempSync(join(tmpdir(), "omni-gui-verify-"));
+  const store = new ChatStore(join(tempDir, "verify.sqlite"));
+  const workspace = new AgentWorkspace({
+    store,
+    cwd: process.cwd(),
+    dataDir: join(tempDir, "data"),
+  });
+  serverInstance = await startWorkspaceServer({
+    store,
+    workspace,
+    cwd: process.cwd(),
+    dataDir: join(tempDir, "data"),
+    port: 0,
+  });
+  url = serverInstance.url;
+}
+
 await mkdir(".context/previews", { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({
@@ -51,10 +79,24 @@ try {
   await page.getByRole("button", { name: "Fermer AGENTS.md" }).click();
   await page.getByRole("tab", { name: "Contexte", exact: true }).click();
 
-  // Verify internal browser tab opening (Orca-inspired)
+  // Verify tab create dropdown (Orca-inspired)
+  await page.getByRole("button", { name: "Créer un nouvel onglet" }).click();
+  await page.getByRole("menuitem", { name: /Nouveau terminal/ }).waitFor();
   await page
-    .getByRole("button", { name: "Ouvrir le navigateur interne" })
-    .first()
+    .getByRole("menuitem", { name: /Nouvel onglet de navigateur/ })
+    .waitFor();
+  await page.getByRole("menuitem", { name: /Nouveau Markdown/ }).waitFor();
+  await page
+    .getByRole("menuitem", { name: /Lancer un nouveau chat/ })
+    .waitFor();
+  await page.screenshot({
+    path: ".context/previews/omni-workspace-tab-dropdown.png",
+    fullPage: true,
+  });
+
+  // Open browser tab via dropdown
+  await page
+    .getByRole("menuitem", { name: /Nouvel onglet de navigateur/ })
     .click();
   await page
     .getByRole("heading", { name: "Navigateur Interne Omni" })
@@ -74,6 +116,66 @@ try {
     .getByRole("heading", { name: "Une idée. Tous vos agents." })
     .waitFor();
 
+  // Open terminal tab via dropdown
+  await page.getByRole("button", { name: "Créer un nouvel onglet" }).click();
+  await page.getByRole("menuitem", { name: /Nouveau terminal/ }).click();
+  await page.getByText(/Omni Terminal/).waitFor();
+  await page.screenshot({
+    path: ".context/previews/omni-workspace-terminal.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: /Fermer Terminal/ }).click();
+  await page
+    .getByRole("heading", { name: "Une idée. Tous vos agents." })
+    .waitFor();
+
+  // Verify multi-chat tabs: "Lancer un nouveau chat" opens a new tab without overwriting current chat
+  await page.getByRole("textbox", { name: "Votre demande" }).fill("Message dans Chat 1");
+  await page.getByRole("button", { name: "Créer un nouvel onglet" }).click();
+  await page.getByRole("menuitem", { name: /Lancer un nouveau chat/ }).click();
+  await page.getByRole("tab", { name: "Chat 2" }).waitFor();
+  assert.equal(
+    await page.getByRole("textbox", { name: "Votre demande" }).inputValue(),
+    "",
+  );
+  // Switch back to first chat tab
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  assert.equal(
+    await page.getByRole("textbox", { name: "Votre demande" }).inputValue(),
+    "Message dans Chat 1",
+  );
+  // Switch back to Chat 2 and close it
+  await page.getByRole("tab", { name: "Chat 2" }).click();
+  await page.getByRole("button", { name: /Fermer Chat 2/ }).click();
+  assert.equal(
+    await page.getByRole("tab", { name: "Chat 2" }).count(),
+    0,
+  );
+  assert.equal(
+    await page.getByRole("textbox", { name: "Votre demande" }).inputValue(),
+    "Message dans Chat 1",
+  );
+
+  // Verify simplified permissions menu (Orca-inspired)
+  const permissionsBtn = page.getByRole("button", { name: /Mode d'autorisation/ });
+  await permissionsBtn.click();
+  await page.getByRole("menuitemradio", { name: /Demander l’approbation/ }).waitFor();
+  await page.getByRole("menuitemradio", { name: /Accepter les modifications/ }).waitFor();
+  await page.getByRole("menuitemradio", { name: /Approuver pour moi/ }).waitFor();
+  await page.getByRole("menuitemradio", { name: /Accès complet/ }).waitFor();
+  await page.screenshot({
+    path: ".context/previews/omni-workspace-permissions.png",
+    fullPage: true,
+  });
+  // Select "Accès complet"
+  await page.getByRole("menuitemradio", { name: /Accès complet/ }).click();
+  assert.match(await permissionsBtn.innerText(), /Accès complet/);
+  assert.match(await page.locator(".composer-footnote").innerText(), /Accès complet activé/);
+  // Switch back to "Demander l'approbation"
+  await permissionsBtn.click();
+  await page.getByRole("menuitemradio", { name: /Demander l’approbation/ }).click();
+  assert.match(await permissionsBtn.innerText(), /Demander l’approbation/);
+
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(
     await page.evaluate(
@@ -91,4 +193,10 @@ try {
   );
 } finally {
   await browser.close();
+  if (serverInstance) {
+    serverInstance.close();
+  }
+  if (tempDir) {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 }

@@ -23,6 +23,8 @@ import {
   Check,
   ShieldCheck,
   ShieldAlert,
+  Hand,
+  FilePenLine,
   Plug,
   RefreshCw,
   Copy,
@@ -54,6 +56,8 @@ import {
   CloudUpload,
   ArrowDownToLine,
   Globe,
+  FilePlus,
+  Smartphone,
 } from "lucide-react";
 import {
   BrowserPane,
@@ -61,6 +65,8 @@ import {
   type BrowserHistoryEntry,
   formatBrowserTabTitle,
 } from "@/components/browser-pane";
+import { TerminalPane } from "@/components/terminal-pane";
+import { TabCreateDropdown } from "@/components/tab-create-dropdown";
 import { DropdownMenu } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -143,6 +149,10 @@ import { AwakeStatusSegment } from "@/components/awake-status-segment";
 import { GitHistory, type GitCommit } from "@/components/git-history";
 import { FileIcon } from "@/components/file-icon";
 import {
+  PermissionModePicker,
+  type PermissionMode,
+} from "@/components/permission-mode-picker";
+import {
   api,
   type Project,
   type Conversation,
@@ -154,6 +164,13 @@ import {
 import { cn } from "@/lib/utils";
 
 type Context = { root: string; files: { path: string; characters: number }[] };
+type AtlasStatus = {
+  present: boolean;
+  path: string;
+  digest?: string;
+  capabilities?: number;
+  tables?: number;
+};
 type FileEntry = { name: string; path: string; directory: boolean };
 type OpenFileTab = {
   id: string;
@@ -164,6 +181,19 @@ type OpenFileTab = {
   readOnly?: boolean;
   projectId?: string;
   mode: "preview" | "edit";
+};
+type OpenTerminalTab = {
+  id: string;
+  title: string;
+  cwd?: string;
+};
+export type OpenChatTab = {
+  id: string;
+  conversationId: string | null;
+  title: string;
+  draft?: string;
+  harness?: string;
+  model?: string;
 };
 type Git = {
   available: boolean;
@@ -222,10 +252,13 @@ export function App() {
     () => localStorage.getItem("omni.defaultHarness") || "auto",
   );
   const [model, setModel] = useState("auto-orchestrator");
-  const [permissionMode, setPermissionMode] = useState<"ask" | "allow" | "deny" | "full">("ask");
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>("ask");
   const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
   const [context, setContext] = useState<Context | null>(null);
+  const [atlas, setAtlas] = useState<AtlasStatus | null>(null);
+  const [atlasBusy, setAtlasBusy] = useState(false);
+  const [atlasError, setAtlasError] = useState("");
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [filePath, setFilePath] = useState(".");
   const [git, setGit] = useState<Git | null>(null);
@@ -250,6 +283,13 @@ export function App() {
   const [contextVersion, setContextVersion] = useState(0);
   const [openFileTabs, setOpenFileTabs] = useState<OpenFileTab[]>([]);
   const [openBrowserTabs, setOpenBrowserTabs] = useState<OpenBrowserTab[]>([]);
+  const [openTerminalTabs, setOpenTerminalTabs] = useState<OpenTerminalTab[]>(
+    [],
+  );
+  const [openChatTabs, setOpenChatTabs] = useState<OpenChatTab[]>([
+    { id: "chat", conversationId: null, title: "Chat", draft: "" },
+  ]);
+  const [newTabDropdownOpen, setNewTabDropdownOpen] = useState(false);
   const [browserHistory, setBrowserHistory] = useState<BrowserHistoryEntry[]>(() => {
     try {
       const stored = localStorage.getItem("omni_browser_history");
@@ -288,6 +328,33 @@ export function App() {
   const viewFile = openFileTabs.find((file) => file.id === activeTabId) ?? null;
   const activeBrowserTab =
     openBrowserTabs.find((tab) => tab.id === activeTabId) ?? null;
+  const activeTerminalTab =
+    openTerminalTabs.find((tab) => tab.id === activeTabId) ?? null;
+  const activeChatTab =
+    openChatTabs.find((tab) => tab.id === activeTabId) ?? null;
+  const isChatActive =
+    activeChatTab !== null ||
+    (!viewFile && !activeBrowserTab && !activeTerminalTab);
+
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  const conversationRef = useRef(conversation);
+  useEffect(() => {
+    conversationRef.current = conversation;
+  }, [conversation]);
+
+  const openChatTabsRef = useRef(openChatTabs);
+  useEffect(() => {
+    openChatTabsRef.current = openChatTabs;
+  }, [openChatTabs]);
+
+  const activeTabIdRef = useRef(activeTabId);
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
   useEffect(() => { commitMessageRef.current = commitMessage; }, [commitMessage]);
   useEffect(() => setPullRequests(null), [projectId]);
   const busy =
@@ -344,36 +411,294 @@ export function App() {
     if (selected.current === id) {
       setConversation(next);
       setEvents(history);
+      setOpenChatTabs((prev) =>
+        prev.map((t) =>
+          t.conversationId === id ? { ...t, title: next.title || t.title } : t,
+        ),
+      );
     }
   }, []);
-  const newSession = useCallback(() => {
-    setPage("chat");
-    setActiveTabId("chat");
-    const preferredHarness =
-      localStorage.getItem("omni.defaultHarness") || "auto";
-    setHarness(preferredHarness);
-    setModel(defaultModel(preferredHarness));
-    selected.current = null;
-    setConversation(null);
-    setEvents([]);
-    setDraft("");
-    setError("");
-    setPalette(false);
-    requestAnimationFrame(() => textarea.current?.focus());
-  }, []);
+
+  const persistActiveChatTab = useCallback(() => {
+    const currentId = activeTabIdRef.current;
+    const isChat = openChatTabsRef.current.some((t) => t.id === currentId);
+    if (!isChat) return;
+    setOpenChatTabs((prev) =>
+      prev.map((t) =>
+        t.id === currentId
+          ? {
+              ...t,
+              conversationId: conversationRef.current?.id ?? t.conversationId,
+              title: conversationRef.current?.title || t.title,
+              draft: draftRef.current,
+              harness,
+              model,
+            }
+          : t,
+      ),
+    );
+  }, [harness, model]);
+
+  const switchChatTab = useCallback(
+    async (targetTabId: string) => {
+      const currentId = activeTabIdRef.current;
+      const targetTab = openChatTabsRef.current.find(
+        (t) => t.id === targetTabId,
+      );
+      if (!targetTab) return;
+
+      const isCurrentChat = openChatTabsRef.current.some(
+        (t) => t.id === currentId,
+      );
+      if (isCurrentChat && currentId !== targetTabId) {
+        setOpenChatTabs((prev) =>
+          prev.map((t) =>
+            t.id === currentId
+              ? {
+                  ...t,
+                  conversationId:
+                    conversationRef.current?.id ?? t.conversationId,
+                  title: conversationRef.current?.title || t.title,
+                  draft: draftRef.current,
+                  harness,
+                  model,
+                }
+              : t,
+          ),
+        );
+      }
+
+      setPage("chat");
+      setActiveTabId(targetTab.id);
+      setDraft(targetTab.draft || "");
+      setError("");
+      setPalette(false);
+
+      if (targetTab.harness) setHarness(targetTab.harness);
+      if (targetTab.model) setModel(targetTab.model);
+
+      if (targetTab.conversationId) {
+        selected.current = targetTab.conversationId;
+        await loadDetails(targetTab.conversationId);
+        try {
+          const data = await api<Conversation>(
+            `/conversations/${targetTab.conversationId}`,
+          );
+          if (selected.current === targetTab.conversationId) {
+            if (data.modelId) setModel(data.modelId);
+          }
+        } catch {
+          // ignore
+        }
+      } else {
+        selected.current = null;
+        setConversation(null);
+        setEvents([]);
+        if (!targetTab.model) {
+          const preferredHarness =
+            targetTab.harness ||
+            localStorage.getItem("omni.defaultHarness") ||
+            "auto";
+          setModel(defaultModel(preferredHarness));
+        }
+      }
+      requestAnimationFrame(() => textarea.current?.focus());
+    },
+    [harness, loadDetails, model],
+  );
+
+  const openNewChatTab = useCallback(
+    (customHarness?: string) => {
+      const currentId = activeTabIdRef.current;
+      const preferredHarness =
+        customHarness || localStorage.getItem("omni.defaultHarness") || "auto";
+      const newModel = defaultModel(preferredHarness);
+
+      const nextNum = openChatTabsRef.current.length + 1;
+      const newTabId = `chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const newTab: OpenChatTab = {
+        id: newTabId,
+        conversationId: null,
+        title: `Chat ${nextNum}`,
+        draft: "",
+        harness: preferredHarness,
+        model: newModel,
+      };
+
+      setOpenChatTabs((prev) => {
+        const isCurrentChat = prev.some((t) => t.id === currentId);
+        const updated = isCurrentChat
+          ? prev.map((t) =>
+              t.id === currentId
+                ? {
+                    ...t,
+                    conversationId:
+                      conversationRef.current?.id ?? t.conversationId,
+                    title: conversationRef.current?.title || t.title,
+                    draft: draftRef.current,
+                    harness,
+                    model,
+                  }
+                : t,
+            )
+          : prev;
+        return [...updated, newTab];
+      });
+
+      setPage("chat");
+      setActiveTabId(newTabId);
+      setHarness(preferredHarness);
+      setModel(newModel);
+      selected.current = null;
+      setConversation(null);
+      setEvents([]);
+      setDraft("");
+      setError("");
+      setPalette(false);
+      requestAnimationFrame(() => textarea.current?.focus());
+      return newTabId;
+    },
+    [harness, model],
+  );
+
+  const newSession = useCallback(
+    (customHarness?: unknown) => {
+      openNewChatTab(
+        typeof customHarness === "string" ? customHarness : undefined,
+      );
+    },
+    [openNewChatTab],
+  );
+
+  const closeChatTab = useCallback(
+    (id: string) => {
+      const tabs = openChatTabsRef.current;
+      if (tabs.length <= 1) {
+        const freshId = `chat-${Date.now()}`;
+        setOpenChatTabs([
+          {
+            id: freshId,
+            conversationId: null,
+            title: "Chat",
+            draft: "",
+          },
+        ]);
+        setActiveTabId(freshId);
+        selected.current = null;
+        setConversation(null);
+        setEvents([]);
+        setDraft("");
+        return;
+      }
+
+      const remaining = tabs.filter((t) => t.id !== id);
+      setOpenChatTabs(remaining);
+
+      if (activeTabIdRef.current === id) {
+        const closingIndex = tabs.findIndex((t) => t.id === id);
+        const nextTab =
+          closingIndex > 0 ? remaining[closingIndex - 1] : remaining[0];
+        if (nextTab) {
+          void switchChatTab(nextTab.id);
+        }
+      }
+    },
+    [switchChatTab],
+  );
+
   const chooseSession = useCallback(
     async (id: string) => {
       setPage("chat");
-      setActiveTabId("chat");
-      selected.current = id;
       setError("");
       setPalette(false);
+
+      const existingTab = openChatTabsRef.current.find(
+        (t) => t.conversationId === id,
+      );
+      if (existingTab) {
+        await switchChatTab(existingTab.id);
+        return;
+      }
+
+      const currentTab = openChatTabsRef.current.find(
+        (t) => t.id === activeTabIdRef.current,
+      );
+      const isCurrentEmpty =
+        currentTab &&
+        !currentTab.conversationId &&
+        !draftRef.current.trim() &&
+        events.length === 0;
+
+      if (isCurrentEmpty) {
+        selected.current = id;
+        await loadDetails(id);
+        try {
+          const data = await api<Conversation>(`/conversations/${id}`);
+          if (selected.current !== id) return;
+          if (data.modelId) setModel(data.modelId);
+          setOpenChatTabs((prev) =>
+            prev.map((t) =>
+              t.id === currentTab.id
+                ? {
+                    ...t,
+                    conversationId: id,
+                    title: data.title || "Chat",
+                  }
+                : t,
+            ),
+          );
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
+      const newTabId = `chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      selected.current = id;
       await loadDetails(id);
-      const data = await api<Conversation>(`/conversations/${id}`);
-      if (selected.current !== id) return;
-      setModel(data.modelId);
+      let sessionTitle = "Chat";
+      try {
+        const data = await api<Conversation>(`/conversations/${id}`);
+        if (selected.current === id && data.modelId) {
+          setModel(data.modelId);
+        }
+        if (data.title) sessionTitle = data.title;
+      } catch {
+        // ignore
+      }
+
+      setOpenChatTabs((prev) => {
+        const isCurrentChat = prev.some(
+          (t) => t.id === activeTabIdRef.current,
+        );
+        const updated = isCurrentChat
+          ? prev.map((t) =>
+              t.id === activeTabIdRef.current
+                ? {
+                    ...t,
+                    conversationId:
+                      conversationRef.current?.id ?? t.conversationId,
+                    title: conversationRef.current?.title || t.title,
+                    draft: draftRef.current,
+                    harness,
+                    model,
+                  }
+                : t,
+            )
+          : prev;
+        return [
+          ...updated,
+          {
+            id: newTabId,
+            conversationId: id,
+            title: sessionTitle,
+            draft: "",
+          },
+        ];
+      });
+      setActiveTabId(newTabId);
     },
-    [loadDetails],
+    [events.length, harness, loadDetails, model, switchChatTab],
   );
   const report = (error: unknown) =>
     setError(error instanceof Error ? error.message : String(error));
@@ -395,6 +720,12 @@ export function App() {
       .then((value) => {
         if (projectRef.current === projectId && !controller.signal.aborted)
           setContext(value);
+      })
+      .catch((e) => !controller.signal.aborted && report(e));
+    api<AtlasStatus>(`/projects/${projectId}/atlas`, undefined, controller.signal)
+      .then((value) => {
+        if (projectRef.current === projectId && !controller.signal.aborted)
+          setAtlas(value);
       })
       .catch((e) => !controller.signal.aborted && report(e));
     api<Git>(`/projects/${projectId}/git`, undefined, controller.signal)
@@ -537,6 +868,30 @@ export function App() {
         openNewBrowserTab();
       }
       if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "b"
+      ) {
+        e.preventDefault();
+        openNewBrowserTab();
+      }
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.key.toLowerCase() === "t" &&
+        !e.shiftKey
+      ) {
+        e.preventDefault();
+        openNewTerminalTab();
+      }
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "m"
+      ) {
+        e.preventDefault();
+        openNewMarkdownTab();
+      }
+      if (
         e.key === "Escape" &&
         selected.current &&
         runs.some((r) => r.conversationId === selected.current)
@@ -545,7 +900,13 @@ export function App() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [newSession, runs]);
+  }, [
+    newSession,
+    openNewBrowserTab,
+    openNewMarkdownTab,
+    openNewTerminalTab,
+    runs,
+  ]);
 
   async function send(prompt = draft) {
     if (!prompt.trim() || busy || !projectId || !connected) return;
@@ -572,13 +933,30 @@ export function App() {
         setConversation(current);
         setEvents([]);
         setSessions((prev) => [current!, ...prev]);
+        setOpenChatTabs((prev) =>
+          prev.map((t) =>
+            t.id === activeTabIdRef.current
+              ? {
+                  ...t,
+                  conversationId: current!.id,
+                  title: current!.title || prompt.slice(0, 75),
+                }
+              : t,
+          ),
+        );
       }
+      const backendPermissionMode =
+        permissionMode === "full-access"
+          ? "full"
+          : permissionMode === "accept-edits" || permissionMode === "auto"
+            ? "allow"
+            : permissionMode;
       await api("/runs", {
         conversationId: current.id,
         prompt: fullPrompt,
         harnessId: harness,
         model,
-        permissionMode,
+        permissionMode: backendPermissionMode,
       });
     } catch (e) {
       report(e);
@@ -640,12 +1018,29 @@ export function App() {
     setDictating(true);
     recognition.start();
   }
+  async function generateProjectAtlas() {
+    if (!projectId || atlasBusy) return;
+    const id = projectId;
+    setAtlasBusy(true);
+    setAtlasError("");
+    try {
+      const value = await api<AtlasStatus>(`/projects/${id}/atlas-generate`, {});
+      if (projectRef.current === id) setAtlas(value);
+    } catch (e) {
+      if (projectRef.current === id)
+        setAtlasError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAtlasBusy(false);
+    }
+  }
   function selectProject(id: string) {
     projectRef.current = id;
     setProjectId(id);
     setFilePath(".");
     setFiles([]);
     setContext(null);
+    setAtlas(null);
+    setAtlasError("");
     setGit(null);
     setCommitMessage("");
     setSuggestedCommit("");
@@ -663,7 +1058,16 @@ export function App() {
     setSessionError("");
     try {
       await api(`/conversations/${session.id}/${action}`, {});
-      if ((action === "archive" || action === "delete") && selected.current === session.id) newSession();
+      if (action === "archive" || action === "delete") {
+        const tabToClose = openChatTabsRef.current.find(
+          (t) => t.conversationId === session.id,
+        );
+        if (tabToClose) {
+          closeChatTab(tabToClose.id);
+        } else if (selected.current === session.id) {
+          openNewChatTab();
+        }
+      }
       await loadSessions(session.projectId);
     } catch (e) { setSessionError(e instanceof Error ? e.message : String(e)); }
     finally { setSessionBusy(false); }
@@ -806,6 +1210,7 @@ export function App() {
       setFilePath(entry.path);
       return;
     }
+    persistActiveChatTab();
     const id = `${projectId}::${entry.path}`;
     if (openFileTabs.some((file) => file.id === id)) {
       setPage("chat");
@@ -859,10 +1264,16 @@ export function App() {
     setOpenFileTabs(remaining);
     if (activeTabId === id) {
       const closingIndex = openFileTabs.findIndex((file) => file.id === id);
-      setActiveTabId(
+      const nextId =
         openFileTabs[closingIndex - 1]?.id ??
-          (openBrowserTabs[0]?.id ?? "chat"),
-      );
+        (openBrowserTabs[0]?.id ??
+          (openTerminalTabs[0]?.id ??
+            (openChatTabsRef.current[0]?.id ?? "chat")));
+      if (openChatTabsRef.current.some((t) => t.id === nextId)) {
+        void switchChatTab(nextId);
+      } else {
+        setActiveTabId(nextId);
+      }
     }
     setFileError("");
   }
@@ -878,10 +1289,13 @@ export function App() {
       const closingIndex = openBrowserTabs.findIndex((tab) => tab.id === id);
       if (closingIndex > 0 && remaining[closingIndex - 1]) {
         setActiveTabId(remaining[closingIndex - 1].id);
+      } else if (openTerminalTabs.length > 0) {
+        setActiveTabId(openTerminalTabs[openTerminalTabs.length - 1].id);
       } else if (openFileTabs.length > 0) {
         setActiveTabId(openFileTabs[openFileTabs.length - 1].id);
       } else {
-        setActiveTabId("chat");
+        const fallbackChatId = openChatTabsRef.current[0]?.id ?? "chat";
+        void switchChatTab(fallbackChatId);
       }
     }
   }
@@ -913,15 +1327,20 @@ export function App() {
       // ignore
     }
   }, []);
-  function openNewBrowserTab(initialUrl = "about:blank") {
+  function openNewBrowserTab(
+    initialUrl = "about:blank",
+    initialPreset: "desktop" | "tablet" | "mobile" = "desktop",
+    initialTitle?: string,
+  ) {
+    persistActiveChatTab();
     const id = `browser-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const title = formatBrowserTabTitle(initialUrl);
+    const title = initialTitle ?? formatBrowserTabTitle(initialUrl);
     const newTab: OpenBrowserTab = {
       id,
       url: initialUrl,
       title,
       mode: "direct",
-      viewportPreset: "desktop",
+      viewportPreset: initialPreset,
       history: [initialUrl],
       historyIndex: 0,
       loading: initialUrl !== "about:blank",
@@ -934,6 +1353,72 @@ export function App() {
     }
     return id;
   }
+
+  function openNewTerminalTab() {
+    persistActiveChatTab();
+    const num = openTerminalTabs.length + 1;
+    const id = `terminal-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const newTab: OpenTerminalTab = {
+      id,
+      title: `Terminal ${num}`,
+      cwd: project?.rootPath,
+    };
+    setOpenTerminalTabs((prev) => [...prev, newTab]);
+    setPage("chat");
+    setActiveTabId(id);
+    return id;
+  }
+
+  function closeTerminalTab(id: string) {
+    setOpenTerminalTabs((prev) => {
+      const remaining = prev.filter((tab) => tab.id !== id);
+      if (activeTabId === id) {
+        const closingIndex = prev.findIndex((tab) => tab.id === id);
+        if (closingIndex > 0 && remaining[closingIndex - 1]) {
+          setActiveTabId(remaining[closingIndex - 1].id);
+        } else if (openBrowserTabs.length > 0) {
+          setActiveTabId(openBrowserTabs[openBrowserTabs.length - 1].id);
+        } else if (openFileTabs.length > 0) {
+          setActiveTabId(openFileTabs[openFileTabs.length - 1].id);
+        } else {
+          const fallbackChatId = openChatTabsRef.current[0]?.id ?? "chat";
+          void switchChatTab(fallbackChatId);
+        }
+      }
+      return remaining;
+    });
+  }
+
+  function openNewMarkdownTab() {
+    persistActiveChatTab();
+    const existingCount = openFileTabs.filter((tab) =>
+      tab.path.toLowerCase().includes("untitled"),
+    ).length;
+    const filename = `untitled${existingCount > 0 ? `-${existingCount + 1}` : ""}.md`;
+    const id = `draft::${Date.now()}::${filename}`;
+    const newTab: OpenFileTab = {
+      id,
+      path: filename,
+      content: `# ${filename.replace(/\.md$/, "")}\n\n`,
+      original: "",
+      revision: "draft",
+      mode: "edit",
+      projectId: projectId || undefined,
+    };
+    setOpenFileTabs((prev) => [...prev, newTab]);
+    setPage("chat");
+    setActiveTabId(id);
+    return id;
+  }
+
+  function openNewChatWithHarness(targetHarness: string) {
+    openNewChatTab(targetHarness);
+  }
+
+  function openMobileEmulator() {
+    return openNewBrowserTab("http://localhost:5173", "mobile");
+  }
+
   function openGitDiff(content: string, label = "HEAD", key = "working") {
     const id = `diff:${projectId}:${key}`;
     setOpenFileTabs((tabs) => {
@@ -1289,10 +1774,6 @@ export function App() {
               </strong>
             </div>
             <div className="header-actions">
-              <Badge variant="outline">
-                <ShieldCheck />
-                Approbations actives
-              </Badge>
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -1327,17 +1808,44 @@ export function App() {
             role="tablist"
             aria-label="Onglets de travail"
           >
-            <button
-              className={cn(
-                "workspace-tab",
-                activeTabId === "chat" && "is-active",
-              )}
-              role="tab"
-              aria-selected={activeTabId === "chat"}
-              onClick={() => setActiveTabId("chat")}
-            >
-              <MessageSquare /> <span>{conversation?.title || "Chat"}</span>
-            </button>
+            {openChatTabs.map((chatTab) => {
+              const isActive = activeTabId === chatTab.id;
+              const displayTitle = isActive
+                ? (conversation?.title || chatTab.title || "Chat")
+                : (chatTab.title || "Chat");
+              return (
+                <div
+                  className={cn(
+                    "workspace-tab",
+                    isActive && "is-active",
+                  )}
+                  key={chatTab.id}
+                >
+                  <button
+                    role="tab"
+                    aria-selected={isActive}
+                    title={displayTitle}
+                    onClick={() => void switchChatTab(chatTab.id)}
+                  >
+                    <MessageSquare />
+                    <span>{displayTitle}</span>
+                  </button>
+                  {openChatTabs.length > 1 && (
+                    <button
+                      className="workspace-tab-close"
+                      aria-label={`Fermer ${displayTitle}`}
+                      title="Fermer l’onglet"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeChatTab(chatTab.id);
+                      }}
+                    >
+                      <X />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
             {openFileTabs.map((file) => (
               <div
                 className={cn(
@@ -1350,7 +1858,10 @@ export function App() {
                   role="tab"
                   aria-selected={activeTabId === file.id}
                   title={file.path}
-                  onClick={() => setActiveTabId(file.id)}
+                  onClick={() => {
+                    persistActiveChatTab();
+                    setActiveTabId(file.id);
+                  }}
                 >
                   {file.path.startsWith("Diff Git") ? <FileCode2 /> : <FileIcon path={file.path} />}
                   <span>{file.path.split("/").at(-1)}</span>
@@ -1380,7 +1891,10 @@ export function App() {
                   role="tab"
                   aria-selected={activeTabId === browserTab.id}
                   title={browserTab.url}
-                  onClick={() => setActiveTabId(browserTab.id)}
+                  onClick={() => {
+                    persistActiveChatTab();
+                    setActiveTabId(browserTab.id);
+                  }}
                 >
                   <Globe />
                   <span>
@@ -1401,14 +1915,92 @@ export function App() {
                 </button>
               </div>
             ))}
-            <button
-              className="workspace-tab-add"
-              aria-label="Ouvrir un nouvel onglet de navigation"
-              title="Nouveau navigateur interne (⌘B)"
-              onClick={() => openNewBrowserTab()}
+            {openTerminalTabs.map((termTab) => (
+              <div
+                className={cn(
+                  "workspace-tab",
+                  activeTabId === termTab.id && "is-active",
+                )}
+                key={termTab.id}
+              >
+                <button
+                  role="tab"
+                  aria-selected={activeTabId === termTab.id}
+                  title={termTab.title}
+                  onClick={() => {
+                    persistActiveChatTab();
+                    setActiveTabId(termTab.id);
+                  }}
+                >
+                  <Terminal className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{termTab.title}</span>
+                </button>
+                <button
+                  className="workspace-tab-close"
+                  aria-label={`Fermer ${termTab.title}`}
+                  title="Fermer l’onglet"
+                  onClick={() => closeTerminalTab(termTab.id)}
+                >
+                  <X />
+                </button>
+              </div>
+            ))}
+            <TabCreateDropdown
+              isOpen={newTabDropdownOpen}
+              onOpenChange={setNewTabDropdownOpen}
+              onNewTerminal={openNewTerminalTab}
+              onNewBrowser={openNewBrowserTab}
+              onNewMarkdown={openNewMarkdownTab}
+              onNewChat={openNewChatTab}
+              onNewMobileEmulator={openMobileEmulator}
+              onSelectAgent={openNewChatWithHarness}
+              onOpenSettings={() => setSettings(true)}
+              openTabs={[
+                ...openChatTabs.map((c) => ({
+                  id: c.id,
+                  title:
+                    c.id === activeTabId
+                      ? conversation?.title || c.title || "Chat"
+                      : c.title || "Chat",
+                  type: "chat" as const,
+                })),
+                ...openFileTabs.map((f) => ({
+                  id: f.id,
+                  title: f.path.split("/").pop() || f.path,
+                  type: "file" as const,
+                })),
+                ...openBrowserTabs.map((b) => ({
+                  id: b.id,
+                  title: b.title || formatBrowserTabTitle(b.url),
+                  type: "browser" as const,
+                })),
+                ...openTerminalTabs.map((t) => ({
+                  id: t.id,
+                  title: t.title,
+                  type: "terminal" as const,
+                })),
+              ]}
+              onSelectTab={(tabId) => {
+                if (openChatTabs.some((c) => c.id === tabId)) {
+                  void switchChatTab(tabId);
+                } else {
+                  persistActiveChatTab();
+                  setActiveTabId(tabId);
+                  setPage("chat");
+                }
+              }}
             >
-              <Plus />
-            </button>
+              <button
+                className={cn(
+                  "workspace-tab-add",
+                  newTabDropdownOpen && "is-open",
+                )}
+                aria-label="Créer un nouvel onglet"
+                title="Créer un nouvel onglet (⌘T, ⌘⇧B, ⌘⇧M, ⇧⌘O)"
+              >
+                <Plus />
+              </button>
+            </TabCreateDropdown>
           </nav>
           <div className="conversation-surface">
             {viewFile ? (
@@ -1546,14 +2138,17 @@ export function App() {
                 onAddHistory={addBrowserHistory}
                 onClearHistory={clearBrowserHistory}
               />
-            ) : activeTabId === "chat" ? (
+            ) : activeTerminalTab ? (
+              <TerminalPane
+                tabId={activeTerminalTab.id}
+                projectId={projectId}
+                initialCwd={activeTerminalTab.cwd}
+                onCloseTab={() => closeTerminalTab(activeTerminalTab.id)}
+              />
+            ) : (
               <>
                 {!messages.length ? (
                   <div className="welcome">
-                    <div className="welcome-eyebrow">
-                      <span className="connection-dot is-connected" />
-                      VOTRE ESPACE DE DÉVELOPPEMENT
-                    </div>
                     <img
                       className="welcome-mark"
                       src="/assets/omni.svg"
@@ -1669,9 +2264,9 @@ export function App() {
                   </MessageScrollerProvider>
                 )}
               </>
-            ) : null}
+            )}
           </div>
-          {activeTabId === "chat" && (
+          {isChatActive && (
             <div className="composer-zone">
               {conversation?.status === "running" && !busy && (
                 <Alert>
@@ -1807,23 +2402,11 @@ export function App() {
                         >
                           <Plus />
                         </Button>
-                        <DropdownMenu.Root modal={false}>
-                          <DropdownMenu.Trigger asChild>
-                            <button type="button" className="composer-permissions" disabled={busy} aria-label="Choisir les permissions" title="Choisir le traitement des demandes d’autorisation">
-                              <ShieldCheck /> <span>{permissionMode === "ask" ? "Demander l’approbation" : permissionMode === "allow" ? "Approuver à ma place" : permissionMode === "full" ? "Accès complet" : "Refuser les demandes"}</span> <ChevronDown />
-                            </button>
-                          </DropdownMenu.Trigger>
-                          <DropdownMenu.Portal><DropdownMenu.Content className="project-action-menu permissions-menu" side="top" align="start" sideOffset={6} collisionPadding={8}>
-                            <DropdownMenu.Label className="source-git-menu-label">Demandes d’autorisation du Harness</DropdownMenu.Label>
-                            <DropdownMenu.RadioGroup value={permissionMode} onValueChange={(value) => setPermissionMode(value as "ask" | "allow" | "deny" | "full")}>
-                              <DropdownMenu.RadioItem className="project-action-menu-item permission-menu-item" value="ask"><span><strong>Demander l’approbation</strong><small>Confirmer chaque demande d’autorisation transmise par le Harness.</small></span><DropdownMenu.ItemIndicator><Check /></DropdownMenu.ItemIndicator></DropdownMenu.RadioItem>
-                              <DropdownMenu.RadioItem className="project-action-menu-item permission-menu-item" value="allow"><span><strong>Approuver à ma place</strong><small>Approuver automatiquement toutes les demandes transmises, y compris pour les outils et MCP.</small></span><DropdownMenu.ItemIndicator><Check /></DropdownMenu.ItemIndicator></DropdownMenu.RadioItem>
-                              <DropdownMenu.RadioItem className="project-action-menu-item permission-menu-item" value="deny"><span><strong>Refuser les demandes</strong><small>Refuser automatiquement les demandes d’autorisation transmises.</small></span><DropdownMenu.ItemIndicator><Check /></DropdownMenu.ItemIndicator></DropdownMenu.RadioItem>
-                              <DropdownMenu.RadioItem className="project-action-menu-item permission-menu-item" value="full"><span><strong>Accès complet</strong><small>Codex et Claude : accès aux fichiers et au réseau sans approbation Omni ; les restrictions du système et de l’organisation restent applicables.</small></span><DropdownMenu.ItemIndicator><Check /></DropdownMenu.ItemIndicator></DropdownMenu.RadioItem>
-                            </DropdownMenu.RadioGroup>
-                            <div className="permission-menu-note">Appliqué au prochain tour. Les règles propres au Harness restent actives.</div>
-                          </DropdownMenu.Content></DropdownMenu.Portal>
-                        </DropdownMenu.Root>
+                        <PermissionModePicker
+                          value={permissionMode}
+                          onChange={setPermissionMode}
+                          disabled={busy}
+                        />
                       </div>
                       <div className="composer-trailing-actions">
                         <div className="composer-settings">
@@ -1941,8 +2524,22 @@ export function App() {
               )}
               <div className="composer-footnote">
                 <span>
-                  <ShieldCheck />
-                  {permissionMode === "ask" ? "Les demandes d’autorisation nécessitent votre accord." : permissionMode === "allow" ? "Les demandes d’autorisation seront approuvées automatiquement." : permissionMode === "full" ? "Accès complet activé pour le prochain tour (Codex et Claude)." : "Les demandes d’autorisation seront refusées automatiquement."}
+                  {permissionMode === "full-access" ? (
+                    <ShieldAlert className="text-amber-400" />
+                  ) : permissionMode === "accept-edits" ? (
+                    <FilePenLine />
+                  ) : permissionMode === "auto" ? (
+                    <ShieldCheck />
+                  ) : (
+                    <Hand />
+                  )}
+                  {permissionMode === "ask"
+                    ? "Les demandes d’autorisation nécessitent votre accord."
+                    : permissionMode === "accept-edits"
+                      ? "Les modifications de fichiers seront approuvées automatiquement."
+                      : permissionMode === "auto"
+                        ? "Les demandes d’autorisation seront examinées pour vous."
+                        : "Accès complet activé : aucune confirmation requise."}
                 </span>
                 <span>
                   Entrée pour envoyer · ⇧ Entrée pour une nouvelle ligne
@@ -2013,6 +2610,14 @@ export function App() {
           project={project}
           onOpen={(path) => {
             const name = path.split("/").at(-1) ?? path;
+            if (projectId && /\.html?$/i.test(path)) {
+              openNewBrowserTab(
+                `/api/projects/${encodeURIComponent(projectId)}/artifact-raw?path=${encodeURIComponent(path)}`,
+                "desktop",
+                name,
+              );
+              return;
+            }
             void openFile({ name, path, directory: false });
           }}
         />
@@ -2081,6 +2686,40 @@ export function App() {
                     au Harness.
                   </span>
                 </div>
+              </section>
+              <section className="inspector-section">
+                <div className="section-label">ATLAS DU PROJET</div>
+                {atlas?.present ? (
+                  <div className="context-file">
+                    <FileIcon path="atlas/index.json" />
+                    <div>
+                      <strong>atlas/</strong>
+                      <span>
+                        {atlas.capabilities} capacités · {atlas.tables} tables
+                      </span>
+                    </div>
+                    <Check />
+                  </div>
+                ) : null}
+                {atlas && !atlas.present && (
+                  <p className="inspector-hint">
+                    Aucun atlas dans ce projet. Il donne aux agents une carte
+                    vérifiée du code, avec les fichiers cités.
+                  </p>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!projectId || atlas === null || atlasBusy}
+                  onClick={generateProjectAtlas}
+                >
+                  {atlasBusy
+                    ? "Création…"
+                    : atlas?.present
+                      ? "Régénérer l'atlas"
+                      : "Créer l'atlas"}
+                </Button>
+                {atlasError && <p className="inspector-hint">{atlasError}</p>}
               </section>
             </TabsContent>
             <TabsContent value="files">
@@ -2324,12 +2963,39 @@ export function App() {
                 </CommandItem>
                 <CommandItem
                   onSelect={() => {
+                    openNewTerminalTab();
+                    setPalette(false);
+                  }}
+                >
+                  <Terminal />
+                  Nouveau terminal<CommandShortcut>⌘ T</CommandShortcut>
+                </CommandItem>
+                <CommandItem
+                  onSelect={() => {
                     openNewBrowserTab();
                     setPalette(false);
                   }}
                 >
                   <Globe />
-                  Ouvrir le navigateur interne<CommandShortcut>⌘ B</CommandShortcut>
+                  Nouvel onglet de navigateur<CommandShortcut>⌘⇧B</CommandShortcut>
+                </CommandItem>
+                <CommandItem
+                  onSelect={() => {
+                    openNewMarkdownTab();
+                    setPalette(false);
+                  }}
+                >
+                  <FilePlus />
+                  Nouveau Markdown<CommandShortcut>⌘⇧M</CommandShortcut>
+                </CommandItem>
+                <CommandItem
+                  onSelect={() => {
+                    openMobileEmulator();
+                    setPalette(false);
+                  }}
+                >
+                  <Smartphone />
+                  Nouvel émulateur mobile<CommandShortcut>⌘⌥⇧E</CommandShortcut>
                 </CommandItem>
                 <CommandItem
                   onSelect={() => {

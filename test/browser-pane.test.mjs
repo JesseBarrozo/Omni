@@ -144,3 +144,62 @@ test("browser URL normalization and title formatting match expected patterns", (
   assert.equal(formatTitle("https://github.com/pulls"), "github.com");
   assert.equal(formatTitle("https://www.google.com/search"), "google.com");
 });
+
+test("terminal execution endpoint runs shell command and returns output", async () => {
+  const f = fixture();
+  const workspace = new AgentWorkspace({
+    store: f.store,
+    cwd: f.root,
+    dataDir: join(f.dir, "data"),
+  });
+  const app = await startWorkspaceServer({
+    store: f.store,
+    dataDir: join(f.dir, "data"),
+    cwd: f.root,
+    workspace,
+    port: 0,
+  });
+
+  try {
+    const res = await fetch(`${app.url}/api/terminal/exec`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-omni-request": "1",
+      },
+      body: JSON.stringify({
+        command: "echo 'hello terminal'",
+        projectId: f.project.id,
+      }),
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.match(data.stdout, /hello terminal/);
+    assert.equal(data.exitCode, 0);
+
+    // Test draft markdown creation
+    const createRes = await fetch(
+      `${app.url}/api/projects/${f.project.id}/file`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-omni-request": "1",
+        },
+        body: JSON.stringify({
+          path: "untitled-1.md",
+          content: "# Mon document markdown\nContenu initial",
+          revision: "draft",
+        }),
+      },
+    );
+    assert.equal(createRes.status, 200);
+    const createData = await createRes.json();
+    assert.equal(createData.path, "untitled-1.md");
+    assert.match(createData.revision, /^[a-f0-9]{64}$/);
+  } finally {
+    app.close();
+    f.store.db.close();
+    rmSync(f.dir, { recursive: true, force: true });
+  }
+});
