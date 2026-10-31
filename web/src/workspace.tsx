@@ -2071,7 +2071,21 @@ export function App() {
                     viewFile.mode === "preview" &&
                     /\.mdx?$/i.test(viewFile.path) ? (
                       <article className="markdown-file-preview">
-                        <MarkdownContent text={viewFile.content} />
+                        <MarkdownContent
+                          text={viewFile.content}
+                          onOpenCitation={(citationPath, line) => {
+                            void openFile(
+                              {
+                                name:
+                                  citationPath.split("/").at(-1) ??
+                                  citationPath,
+                                path: citationPath,
+                                directory: false,
+                              },
+                              line,
+                            );
+                          }}
+                        />
                       </article>
                     ) : (
                       <Suspense
@@ -2237,6 +2251,18 @@ export function App() {
                                       {message.content ? (
                                         <MarkdownContent
                                           text={message.content}
+                                          onOpenCitation={(path, line) =>
+                                            void openFile(
+                                              {
+                                                name:
+                                                  path.split("/").at(-1) ??
+                                                  path,
+                                                path,
+                                                directory: false,
+                                              },
+                                              line,
+                                            )
+                                          }
                                         />
                                       ) : busy ? (
                                         <span className="shimmer">
@@ -2731,8 +2757,15 @@ export function App() {
                   <AtlasViewer
                     projectId={projectId}
                     pages={atlas.pages ?? []}
+                    activePath={
+                      openFileTabs.find((tab) => tab.id === activeTabId)?.path ?? null
+                    }
+                    onOpenFile={(entry) => void openFile(entry)}
                     onOpenCitation={(path, line) =>
-                      void openFile({ name: path.split("/").at(-1) ?? path, path, directory: false }, line)
+                      void openFile(
+                        { name: path.split("/").at(-1) ?? path, path, directory: false },
+                        line,
+                      )
                     }
                   />
                 )}

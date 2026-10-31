@@ -37,6 +37,7 @@ const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({
   viewport: { width: 1512, height: 982 },
   deviceScaleFactor: 1,
+  locale: "fr-FR",
 });
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
@@ -45,7 +46,7 @@ try {
   await page
     .getByRole("heading", { name: "Une idée. Tous vos agents." })
     .waitFor();
-  await page.getByText("Runtime local connecté", { exact: true }).waitFor();
+  await page.getByText(/Runtime local connecté|Local runtime connected/).waitFor();
   await page.getByText("AGENTS.md", { exact: true }).first().waitFor();
   assert.equal(
     await page.evaluate(
@@ -70,7 +71,11 @@ try {
   await page.getByRole("heading", { name: "Connexions et outils" }).waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("tab", { name: "Fichiers", exact: true }).click();
-  await page.getByRole("button", { name: "AGENTS.md", exact: true }).click();
+  await page
+    .locator('[data-path="AGENTS.md"]')
+    .or(page.getByRole("treeitem", { name: "AGENTS.md" }))
+    .or(page.getByRole("button", { name: "AGENTS.md" }))
+    .click();
   await page.getByRole("tab", { name: "AGENTS.md", exact: true }).waitFor();
   await page.screenshot({
     path: ".context/previews/omni-workspace-file-review.png",
@@ -78,6 +83,22 @@ try {
   });
   await page.getByRole("button", { name: "Fermer AGENTS.md" }).click();
   await page.getByRole("tab", { name: "Contexte", exact: true }).click();
+
+  // Verify Atlas documents open in the editor/viewer tab instead of inside the right panel
+  const atlasDocumentsBtn = page.getByRole("button", { name: /Documents.*atlas\/documents\.md/i });
+  if ((await atlasDocumentsBtn.count()) > 0) {
+    await atlasDocumentsBtn.first().click();
+    await page.locator('.workspace-tab:has-text("documents.md")').waitFor();
+    await page.locator(".markdown-file-preview").waitFor();
+    // Verify citation inside documents.md opens referenced file
+    const citationBtn = page.locator(".markdown-file-preview button", { hasText: "AGENTS.md:1" });
+    if ((await citationBtn.count()) > 0) {
+      await citationBtn.first().click();
+      await page.locator('.workspace-tab:has-text("AGENTS.md")').waitFor();
+      await page.locator('.workspace-tab:has-text("AGENTS.md") .workspace-tab-close').click();
+    }
+    await page.locator('.workspace-tab:has-text("documents.md") .workspace-tab-close').click();
+  }
 
   // Verify tab create dropdown (Orca-inspired)
   await page.getByRole("button", { name: "Créer un nouvel onglet" }).click();
