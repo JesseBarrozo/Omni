@@ -355,6 +355,76 @@ export async function startWorkspaceServer({
         send(response, 200, collectUsageSnapshot({ dataDir }));
         return;
       }
+      if (path === "/api/usage/overview" && request.method === "GET") {
+        const rows = store.db
+          .prepare(
+            "SELECT type, payload_json AS payload, created_at AS createdAt FROM conversation_events ORDER BY created_at",
+          )
+          .all()
+          .map((row) => ({
+            ...row,
+            payload: JSON.parse(row.payload),
+          }));
+        const usage = rows.filter((row) => row.type === "usage.updated");
+        const runs = rows.filter((row) => ["run.started", "run.finished"].includes(row.type));
+        const tokens = usage.reduce(
+          (result, row) => {
+            const values = row.payload?.tokens ?? {};
+            for (const key of ["input", "output", "reasoning"]) {
+              result[key] += Number.isFinite(values[key]) ? values[key] : 0;
+            }
+            result.cacheRead += Number.isFinite(values.cache?.read) ? values.cache.read : 0;
+            result.cacheWrite += Number.isFinite(values.cache?.write) ? values.cache.write : 0;
+            result.cost += Number.isFinite(row.payload?.costUsd) ? row.payload.costUsd : 0;
+            return result;
+          },
+          { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
+        );
+        const daily = new Map();
+        for (const row of usage) {
+          const day = row.createdAt.slice(0, 10);
+          const values = row.payload?.tokens ?? {};
+          const total = [values.input, values.output, values.reasoning, values.cache?.read, values.cache?.write]
+            .filter(Number.isFinite)
+            .reduce((sum, value) => sum + value, 0);
+          daily.set(day, (daily.get(day) ?? 0) + total);
+        }
+        const runStarts = new Map();
+        let workMs = 0;
+        for (const row of runs) {
+          const runId = row.payload?.runId;
+          if (!runId) continue;
+          if (row.type === "run.started") runStarts.set(runId, Date.parse(row.createdAt));
+          else if (runStarts.has(runId)) {
+            workMs += Math.max(0, Date.parse(row.createdAt) - runStarts.get(runId));
+            runStarts.delete(runId);
+          }
+        }
+        const totalTokens = tokens.input + tokens.output + tokens.reasoning + tokens.cacheRead + tokens.cacheWrite;
+        const activeDays = daily.size;
+        const lastUpdatedAt = rows.at(-1)?.createdAt ?? null;
+        const providerTokens = {};
+        for (const row of usage) {
+          const provider = row.payload?.providerId || "unknown";
+          const values = row.payload?.tokens ?? {};
+          providerTokens[provider] = (providerTokens[provider] ?? 0) + [values.input, values.output, values.reasoning, values.cache?.read, values.cache?.write]
+            .filter(Number.isFinite)
+            .reduce((sum, value) => sum + value, 0);
+        }
+        send(response, 200, {
+          agentsLaunched: runs.filter((row) => row.type === "run.started").length,
+          workMs,
+          prsCreated: rows.filter((row) => row.type === "pull_request.created").length,
+          totalTokens,
+          estimatedCostUsd: tokens.cost,
+          activeDays,
+          cacheShare: totalTokens ? (tokens.cacheRead + tokens.cacheWrite) / totalTokens : null,
+          daily: [...daily.entries()].map(([date, value]) => ({ date, value })),
+          providerTokens,
+          lastUpdatedAt,
+        });
+        return;
+      }
       if (path === "/api/skills" && request.method === "GET") {
         const projectId = url.searchParams.get("projectId");
         const project = projectId ? store.project(projectId) : null;

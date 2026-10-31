@@ -44,7 +44,7 @@ page.on("pageerror", (error) => errors.push(error.message));
 try {
   await page.goto(url);
   await page
-    .getByRole("heading", { name: "Une idée. Tous vos agents." })
+    .getByRole("heading", { name: "Statistiques & usage" })
     .waitFor();
   await page.getByText(/Runtime local connecté|Local runtime connected/).waitFor();
   await page.getByText("AGENTS.md", { exact: true }).first().waitFor();
@@ -58,11 +58,6 @@ try {
     path: ".context/previews/omni-workspace-desktop.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: /Reprendre avec dotcontext/ }).click();
-  assert.match(
-    await page.getByRole("textbox", { name: "Votre demande" }).inputValue(),
-    /MCP dotcontext/,
-  );
   await page.getByRole("textbox", { name: "Votre demande" }).fill("");
   await page.keyboard.press("Meta+k");
   await page.getByRole("dialog").waitFor();
@@ -134,7 +129,7 @@ try {
   });
   await page.getByRole("button", { name: /Fermer l'onglet/ }).click();
   await page
-    .getByRole("heading", { name: "Une idée. Tous vos agents." })
+    .getByRole("heading", { name: "Statistiques & usage" })
     .waitFor();
 
   // Open terminal tab via dropdown
@@ -147,10 +142,13 @@ try {
   });
   await page.getByRole("button", { name: /Fermer Terminal/ }).click();
   await page
-    .getByRole("heading", { name: "Une idée. Tous vos agents." })
+    .getByRole("heading", { name: "Statistiques & usage" })
     .waitFor();
 
   // Verify multi-chat tabs: "Lancer un nouveau chat" opens a new tab without overwriting current chat
+  await page.getByRole("button", { name: "Créer un nouvel onglet" }).click();
+  await page.getByRole("menuitem", { name: /Lancer un nouveau chat/ }).click();
+  await page.getByRole("tab", { name: "Chat 1" }).waitFor();
   await page.getByRole("textbox", { name: "Votre demande" }).fill("Message dans Chat 1");
   await page.getByRole("button", { name: "Créer un nouvel onglet" }).click();
   await page.getByRole("menuitem", { name: /Lancer un nouveau chat/ }).click();
@@ -160,7 +158,7 @@ try {
     "",
   );
   // Switch back to first chat tab
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await page.getByRole("tab", { name: "Chat 1", exact: true }).click();
   assert.equal(
     await page.getByRole("textbox", { name: "Votre demande" }).inputValue(),
     "Message dans Chat 1",

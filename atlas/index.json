@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generator": "tools/atlas/generate.mjs",
-  "digest": "fc884be66899be5a",
+  "digest": "11450eb336087219",
   "stack": [
     "node"
   ],
-  "sourceFiles": 101,
+  "sourceFiles": 108,
   "manifests": [
     {
       "path": "package.json",
@@ -238,7 +238,7 @@
     {
       "host": "github.com",
       "file": "src/workspace-server.mjs",
-      "line": 1489
+      "line": 1559
     },
     {
       "host": "www.w3.org",

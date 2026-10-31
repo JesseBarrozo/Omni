@@ -154,10 +154,21 @@ import { FileTree } from "@/components/file-tree";
 import { AtlasViewer } from "@/components/atlas-viewer";
 import { useTranslation } from "@/i18n";
 import { UsageFooter } from "@/components/usage-footer";
+import { UsageOverview } from "@/components/usage-overview";
 import {
   PermissionModePicker,
   type PermissionMode,
 } from "@/components/permission-mode-picker";
+import { ChatComposerHarnessPicker } from "@/components/chat-composer-harness-picker";
+import {
+  ChatComposerModelPicker,
+  type EffortLevel,
+} from "@/components/chat-composer-model-picker";
+import {
+  DictationIndicator,
+  type DictationState,
+} from "@/components/dictation/DictationIndicator";
+import { useAudioMeter } from "@/components/dictation/audio-meter";
 import {
   api,
   type Project,
@@ -233,12 +244,13 @@ type QueuedMessage = {
 };
 type SpeechRecognitionEventLike = {
   resultIndex: number;
-  results: ArrayLike<ArrayLike<{ transcript: string }>>;
+  results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }>;
 };
 type SpeechRecognitionLike = {
   lang: string;
   interimResults: boolean;
   continuous: boolean;
+  onstart?: (() => void) | null;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
   onerror: ((event: { error: string }) => void) | null;
   onend: (() => void) | null;
@@ -314,9 +326,7 @@ export function App() {
   const [openTerminalTabs, setOpenTerminalTabs] = useState<OpenTerminalTab[]>(
     [],
   );
-  const [openChatTabs, setOpenChatTabs] = useState<OpenChatTab[]>([
-    { id: "chat", conversationId: null, title: "Chat", draft: "" },
-  ]);
+  const [openChatTabs, setOpenChatTabs] = useState<OpenChatTab[]>([]);
   const [newTabDropdownOpen, setNewTabDropdownOpen] = useState(false);
   const [browserHistory, setBrowserHistory] = useState<BrowserHistoryEntry[]>(() => {
     try {
@@ -326,7 +336,7 @@ export function App() {
       return [];
     }
   });
-  const [activeTabId, setActiveTabId] = useState("chat");
+  const [activeTabId, setActiveTabId] = useState("");
   const [savingFile, setSavingFile] = useState(false);
   const [fileError, setFileError] = useState("");
   const [commitMessage, setCommitMessage] = useState("");
@@ -348,7 +358,12 @@ export function App() {
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [queueCollapsed, setQueueCollapsed] = useState(false);
-  const [dictating, setDictating] = useState(false);
+  const [dictationState, setDictationState] = useState<DictationState>("idle");
+  const [partialTranscript, setPartialTranscript] = useState("");
+  const audioMeter = useAudioMeter(dictationState !== "idle");
+  const dictating = dictationState !== "idle";
+  const [effort, setEffort] = useState<EffortLevel>("medium");
+  const [fastMode, setFastMode] = useState(false);
   const selected = useRef<string | null>(null);
   const projectRef = useRef("");
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -623,16 +638,9 @@ export function App() {
     (id: string) => {
       const tabs = openChatTabsRef.current;
       if (tabs.length <= 1) {
-        const freshId = `chat-${Date.now()}`;
-        setOpenChatTabs([
-          {
-            id: freshId,
-            conversationId: null,
-            title: "Chat",
-            draft: "",
-          },
-        ]);
-        setActiveTabId(freshId);
+        setOpenChatTabs([]);
+        activeTabIdRef.current = "";
+        setActiveTabId("");
         selected.current = null;
         setConversation(null);
         setEvents([]);
@@ -1028,6 +1036,12 @@ export function App() {
     setDraft("");
     setAttachments([]);
     try {
+      if (!activeTabIdRef.current) {
+        const newTabId = `chat-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        activeTabIdRef.current = newTabId;
+        setOpenChatTabs([{ id: newTabId, conversationId: null, title: "Chat", draft: "", harness, model }]);
+        setActiveTabId(newTabId);
+      }
       let current = conversation;
       const isAutoTitleEnabled =
         localStorage.getItem("omni.tabAutoGenerateTitle") !== "false";
@@ -1129,42 +1143,96 @@ export function App() {
     }
   }
   function toggleDictation() {
-    if (speechRecognition.current) {
-      speechRecognition.current.stop();
-      speechRecognition.current = null;
-      setDictating(false);
+    if (dictationState !== "idle") {
+      stopDictation();
       return;
     }
-    const SpeechRecognition = (window as SpeechWindow).SpeechRecognition ??
+    startDictation();
+  }
+
+  function startDictation() {
+    const SpeechRecognition =
+      (window as SpeechWindow).SpeechRecognition ??
       (window as SpeechWindow).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setError("La dictée vocale n’est pas prise en charge par ce navigateur.");
       return;
     }
-    const recognition = new SpeechRecognition();
-    recognition.lang = "fr-FR";
-    recognition.interimResults = false;
-    recognition.continuous = true;
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .slice(event.resultIndex)
-        .map((result) => result[0]?.transcript ?? "")
-        .join("");
-      if (transcript) setDraft((current) => `${current}${current ? " " : ""}${transcript}`);
-    };
-    recognition.onerror = (event) => {
-      setDictating(false);
+    setDictationState("starting");
+    setPartialTranscript("");
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = "fr-FR";
+      recognition.interimResults = true;
+      recognition.continuous = true;
+
+      recognition.onstart = () => {
+        setDictationState("listening");
+      };
+
+      recognition.onresult = (event) => {
+        let interim = "";
+        let final = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const res = event.results[i];
+          const text = res[0]?.transcript ?? "";
+          if (res.isFinal) {
+            final += text;
+          } else {
+            interim += text;
+          }
+        }
+        if (interim) {
+          setPartialTranscript(interim);
+        }
+        if (final) {
+          setDraft(
+            (current) =>
+              `${current}${current && !current.endsWith(" ") ? " " : ""}${final.trim()}`,
+          );
+          setPartialTranscript("");
+        }
+      };
+
+      recognition.onerror = (event) => {
+        setDictationState("idle");
+        speechRecognition.current = null;
+        setPartialTranscript("");
+        if (event.error !== "no-speech" && event.error !== "aborted") {
+          setError(`Dictée vocale : ${event.error}`);
+        }
+      };
+
+      recognition.onend = () => {
+        setDictationState("idle");
+        speechRecognition.current = null;
+        setPartialTranscript("");
+      };
+
+      speechRecognition.current = recognition;
+      recognition.start();
+    } catch (err) {
+      setDictationState("idle");
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function stopDictation() {
+    if (speechRecognition.current) {
+      setDictationState("stopping");
+      try {
+        speechRecognition.current.stop();
+      } catch {
+        // ignore
+      }
       speechRecognition.current = null;
-      if (event.error !== "no-speech" && event.error !== "aborted")
-        setError(`Dictée vocale : ${event.error}`);
-    };
-    recognition.onend = () => {
-      setDictating(false);
-      speechRecognition.current = null;
-    };
-    speechRecognition.current = recognition;
-    setDictating(true);
-    recognition.start();
+    }
+    setTimeout(() => {
+      setDictationState("idle");
+      setPartialTranscript("");
+      textarea.current?.focus();
+    }, 200);
   }
   async function generateProjectAtlas() {
     if (!projectId || atlasBusy) return;
@@ -2312,7 +2380,7 @@ export function App() {
               />
             ) : (
               <>
-                {!messages.length ? (
+                {!openChatTabs.length && !messages.length ? <UsageOverview /> : !messages.length ? (
                   <div className="welcome">
                     <img
                       className="welcome-mark"
@@ -2696,57 +2764,26 @@ export function App() {
                         />
                       </div>
                       <div className="composer-trailing-actions">
-                        <div className="composer-settings">
-                          <Select
+                        <div className="composer-settings flex items-center gap-1.5 min-w-0">
+                          <ChatComposerHarnessPicker
+                            harnesses={state?.harnesses ?? []}
                             value={harness}
-                            onValueChange={(id) => {
+                            onSelect={(id) => {
                               setHarness(id);
                               setModel(defaultModel(id));
                             }}
                             disabled={busy}
-                          >
-                            <SelectTrigger aria-label="Harness">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectGroup>
-                                <SelectItem value="auto">Auto</SelectItem>
-                                {state?.harnesses.map((h) => (
-                                  <SelectItem
-                                    key={h.id}
-                                    value={h.id}
-                                    disabled={h.enabled === false}
-                                  >
-                                    {h.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            </SelectContent>
-                          </Select>
-                          <Select
+                          />
+                          <ChatComposerModelPicker
+                            models={modelOptions}
                             value={model}
-                            onValueChange={setModel}
+                            onSelect={setModel}
+                            effort={effort}
+                            onEffortChange={setEffort}
+                            fastMode={fastMode}
+                            onFastModeChange={setFastMode}
                             disabled={busy}
-                          >
-                            <SelectTrigger aria-label="Modèle">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectGroup>
-                                {modelOptions.map((m) => (
-                                  <SelectItem key={m} value={m}>
-                                    {m === "auto-orchestrator"
-                                      ? "Auto Orchestrator"
-                                      : m === defaultModel(harness)
-                                        ? "Modèle par défaut"
-                                        : m.includes("::")
-                                          ? `${m.split("::")[0]} · ${m.split("::").slice(1).join("::")}`
-                                          : m}
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            </SelectContent>
-                          </Select>
+                          />
                         </div>
                         <Button
                           type="button"
@@ -3575,6 +3612,12 @@ export function App() {
           </Empty>
         </div>
       )}
+      <DictationIndicator
+        state={dictationState}
+        meter={audioMeter}
+        partialTranscript={partialTranscript}
+        onStop={stopDictation}
+      />
     </div>
   );
 }
