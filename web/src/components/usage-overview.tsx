@@ -21,7 +21,6 @@ const formatWork = (value: number) => {
   const minutes = Math.round(value / 60000);
   return minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
 };
-const formatDate = (value: string | null) => value ? new Date(value).toLocaleString("fr-FR") : "Pas encore de données";
 
 function StatCard({ icon: Icon, value, label }: { icon: typeof Bot; value: string; label: string }) {
   return <div className="usage-stat-card"><span className="usage-stat-icon"><Icon /></span><span><strong>{value}</strong><small>{label}</small></span></div>;
@@ -42,14 +41,21 @@ export function UsageOverview() {
   const providers = useMemo(() => Object.entries(data?.providerTokens ?? {}).sort((a, b) => b[1] - a[1]), [data]);
   if (loading && !data) return <section className="usage-overview"><p className="usage-overview-loading">Chargement des statistiques…</p></section>;
   return <section className="usage-overview" aria-label="Statistiques et usage">
-    <div className="usage-overview-heading"><div><span className="orca-kicker">ORCA · OMNI</span><h1>Statistiques &amp; usage</h1><p>Suivi depuis le premier agent · Mis à jour : {formatDate(data?.lastUpdatedAt ?? null)}</p></div><Button variant="outline" size="icon" aria-label="Actualiser les statistiques" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "animate-spin" : ""} /></Button></div>
-    {error && <p className="orca-error" role="alert">{error}</p>}
+    <div className="usage-overview-actions">
+      <div className="usage-card-heading usage-overview-heading">
+        <div>
+          <h2>Statistiques &amp; usage</h2>
+        </div>
+      </div>
+      <Button variant="outline" size="icon" aria-label="Actualiser les statistiques" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "animate-spin" : ""} /></Button>
+    </div>
+    {error && error !== "Route introuvable." && <p className="orca-error" role="alert">{error}</p>}
     <div className="usage-stat-grid">
       <StatCard icon={Bot} value={String(data?.agentsLaunched ?? 0)} label="Agents lancés" />
       <StatCard icon={Clock3} value={formatWork(data?.workMs ?? 0)} label="Temps de travail des agents" />
       <StatCard icon={GitPullRequest} value={String(data?.prsCreated ?? 0)} label="PRs créées" />
     </div>
-    <div className="usage-overview-card"><div className="usage-card-heading"><div><h2>Vue d’ensemble de l’utilisation</h2><p>Tokens, coût estimé et activité locale d’Omni.</p></div><Activity /></div>
+    <div className="usage-overview-card"><div className="usage-card-heading"><div><h2>Vue d’ensemble de l’utilisation</h2></div><Activity /></div>
       <div className="usage-metric-grid">
         <StatCard icon={Sparkles} value={formatTokens(data?.totalTokens ?? 0)} label="Total de tokens" />
         <StatCard icon={Coins} value={`$${(data?.estimatedCostUsd ?? 0).toFixed(2)}`} label="Coût estimé" />

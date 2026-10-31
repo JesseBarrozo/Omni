@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { readFile, stat, readdir, open, writeFile } from "node:fs/promises";
+import { accessSync, constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, extname, relative, resolve, isAbsolute, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,6 +25,11 @@ import { PREVIEW_HEADERS, isPreviewablePath } from "./artifact-preview.mjs";
 import { createEntry, deleteEntry, renameEntry } from "./file-operations.mjs";
 import { collectUsageSnapshot } from "./usage.mjs";
 import { collectAccounts } from "./account-detection.mjs";
+import { CodexChat } from "./codex-chat.mjs";
+import { ClaudeCodeChat } from "./claude-code.mjs";
+import { AntigravityCliChat } from "./antigravity-cli.mjs";
+import { OpenCodeHarness } from "./opencode-harness.mjs";
+import { OAuthProfiles } from "./oauth-profiles.mjs";
 import { McpRegistry } from "./mcp-registry.mjs";
 import { ApiKeyProfiles } from "./api-key-profiles.mjs";
 import { AwakeController } from "./awake-controller.mjs";
@@ -72,6 +78,10 @@ const contentTypes = {
   ".ttf": "font/ttf",
 };
 const revision = (value) => createHash("sha256").update(value).digest("hex");
+function executableInstalled(name) {
+  const candidates = name.includes(sep) ? [name] : (process.env.PATH ?? "").split(process.platform === "win32" ? ";" : ":").filter(Boolean).map((directory) => join(directory, name));
+  return candidates.some((candidate) => { try { accessSync(candidate, constants.X_OK); return true; } catch { return false; } });
+}
 const keyProviders = {
   openai: ["Omni OpenAI API Key", "OpenAI"],
   openrouter: ["Omni OpenRouter API Key", "OpenRouter"],
@@ -148,6 +158,7 @@ export async function startWorkspaceServer({
   await awake.init();
   const clients = new Set();
   const savingFiles = new Set();
+  let catalogRefresh = null;
   const broadcast = (event) => {
     for (const client of clients) {
       if (client.writableLength > 1024 * 1024) {
@@ -230,6 +241,7 @@ export async function startWorkspaceServer({
             ...h,
             ...store.harnessRegistry().find((r) => r.id === h.id),
           })),
+          installedAgents: { antigravity: executableInstalled(process.env.OMNI_ANTIGRAVITY_EXECUTABLE ?? "agy") },
           models: store
             .modelRegistry(null, { availableOnly: true })
             .filter((m) => m.enabled),
@@ -256,6 +268,35 @@ export async function startWorkspaceServer({
           models: store.modelRegistry(null, { availableOnly: true }),
           providers: store.providerRegistry(),
         });
+        return;
+      }
+      if (path === "/api/models/refresh" && request.method === "POST") {
+        if (!catalogRefresh) {
+          const profiles = new OAuthProfiles({ dataDir });
+          const providers = [
+            { id: "codex", name: "Codex OAuth", Chat: CodexChat },
+            { id: "claude", name: "Claude Code OAuth", Chat: ClaudeCodeChat },
+            { id: "antigravity", name: "Antigravity", Chat: AntigravityCliChat },
+            { id: "opencode", name: "OpenCode", Chat: OpenCodeHarness },
+          ];
+          catalogRefresh = Promise.all(providers.map(async ({ id, name, Chat }) => {
+            let chat;
+            try {
+              chat = new Chat({ store, dataDir, cwd: projectPath, env: id === "antigravity" || id === "opencode" ? process.env : profiles.environment(id), ...(id === "opencode" ? { executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode" } : {}), ...(id === "antigravity" ? { executable: process.env.OMNI_ANTIGRAVITY_EXECUTABLE ?? "agy" } : {}) });
+              const models = await chat.listModels();
+              if (!models.length) throw new Error("Catalogue vide");
+              store.saveProviderCatalog({ providerId: id, name, authStatus: "connected", models });
+              return { providerId: id, modelCount: models.length };
+            } catch (error) {
+              return { providerId: id, error: redactSecrets(String(error.message)) };
+            } finally {
+              if (id === "opencode" && chat) await chat.dispose().catch(() => {});
+            }
+          })).finally(() => { catalogRefresh = null; });
+        }
+        const results = await catalogRefresh;
+        broadcast({ type: "models.updated", payload: {} });
+        send(response, 200, { results, models: store.modelRegistry(null, { availableOnly: true }), providers: store.providerRegistry() });
         return;
       }
       if (path === "/api/settings/awake" && request.method === "GET") {

@@ -430,15 +430,16 @@ export function App() {
   const stagedChanges = git?.changes?.filter((change) => change.code !== "??" && change.code[0] !== " ") ?? [];
   const unstagedChanges = git?.changes?.filter((change) => change.code === "??" || change.code[1] !== " ") ?? [];
   const gitConflicts = git?.changes?.some((change) => ["DD", "AU", "UD", "UA", "DU", "AA", "UU"].includes(change.code)) ?? false;
+  const codexModelIds = new Set(state?.models.filter((m) => m.providerId === "codex").map((m) => m.id) ?? []);
   const providersModel =
-    state?.models.filter((m) =>
+    state?.models.filter((m) => !(m.providerId === "openai" && codexModelIds.has(m.id)) && (
       harness === "auto"
         ? ["codex", "openai", "claude", "opencode"].includes(m.providerId)
         : harness === "codex"
           ? ["codex", "openai"].includes(m.providerId)
           : harness === "claude-code"
             ? m.providerId === "claude"
-            : m.providerId === harness,
+            : m.providerId === harness),
     ) ?? [];
   const modelOptions = [
     ...new Set([
@@ -768,6 +769,21 @@ export function App() {
     };
   }, [refresh]);
   useEffect(() => {
+    let lastRefresh = 0;
+    const refreshModels = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastRefresh < 60_000) return;
+      lastRefresh = Date.now();
+      void api("/models/refresh", {}).then(() => refresh()).catch(() => {});
+    };
+    refreshModels();
+    window.addEventListener("focus", refreshModels);
+    document.addEventListener("visibilitychange", refreshModels);
+    return () => {
+      window.removeEventListener("focus", refreshModels);
+      document.removeEventListener("visibilitychange", refreshModels);
+    };
+  }, [refresh]);
+  useEffect(() => {
     if (!projectId) return;
     const controller = new AbortController();
     loadSessions(projectId).catch(
@@ -808,6 +824,10 @@ export function App() {
       }
       if (event.type === "awake.status") {
         setState((current) => current ? { ...current, awake: p as WorkspaceState["awake"] } : current);
+        return;
+      }
+      if (event.type === "models.updated") {
+        void refresh().catch(report);
         return;
       }
       if (event.type === "conversation.renamed") {
@@ -2048,19 +2068,17 @@ export function App() {
                     <MessageSquare />
                     <span>{displayTitle}</span>
                   </button>
-                  {openChatTabs.length > 1 && (
-                    <button
-                      className="workspace-tab-close"
-                      aria-label={`Fermer ${displayTitle}`}
-                      title="Fermer l’onglet"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        closeChatTab(chatTab.id);
-                      }}
-                    >
-                      <X />
-                    </button>
-                  )}
+                  <button
+                    className="workspace-tab-close"
+                    aria-label={`Fermer ${displayTitle}`}
+                    title="Fermer la conversation"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeChatTab(chatTab.id);
+                    }}
+                  >
+                    <X />
+                  </button>
                 </div>
               );
             })}

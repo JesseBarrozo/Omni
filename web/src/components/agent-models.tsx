@@ -4,7 +4,8 @@
 // registry: GET /api/models and POST /api/settings/registry (type provider|model).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/collapsible";
 import { api } from "@/lib/api";
 import { AgentIcon } from "@/components/agent-icons";
+import { openCodeModelPresentation } from "@/lib/model-presentation";
 import {
   SettingsSegmentedControl,
   SettingsSubsectionHeader,
@@ -33,6 +35,8 @@ type Registry = { models: Model[]; providers: Provider[] };
 // Prettify a model id for display, e.g. "gpt-6-astra" → "GPT 6 Astra".
 function humanizeModel(id: string): string {
   return id
+    .replace(/^(claude-(?:opus|sonnet|haiku|fable))-(\d+)-(\d+)(?=-|$)/i, "$1-$2.$3")
+    .replace(/-\d{8}$/, "")
     .replace(/[-_]/g, " ")
     .replace(/\bgpt\b/gi, "GPT")
     .replace(/\b([a-z])/g, (m) => m.toUpperCase());
@@ -46,6 +50,7 @@ const ICON: Record<string, string> = {
   claude: "claude",
   google: "gemini",
   gemini: "gemini",
+  antigravity: "antigravity",
 };
 
 export function AgentModels({ onChanged }: { onChanged?: () => void }) {
@@ -79,10 +84,28 @@ export function AgentModels({ onChanged }: { onChanged?: () => void }) {
     }
   }
 
+  async function refreshCatalog() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api<Registry & { results: { providerId: string; error?: string }[] }>("/models/refresh", {});
+      setRegistry(result);
+      const failures = result.results.filter((item) => item.error);
+      if (failures.length) setError(failures.map((item) => `${item.providerId} : ${item.error}`).join(" · "));
+      onChanged?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const groups = useMemo(() => {
     if (!registry) return [];
     const byProvider = new Map<string, Model[]>();
+    const codexIds = new Set(registry.models.filter((model) => model.providerId === "codex").map((model) => model.id));
     for (const model of registry.models) {
+      if (model.providerId === "openai" && codexIds.has(model.id)) continue;
       const list = byProvider.get(model.providerId) ?? [];
       list.push(model);
       byProvider.set(model.providerId, list);
@@ -106,6 +129,9 @@ export function AgentModels({ onChanged }: { onChanged?: () => void }) {
         }
         description={t("settings.models.hint")}
       />
+      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void refreshCatalog()}>
+        <RefreshCw data-icon="inline-start" /> Actualiser les modèles
+      </Button>
       {error && (
         <div className="settings-error" role="alert">
           {error}
@@ -190,8 +216,8 @@ function ModelProviderGroup({
         {models.map((model) => (
           <div className="model-row" key={model.id}>
             <div className="model-row-text">
-              <span className="model-row-label">{humanizeModel(model.id)}</span>
-              <small className="model-row-sub">{model.id}</small>
+              <span className="model-row-label">{providerId === "opencode" ? openCodeModelPresentation(model.id).name : humanizeModel(model.id)}{providerId === "opencode" && openCodeModelPresentation(model.id).isFree && <Badge variant="secondary">Free</Badge>}</span>
+              <small className="model-row-sub">{providerId === "opencode" ? openCodeModelPresentation(model.id).description : model.id}</small>
             </div>
             <Switch
               checked={model.enabled}

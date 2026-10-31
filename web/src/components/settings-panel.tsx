@@ -350,7 +350,7 @@ export function SettingsPanel({
                   {t("settings.installed")}
                   <Badge variant="secondary">
                     {t("settings.detected", {
-                      count: state.harnesses.filter((h) => h.enabled !== undefined).length,
+                      count: state.harnesses.filter((h) => h.enabled !== undefined).length + (state.installedAgents?.antigravity ? 1 : 0),
                     })}
                   </Badge>
                 </span>
@@ -376,6 +376,15 @@ export function SettingsPanel({
                     t={translate}
                   />
                 ))}
+                {state.installedAgents?.antigravity && (
+                  <div className="agent-row">
+                    <div className="agent-row-main">
+                      <span className="agent-row-icon"><AgentIcon agent="antigravity" size={16} /></span>
+                      <div className="agent-row-text"><span className="agent-row-name">Antigravity</span><small className="agent-row-desc">CLI Antigravity · catalogue de modèles</small></div>
+                      <Badge variant="secondary">Installé</Badge>
+                    </div>
+                  </div>
+                )}
               </div>
             </SettingsSection>
 

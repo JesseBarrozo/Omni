@@ -44,7 +44,7 @@ page.on("pageerror", (error) => errors.push(error.message));
 try {
   await page.goto(url);
   await page
-    .getByRole("heading", { name: "Statistiques & usage" })
+    .getByLabel("Statistiques et usage")
     .waitFor();
   await page.getByText(/Runtime local connecté|Local runtime connected/).waitFor();
   await page.getByText("AGENTS.md", { exact: true }).first().waitFor();
@@ -129,7 +129,7 @@ try {
   });
   await page.getByRole("button", { name: /Fermer l'onglet/ }).click();
   await page
-    .getByRole("heading", { name: "Statistiques & usage" })
+    .getByLabel("Statistiques et usage")
     .waitFor();
 
   // Open terminal tab via dropdown
@@ -142,7 +142,7 @@ try {
   });
   await page.getByRole("button", { name: /Fermer Terminal/ }).click();
   await page
-    .getByRole("heading", { name: "Statistiques & usage" })
+    .getByLabel("Statistiques et usage")
     .waitFor();
 
   // Verify multi-chat tabs: "Lancer un nouveau chat" opens a new tab without overwriting current chat

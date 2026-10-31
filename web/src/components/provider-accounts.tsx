@@ -38,6 +38,7 @@ const PROVIDERS = [
   { id: "claude", label: "Claude", icon: "claude", keyProvider: "anthropic", loginCli: "claude" },
   { id: "openai", label: "OpenAI", icon: "codex", keyProvider: "openai", loginCli: "codex" },
   { id: "gemini", label: "Gemini", icon: "gemini", keyProvider: "google", loginCli: null },
+  { id: "antigravity", label: "Antigravity", icon: "antigravity", keyProvider: "antigravity", loginCli: null },
   { id: "openrouter", label: "OpenRouter", icon: "openrouter", keyProvider: "openrouter", loginCli: null },
 ] as const;
 
@@ -54,18 +55,22 @@ export function ProviderAccounts() {
   const load = useCallback(async () => {
     setError("");
     try {
-      const [snapshot, accounts, ...rows] = await Promise.all([
+      const [snapshot, accounts, ...rows] = await Promise.allSettled([
         api<UsageSnapshot>("/usage"),
         api<AccountsSnapshot>("/accounts"),
         ...PROVIDERS.map((p) =>
-          api<Profiles>(`/settings/accounts?provider=${p.keyProvider}`),
+          p.keyProvider === "antigravity" ? Promise.resolve({ profiles: [], active: null } as Profiles) : api<Profiles>(`/settings/accounts?provider=${p.keyProvider}`),
         ),
       ]);
-      setUsage(snapshot);
-      setDetected(accounts);
+      if (snapshot.status === "fulfilled") setUsage(snapshot.value);
+      if (accounts.status === "fulfilled") setDetected(accounts.value);
       setProfiles(
-        Object.fromEntries(PROVIDERS.map((p, index) => [p.keyProvider, rows[index]])),
+        (previous) => ({ ...previous, ...Object.fromEntries(PROVIDERS.flatMap((p, index) => {
+          const row = rows[index];
+          return row.status === "fulfilled" ? [[p.keyProvider, row.value]] : [];
+        })) }),
       );
+      if (accounts.status === "rejected") setError(accounts.reason instanceof Error ? accounts.reason.message : String(accounts.reason));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -73,6 +78,13 @@ export function ProviderAccounts() {
 
   useEffect(() => {
     void load();
+    const refreshOnFocus = () => { if (document.visibilityState === "visible") void load(); };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnFocus);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnFocus);
+    };
   }, [load]);
 
   async function act(
@@ -215,7 +227,7 @@ export function ProviderAccounts() {
             </div>
 
             {/* API-key profiles (Omni's keychain-backed keys). */}
-            <div className="account-keys">
+            {provider.id !== "antigravity" && <div className="account-keys">
               <div className="account-keys-head">
                 <KeyRound className="settings-nav-icon" />
                 <span>{t("settings.accounts.keyProfiles")}</span>
@@ -289,7 +301,7 @@ export function ProviderAccounts() {
                   {t("settings.accounts.save")}
                 </Button>
               </div>
-            </div>
+            </div>}
           </SettingsSection>
         );
       })}

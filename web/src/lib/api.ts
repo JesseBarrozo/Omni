@@ -43,6 +43,7 @@ export type WorkspaceState = {
     description: string;
     enabled?: boolean;
   }[];
+  installedAgents?: { antigravity?: boolean };
   models: { id: string; providerId: string }[];
   providers: { id: string; authStatus: string; enabled?: boolean }[];
   mcpServers: {

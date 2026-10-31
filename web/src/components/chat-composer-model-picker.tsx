@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { openCodeModelPresentation } from "@/lib/model-presentation";
 
 export type EffortLevel = "low" | "medium" | "high" | "max";
 
@@ -21,7 +22,8 @@ function humanizeModelName(id: string): string {
   if (id === "auto" || id === "auto-orchestrator") return "Auto";
   const raw = id.includes("::") ? id.split("::").slice(1).join("::") : id;
   return raw
-    .replace(/^claude-/, "")
+    .replace(/^(claude-(?:opus|sonnet|haiku|fable))-(\d+)-(\d+)(?=-|$)/i, "$1-$2.$3")
+    .replace(/-\d{8}$/, "")
     .replace(/-sonnet-/, " Sonnet ")
     .replace(/-opus-/, " Opus ")
     .replace(/-haiku-/, " Haiku ")
@@ -73,11 +75,13 @@ export function ChatComposerModelPicker({
       if (typeof m === "string") {
         const [prov, ...rest] = m.includes("::") ? m.split("::") : ["", m];
         const modelId = rest.join("::");
+        const presentation = prov === "opencode" ? openCodeModelPresentation(modelId) : null;
         return {
           id: m,
           providerId: prov || undefined,
-          name: humanizeModelName(m),
-          description: modelSubtitle(m, prov),
+          name: presentation?.name ?? humanizeModelName(m),
+          description: presentation?.description ?? modelSubtitle(m, prov),
+          isFree: presentation?.isFree,
         };
       }
       return {

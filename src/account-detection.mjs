@@ -25,10 +25,10 @@ function decodeJwtClaims(token) {
 
 // Codex / OpenAI: ~/.codex/auth.json holds an id_token (JWT) with the ChatGPT
 // account email and plan, plus an optional API key.
-export function detectCodexAccount({ home = homedir() } = {}) {
+export function detectCodexAccount({ home = homedir(), env = process.env } = {}) {
   let auth;
   try {
-    auth = JSON.parse(readFileSync(join(home, ".codex", "auth.json"), "utf8"));
+    auth = JSON.parse(readFileSync(join(env.CODEX_HOME || join(home, ".codex"), "auth.json"), "utf8"));
   } catch {
     return null;
   }
@@ -36,7 +36,7 @@ export function detectCodexAccount({ home = homedir() } = {}) {
   const openai = claims?.["https://api.openai.com/auth"] ?? {};
   const email = typeof claims?.email === "string" ? claims.email : null;
   const apiKey = Boolean(auth?.OPENAI_API_KEY);
-  if (!email && !apiKey) return null;
+  if (!email && !apiKey && !auth?.tokens?.access_token && !auth?.tokens?.id_token) return null;
   return {
     id: openai.chatgpt_account_id ?? email ?? "codex",
     email,
@@ -51,8 +51,8 @@ export function detectCodexAccount({ home = homedir() } = {}) {
 // keychain ("Claude Code-credentials"); on other platforms in a credentials
 // file. The token does not expose the email, so we report the subscription tier
 // and connection state (we never call an account API just to show an email).
-export function detectClaudeAccount({ home = homedir() } = {}) {
-  let credentials = readClaudeCredentialsFile(home) ?? readClaudeKeychain();
+export function detectClaudeAccount({ home = homedir(), env = process.env } = {}) {
+  let credentials = readClaudeCredentialsFile(home, env) ?? readClaudeKeychain();
   const oauth = credentials?.claudeAiOauth;
   if (!oauth) return null;
   const active =
@@ -68,9 +68,9 @@ export function detectClaudeAccount({ home = homedir() } = {}) {
   };
 }
 
-function readClaudeCredentialsFile(home) {
+function readClaudeCredentialsFile(home, env) {
   try {
-    return JSON.parse(readFileSync(join(home, ".claude", ".credentials.json"), "utf8"));
+    return JSON.parse(readFileSync(join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), ".credentials.json"), "utf8"));
   } catch {
     return null;
   }
@@ -105,6 +105,30 @@ export function detectGeminiAccount({ home = homedir() } = {}) {
   return { id: email ?? "gemini", email, authMode: "oauth" };
 }
 
+// Antigravity uses the native agy credential store, which is separate from
+// Gemini CLI's oauth_creds.json. Never expose the credential itself.
+export function detectAntigravityAccount({ home = homedir(), env = process.env } = {}) {
+  const root = join(home, ".gemini", "antigravity-cli");
+  let raw;
+  try {
+    if (platform === "darwin" && !env.SSH_TTY && !env.SSH_CLIENT && !env.SSH_CONNECTION) {
+      try {
+        raw = execFileSync("/usr/bin/security", ["find-generic-password", "-s", "gemini", "-a", "antigravity", "-w"], { encoding: "utf8", timeout: 3000, maxBuffer: 65536, stdio: ["ignore", "pipe", "ignore"] }).trim();
+        if (raw.startsWith("go-keyring-base64:")) raw = Buffer.from(raw.slice(18), "base64").toString("utf8");
+        else if (raw.startsWith("go-keyring-encoded:")) raw = Buffer.from(raw.slice(19), "hex").toString("utf8");
+      } catch { /* File storage may be used instead. */ }
+    }
+    if (!raw) raw = readFileSync(join(root, "antigravity-oauth-token"), "utf8");
+    if (Buffer.byteLength(raw) > 65536) return null;
+    const credential = JSON.parse(raw);
+    if (typeof credential?.auth_method !== "string" || !credential?.token?.access_token) return null;
+    const claims = decodeJwtClaims(credential.id_token ?? credential.token.id_token);
+    const validIdentity = ["accounts.google.com", "https://accounts.google.com"].includes(claims?.iss) && typeof claims?.sub === "string";
+    const email = validIdentity && claims.email_verified === true && typeof claims.email === "string" ? claims.email : null;
+    return { id: validIdentity ? claims.sub : "antigravity", email, authMode: "oauth" };
+  } catch { return null; }
+}
+
 // One system account per provider (the ambient CLI login). Providers with no
 // detected account are omitted. The result is keyed by the GUI provider id.
 export function detectAccounts(options = {}) {
@@ -115,6 +139,8 @@ export function detectAccounts(options = {}) {
   if (codex) accounts.openai = [{ ...codex, source: "system" }];
   const gemini = detectGeminiAccount(options);
   if (gemini) accounts.gemini = [{ ...gemini, source: "system" }];
+  const antigravity = detectAntigravityAccount(options);
+  if (antigravity) accounts.antigravity = [{ ...antigravity, source: "system" }];
   return accounts;
 }
 
