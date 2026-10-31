@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { homedir } from "node:os";
-import { readFileSync, statSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -43,8 +43,13 @@ import {
   redactSecrets,
   sumReportedUsageCost,
 } from "../src/core.mjs";
+import { isEphemeralPath } from "../src/project-context.mjs";
 
-const dataDir = process.env.OMNI_DATA_DIR || join(homedir(), ".omni");
+const dataDir =
+  process.env.OMNI_DATA_DIR ||
+  (isEphemeralPath(process.cwd())
+    ? mkdtempSync(join(tmpdir(), "omni-ephemeral-"))
+    : join(homedir(), ".omni"));
 const store = new ChatStore(join(dataDir, "omni.sqlite"));
 const oauthProfiles = new OAuthProfiles({ dataDir });
 const oauthEnv = (provider) => oauthProfiles.environment(provider);

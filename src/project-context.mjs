@@ -2,6 +2,18 @@ import { realpath, stat, readFile, readdir } from "node:fs/promises";
 import { resolve, relative, dirname, join, sep } from "node:path";
 import { redactSecrets } from "./core.mjs";
 
+export function isEphemeralPath(path) {
+  if (!path || typeof path !== "string") return false;
+  const normalized = path.replace(/\\/g, "/");
+  return (
+    /\/scratchpad\b/i.test(normalized) ||
+    /\/claude-\d+\b/i.test(normalized) ||
+    /\/omni-openai-oauth\b/i.test(normalized) ||
+    /^\/(?:private\/)?tmp\/(?:claude-|ops-|demo-)/i.test(normalized) ||
+    /^\/(?:private\/)?var\/folders\/.*\/T\/(?:claude-|ops-|demo-)/i.test(normalized)
+  );
+}
+
 export async function projectRoot(path) {
   let root;
   try {

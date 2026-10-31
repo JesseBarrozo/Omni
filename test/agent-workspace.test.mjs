@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { ChatStore } from "../src/chat-store.mjs";
 import { AgentWorkspace } from "../src/agent-workspace.mjs";
-import { readProjectContext, containedFile } from "../src/project-context.mjs";
+import { readProjectContext, containedFile, isEphemeralPath } from "../src/project-context.mjs";
 import { startWorkspaceServer } from "../src/workspace-server.mjs";
 
 function fixture() {
@@ -718,6 +718,63 @@ test("source control stages and unstages changes safely and shows file diffs", a
     assert.equal(readFileSync(join(f.root, "base.txt"), "utf8"), "after\n");
     assert.equal(readFileSync(join(f.root, "new.txt"), "utf8"), "new file\n");
     assert.equal((await post("git-stage", { path: "../outside" })).status, 400);
+  } finally {
+    await app.close();
+    f.close();
+  }
+});
+
+test("isEphemeralPath identifies scratchpad, claude, and temporary test directories", () => {
+  assert.equal(
+    isEphemeralPath("/private/tmp/claude-501/-Users-barrozo-Github-Omni-Project/scratchpad/ops-DzwA"),
+    true,
+  );
+  assert.equal(
+    isEphemeralPath("/tmp/claude-501/scratchpad/ops-i9EY"),
+    true,
+  );
+  assert.equal(
+    isEphemeralPath("/tmp/omni-openai-oauth.TwV3uu"),
+    true,
+  );
+  assert.equal(
+    isEphemeralPath("/private/tmp/ops-DzwA"),
+    true,
+  );
+  assert.equal(
+    isEphemeralPath("/private/tmp/demo-Y2g8"),
+    true,
+  );
+  assert.equal(
+    isEphemeralPath("/Users/barrozo/Github/Omni-Project/Omni"),
+    false,
+  );
+  assert.equal(
+    isEphemeralPath("/var/folders/xx/T/omni-workspace-abc/project"),
+    false,
+  );
+  assert.equal(
+    isEphemeralPath(null),
+    false,
+  );
+});
+
+test("workspace server filters out ephemeral projects from /api/state", async () => {
+  const f = fixture();
+  f.store.createProject("Ghost Project", "/private/tmp/claude-501/scratchpad/ops-test");
+  const app = await startWorkspaceServer({
+    store: f.store,
+    dataDir: join(f.dir, "data"),
+    cwd: f.root,
+    port: 0,
+    workspace: new AgentWorkspace({ cwd: f.root, store: f.store, dataDir: join(f.dir, "data") }),
+  });
+  try {
+    const res = await fetch(app.url + "/api/state");
+    const state = await res.json();
+    assert.equal(state.projects.length, 1);
+    assert.equal(state.projects[0].id, f.project.id);
+    assert.ok(!state.projects.some((p) => p.name === "Ghost Project"));
   } finally {
     await app.close();
     f.close();

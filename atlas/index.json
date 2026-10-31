@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generator": "tools/atlas/generate.mjs",
-  "digest": "69ff6f5962e9c9d7",
+  "digest": "609bb503ca6d88c4",
   "stack": [
     "node"
   ],
@@ -238,7 +238,7 @@
     {
       "host": "github.com",
       "file": "src/workspace-server.mjs",
-      "line": 1480
+      "line": 1485
     },
     {
       "host": "www.w3.org",
@@ -289,7 +289,7 @@
   "outboundCalls": [
     {
       "file": "bin/omni.mjs",
-      "line": 1644
+      "line": 1649
     },
     {
       "file": "src/openai-auth.mjs",
@@ -309,7 +309,7 @@
     },
     {
       "file": "src/workspace-server.mjs",
-      "line": 280
+      "line": 285
     },
     {
       "file": "web/src/components/terminal-pane.tsx",

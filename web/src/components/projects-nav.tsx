@@ -138,8 +138,31 @@ export function ProjectsNav({ projects, active, activeBranch, runs, approvals, o
                   </span>
                   <span className="project-workspace-detail">{summary?.available ? (worktree.mainWorktree ? worktree.branch : worktree.path.split("/").filter(Boolean).at(-1)) : worktree.path}</span>
                 </button>
-                {summary?.available && !worktree.mainWorktree && !worktree.locked && worktree.path !== project.rootPath && (
-                  <button type="button" className="project-workspace-remove" aria-label={`Supprimer l’espace ${worktree.branch}`} title="Supprimer cet espace de travail" onClick={() => onRemoveWorkspace(project, worktree)}><Trash2 /></button>
+                {!summary?.available ? (
+                  <button
+                    type="button"
+                    className="project-workspace-remove"
+                    aria-label={`Supprimer le projet ${project.name}`}
+                    title="Supprimer ce projet de l’espace de travail"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onArchive(project);
+                    }}
+                  >
+                    <Trash2 />
+                  </button>
+                ) : (
+                  !worktree.mainWorktree && !worktree.locked && worktree.path !== project.rootPath && (
+                    <button
+                      type="button"
+                      className="project-workspace-remove"
+                      aria-label={`Supprimer l’espace ${worktree.branch}`}
+                      title="Supprimer cet espace de travail"
+                      onClick={() => onRemoveWorkspace(project, worktree)}
+                    >
+                      <Trash2 />
+                    </button>
+                  )
                 )}
                 {agents.length > 0 && <div className="project-agents">
                   <button type="button" className="project-agents-summary" aria-expanded={Boolean(expandedAgents[worktree.path])} onClick={() => setExpandedAgents((previous) => ({ ...previous, [worktree.path]: !previous[worktree.path] }))}>

@@ -16,6 +16,7 @@ import {
   readProjectContext,
   containedFile,
   ensureProject,
+  isEphemeralPath,
 } from "./project-context.mjs";
 import { redactSecrets } from "./core.mjs";
 import { atlasPages, atlasStatus, generateAtlas, readAtlasPage } from "./atlas-service.mjs";
@@ -207,7 +208,9 @@ export async function startWorkspaceServer({
         return;
       }
       if (path === "/api/state" && request.method === "GET") {
-        const projects = store.projects();
+        const projects = store
+          .projects()
+          .filter((project) => !isEphemeralPath(project.rootPath));
         send(response, 200, {
           version: "0.1.0",
           defaultProjectId: projects.some(
@@ -216,7 +219,9 @@ export async function startWorkspaceServer({
             ? initialProject.id
             : (projects[0]?.id ?? ""),
           projects,
-          archivedProjects: store.archivedProjects(),
+          archivedProjects: store
+            .archivedProjects()
+            .filter((project) => !isEphemeralPath(project.rootPath)),
           harnesses: harnessChoices.map((h) => ({
             ...h,
             ...store.harnessRegistry().find((r) => r.id === h.id),
