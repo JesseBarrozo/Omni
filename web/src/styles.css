@@ -47,7 +47,7 @@
   --destructive: #ef9090;
   --border: #2b2c30;
   --input: #37383d;
-  --ring: #a88d57;
+  --ring: #44454a;
   --success: #88bc9c;
   --sidebar: #1b1c1f;
   --radius: 0.6rem;
@@ -104,10 +104,15 @@ button:not(:disabled),
 [role="button"] {
   cursor: pointer;
 }
+button:focus,
 button:focus-visible,
-a:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 3px;
+a:focus,
+a:focus-visible,
+[role="tab"]:focus,
+[role="tab"]:focus-visible,
+[data-slot="tabs-trigger"]:focus,
+[data-slot="tabs-trigger"]:focus-visible {
+  outline: none !important;
 }
 ::selection {
   background: #ffd28135;
@@ -997,6 +1002,13 @@ a:focus-visible {
   font-size: 10px;
   padding: 5px 8px;
   border-radius: 5px;
+  outline: none !important;
+  box-shadow: none !important;
+}
+.inspector-tabs [data-slot="tabs-trigger"]:focus,
+.inspector-tabs [data-slot="tabs-trigger"]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 .inspector-tabs [data-slot="tabs-content"] {
   overflow: auto;
