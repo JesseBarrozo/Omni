@@ -15,6 +15,19 @@
       "updatedAt": "2026-10-30T18:31:59.514Z"
     },
     {
+      "id": "omni-settings-roadmap-orca-port",
+      "title": "Omni Settings Roadmap — Orca port",
+      "kind": "plan",
+      "description": "Mapping des sections de paramètres Orca → Omni : statut (fait / prévu / exclu / N/A), raisons d'exclusion et commits de référence.",
+      "file": "omni-settings-roadmap-orca-port.md",
+      "sha256": "b6c60ce272db8cdef270026ee6f181e0c05afbcbd80d6f7943c625249975e894",
+      "bytes": 4338,
+      "author": "Jesse Barrozo",
+      "sourceUrl": null,
+      "createdAt": "2026-10-31T02:22:23.859Z",
+      "updatedAt": "2026-10-31T02:22:23.859Z"
+    },
+    {
       "id": "orca-accounts-port-plan",
       "title": "Orca accounts port plan",
       "kind": "plan",
