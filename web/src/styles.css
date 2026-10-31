@@ -1272,18 +1272,18 @@ a:focus-visible,
 .source-git-menu-label { padding: 7px 9px 3px; color: var(--muted-foreground); font-size: 10px; font-weight: 600; }
 .source-git-menu-separator { height: 1px; margin: 4px 6px; background: var(--border); }
 .source-commit-input { position: relative; border: 1px solid var(--input); border-radius: 6px; background: var(--muted); }
-.source-commit-input:focus-within { border-color: #4ca6cb; }
+.source-commit-input:focus-within { border-color: var(--primary); }
 .source-commit-input textarea { display: block; width: 100%; min-height: 50px; max-height: 160px; resize: vertical; padding: 8px 32px 8px 9px; color: var(--foreground); outline: none; font-size: 11px; line-height: 1.4; }
 .source-commit-input button { position: absolute; right: 3px; top: 3px; color: var(--muted-foreground); }
-.source-commit-button { width: 100%; background: #287ca4; color: #fff; }
-.source-commit-button:hover { background: #328db9; }
+.source-commit-button { width: 100%; background: var(--primary); color: var(--primary-foreground); font-weight: 500; }
+.source-commit-button:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 88%, black); }
 .source-control-error { padding: 7px 8px; border-radius: 5px; background: #472427; color: #f1aaaa; font-size: 10px; overflow-wrap: anywhere; }
 .source-generated { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted-foreground); }
-.source-generated button { margin-left: auto; color: #58a6ff; }
+.source-generated button { margin-left: auto; color: var(--primary); }
 .source-group-heading { display: flex; align-items: center; gap: 5px; height: 28px; min-width: 0; color: var(--foreground); font-size: 11px; }
 .source-group-heading > svg { width: 14px; height: 14px; color: var(--muted-foreground); }
 .source-group-heading strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.source-group-heading > span { border-radius: 10px; padding: 1px 6px; background: #287ca4; color: white; font-size: 9px; }
+.source-group-heading > span { border-radius: 10px; padding: 1px 6px; background: var(--primary); color: var(--primary-foreground); font-size: 9px; font-weight: 600; }
 .source-changes-list { min-width: 0; max-height: clamp(120px, 25vh, 280px); overflow-y: auto; overscroll-behavior: contain; }
 .source-changes-group { min-width: 0; }
 .source-change { display: flex; align-items: center; min-width: 0; height: 28px; border-radius: 4px; }
