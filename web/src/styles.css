@@ -2385,7 +2385,8 @@ a:focus-visible,
   border-radius: 5px;
   color: var(--muted-foreground);
   background: transparent;
-  border: 1px dashed var(--border);
+  border: none;
+  outline: none;
   cursor: pointer;
   transition: all 0.15s ease;
   flex-shrink: 0;
@@ -2393,7 +2394,9 @@ a:focus-visible,
 .workspace-tab-add:hover {
   color: var(--foreground);
   background: var(--muted);
-  border-color: var(--primary);
+}
+.workspace-tab-add:focus-visible {
+  outline: none;
 }
 .workspace-tab-add svg {
   width: 13px;
@@ -2866,7 +2869,6 @@ a:focus-visible,
 .workspace-tab-add.is-open {
   color: var(--foreground);
   background: var(--muted);
-  border-color: var(--primary);
 }
 
 .tab-create-dropdown {
