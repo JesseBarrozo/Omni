@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { CodexHarness } from "./codex-chat.mjs";
 import { ClaudeCodeHarness } from "./claude-code.mjs";
 import { OpenCodeHarness } from "./opencode-harness.mjs";
-import { EveHarness } from "./eve-harness.mjs";
 import { McpRegistry } from "./mcp-registry.mjs";
 import { OAuthProfiles } from "./oauth-profiles.mjs";
 import { AutoRouter, ModelRegistry, redactSecrets } from "./core.mjs";
@@ -24,11 +23,6 @@ export const harnessChoices = [
     id: "opencode",
     name: "OpenCode",
     description: "Serveur local et SDK officiels",
-  },
-  {
-    id: "eve",
-    name: "Eve",
-    description: "Sessions HTTP durables · endpoint configuré requis",
   },
 ];
 export const normalizeHarness = (id) => (id === "claude" ? "claude-code" : id);
@@ -145,7 +139,6 @@ export function createWorkspaceAdapter({
       executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode",
       model,
     });
-  if (harnessId === "eve") return new EveHarness({ store, requestPermission });
   throw new Error(`Harness inconnu : ${harnessId}`);
 }
 

@@ -150,6 +150,8 @@ import { GitHistory, type GitCommit } from "@/components/git-history";
 import { FileIcon } from "@/components/file-icon";
 import { FileTree } from "@/components/file-tree";
 import { AtlasViewer } from "@/components/atlas-viewer";
+import { useTranslation } from "@/i18n";
+import { UsageFooter } from "@/components/usage-footer";
 import {
   PermissionModePicker,
   type PermissionMode,
@@ -245,6 +247,7 @@ const defaultModel = (harness: string) =>
       : harness;
 
 export function App() {
+  const { t } = useTranslation();
   const [state, setState] = useState<WorkspaceState | null>(null);
   const [projectId, setProjectId] = useState("");
   const [sessions, setSessions] = useState<Conversation[]>([]);
@@ -262,7 +265,11 @@ export function App() {
     () => localStorage.getItem("omni.defaultHarness") || "auto",
   );
   const [model, setModel] = useState("auto-orchestrator");
-  const [permissionMode, setPermissionMode] = useState<PermissionMode>("ask");
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>(
+    () =>
+      (localStorage.getItem("omni.permissionDefault") as PermissionMode) ||
+      "ask",
+  );
   const [draft, setDraft] = useState("");
   const [search, setSearch] = useState("");
   const [context, setContext] = useState<Context | null>(null);
@@ -1641,9 +1648,10 @@ export function App() {
     <div
       className={cn(
         "workspace",
-        (!panel || page === "settings") && "panel-hidden",
+        page === "settings" ? "settings-layout" : !panel && "panel-hidden",
       )}
     >
+      {page !== "settings" && (
       <aside className="sidebar">
         <div className="brand">
           <img src="/assets/omni.svg" alt="Omni" />
@@ -1742,13 +1750,14 @@ export function App() {
               className={cn("connection-dot", connected && "is-connected")}
             />
             <span>
-              {connected ? "Runtime local connecté" : "Reconnexion au runtime…"}
+              {connected ? t("footer.runtimeConnected") : t("footer.runtimeReconnecting")}
             </span>
             <span>v{state?.version ?? "0.1.0"}</span>
           </div>
-          {page !== "chat" && (!panel || page === "settings") && awakeControl}
+          {page !== "chat" && !panel && awakeControl}
         </div>
       </aside>
+      )}
 
       {page === "chat" ? (
         <main className="main-pane">
@@ -2540,30 +2549,31 @@ export function App() {
             <span>
               <GitBranch />
               {git?.available
-                ? git.branch || "HEAD détachée"
-                : "Sans dépôt Git"}
+                ? git.branch || t("footer.detachedHead")
+                : t("footer.noGit")}
             </span>
             <span>
-              {project ? shortPath(project.rootPath) : "Aucun projet"}
+              {project ? shortPath(project.rootPath) : t("footer.noProject")}
             </span>
             <span className="statusbar-right">
+              <UsageFooter />
               {awakeControl}
               {busy ? (
                 <>
                   <LoaderCircle className="animate-spin" />
-                  Agent en cours
+                  {t("footer.agentRunning")}
                 </>
               ) : (
                 <>
                   <span className="connection-dot is-connected" />
-                  Prêt
+                  {t("footer.ready")}
                 </>
               )}
               <Button
                 variant="ghost"
                 size="icon-xs"
-                title="Copier la conversation"
-                aria-label="Copier la conversation"
+                title={t("footer.copyTranscript")}
+                aria-label={t("footer.copyTranscript")}
                 disabled={!messages.length}
                 onClick={() => void copyTranscript()}
               >
@@ -2621,6 +2631,12 @@ export function App() {
             setHarness(id);
             setModel(defaultModel(id));
           }}
+          permissionMode={permissionMode}
+          setDefaultPermission={(mode) => {
+            localStorage.setItem("omni.permissionDefault", mode);
+            setPermissionMode(mode);
+          }}
+          onBack={() => setPage("chat")}
         />
       ) : null}
 
@@ -3177,7 +3193,7 @@ export function App() {
             <p className="inspector-hint">
               Dans votre terminal : <code>omni auth login codex</code> ou{" "}
               <code>omni auth login claude</code>. Pour OpenCode, utilisez sa
-              connexion officielle. Eve exige OMNI_EVE_URL.
+              connexion officielle.
             </p>
             <Separator />
             <h3>Serveurs MCP configurés</h3>

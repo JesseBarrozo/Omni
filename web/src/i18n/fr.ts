@@ -1,0 +1,90 @@
+// French reference catalog. Add a key here first, then mirror it in en.ts and
+// es.ts — the Catalog type and the parity test make a missing key an error.
+// Keys are dot-namespaced by surface (footer.*, settings.*, lang.*).
+
+import type { CatalogValue } from "./catalog";
+
+export const fr = {
+  "app.settings": "Paramètres",
+
+  "footer.runtimeConnected": "Runtime local connecté",
+  "footer.runtimeReconnecting": "Reconnexion au runtime…",
+  "footer.noGit": "Sans dépôt Git",
+  "footer.detachedHead": "HEAD détachée",
+  "footer.noProject": "Aucun projet",
+  "footer.ready": "Prêt",
+  "footer.agentRunning": "Agent en cours",
+  "footer.copyTranscript": "Copier la conversation",
+
+  "usage.title": "Utilisation",
+  "usage.unavailable": "non disponible",
+  "usage.notConfigured": "non configuré",
+  "usage.refresh": "Actualiser l'utilisation",
+  "usage.none": "Aucun compte configuré",
+  "usage.percentUsed": "{value} % utilisé",
+  "usage.resetsIn": "réinitialisation dans {duration}",
+
+  "settings.language": "Langue",
+  "settings.languageHint": "Langue de l'interface. Le changement est immédiat.",
+  "settings.groupCapabilities": "Capacités",
+  "settings.groupConfiguration": "Configuration",
+  "settings.optional": "Facultatif",
+  "settings.subtitle": "Configuration locale de votre espace Omni.",
+  "settings.back": "Retour à l'application",
+  "settings.search": "Rechercher dans les paramètres",
+  "settings.noResults": "Aucun paramètre correspondant.",
+  "settings.defaultAgent": "Agent par défaut",
+  "settings.defaultAgentHint": "Utilisé pour les nouvelles sessions dans ce navigateur. Les permissions des outils restent demandées par le harness.",
+  "settings.installed": "Installés",
+  "settings.detected": { "one": "{count} détecté", "other": "{count} détectés" },
+  "settings.refresh": "Actualiser",
+  "settings.enabled": "Activé",
+  "settings.disabled": "Désactivé",
+  "settings.unregistered": "Non enregistré",
+  "settings.makeDefault": "Par défaut",
+  "settings.nav.agents": "Agents",
+  "settings.nav.accounts": "Comptes fournisseurs",
+  "settings.nav.mcp": "MCP",
+  "settings.nav.general": "Général",
+  "settings.nav.integrations": "Connecteurs",
+  "settings.nav.plugins": "Plugins",
+  "settings.nav.aria": "Catégories des paramètres",
+
+  "settings.agents.defaultTitle": "Agent par défaut",
+  "settings.agents.defaultHint": "Paramètres par défaut des nouveaux agents sur l'hôte sélectionné.",
+  "settings.agents.permissions": "Permissions",
+  "settings.agents.permissionsHint": "Ce que chaque agent peut faire sans demander. Vous pouvez régler un agent différemment ci-dessous.",
+  "settings.harness.title": "Harness par défaut d'Omni",
+  "settings.harness.hint": "Utilisé pour les nouvelles sessions Auto et Omni Chat. Le harness et le modèle sélectionné sont indépendants.",
+  "settings.harness.auto": "Auto",
+
+  "settings.models.title": "Modèles disponibles pour Auto et Omni Chat",
+  "settings.models.hint": "Activez ou désactivez les modèles utilisés par Auto et Omni Chat. Les modèles découverts plus tard sont activés par défaut.",
+  "settings.models.none": "Aucun modèle disponible. Connectez un fournisseur.",
+
+  "settings.accounts.title": "Comptes fournisseurs",
+  "settings.accounts.hint": "Connectez vos comptes LLM. Les clés sont stockées dans le trousseau système et ne sont jamais réaffichées après enregistrement.",
+  "settings.accounts.connected": "Connecté (OAuth)",
+  "settings.accounts.keyConfigured": "Clé API configurée",
+  "settings.accounts.notConfigured": "Non configuré",
+  "settings.accounts.oauth": "Connexion OAuth",
+  "settings.accounts.oauthConnected": "Session connectée.",
+  "settings.accounts.oauthHint": "La connexion OAuth se lance depuis le terminal : {command}",
+  "settings.accounts.keyProfiles": "Profils de clé API",
+  "settings.accounts.active": "Actif",
+  "settings.accounts.available": "Disponible",
+  "settings.accounts.use": "Utiliser",
+  "settings.accounts.remove": "Supprimer",
+  "settings.accounts.profileName": "Nom du profil",
+  "settings.accounts.apiKey": "Clé API",
+  "settings.accounts.save": "Enregistrer",
+  "settings.accounts.noKeys": "Aucun profil de clé enregistré.",
+  "settings.accounts.removeConfirm": "Supprimer le profil {profile} ?",
+
+  "lang.fr": "Français",
+  "lang.en": "English",
+  "lang.es": "Español",
+} satisfies Record<string, CatalogValue>;
+
+export type Catalog = typeof fr;
+export type MessageKey = keyof Catalog;

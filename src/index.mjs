@@ -10,7 +10,6 @@ export * from "./secret-store.mjs";
 export * from "./mcp-registry.mjs";
 export * from "./harness-swap.mjs";
 export * from "./opencode-harness.mjs";
-export * from "./eve-harness.mjs";
 export * from "./terminal-logo.mjs";
 export * from "./agent-workspace.mjs";
 export * from "./project-context.mjs";

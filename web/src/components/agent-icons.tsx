@@ -311,7 +311,7 @@ export function AgentIcon({
   agent: string;
   size?: number;
 }): React.JSX.Element {
-  if (agent === "claude" || agent === "claude-agent-teams") {
+  if (agent === "claude" || agent === "claude-code" || agent === "claude-agent-teams") {
     return <ClaudeIcon size={size} />;
   }
   if (agent === "codex") {

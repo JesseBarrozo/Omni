@@ -62,13 +62,13 @@ export async function agentTerminal({
       }
       if (prompt === "/help") {
         ui.notice(
-          "Mode Agent : fichiers, terminal et MCP du Harness réel.\n/harness codex|claude|opencode|eve · /model ID · /status · /clear · /quit\nLes permissions sont ponctuelles : y autorise, n refuse. Échap interrompt le tour.",
+          "Mode Agent : fichiers, terminal et MCP du Harness réel.\n/harness codex|claude|opencode · /model ID · /status · /clear · /quit\nLes permissions sont ponctuelles : y autorise, n refuse. Échap interrompt le tour.",
         );
         continue;
       }
       if (prompt.startsWith("/harness ")) {
         const next = normalizeHarness(prompt.slice(9).trim());
-        if (!["codex", "claude-code", "opencode", "eve"].includes(next)) {
+        if (!["codex", "claude-code", "opencode"].includes(next)) {
           ui.notice("Harness inconnu.");
           continue;
         }

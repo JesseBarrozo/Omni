@@ -133,6 +133,11 @@ a:focus-visible {
 .workspace.panel-hidden {
   grid-template-columns: 238px minmax(0, 1fr);
 }
+/* Settings replaces the main sidebar: a single column holds the settings page,
+   whose own nav becomes the left sidebar. */
+.workspace.settings-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -2221,16 +2226,23 @@ a:focus-visible {
 .settings-page {
   min-width: 0;
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
+  grid-template-columns: 238px minmax(0, 1fr);
   overflow: hidden;
 }
 .settings-nav {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 30px 12px;
+  padding: 0 12px 30px;
   background: var(--sidebar);
   border-right: 1px solid var(--border);
+  overflow: auto;
+}
+/* Brand kept at the top of the settings nav so the logo stays put when the nav
+   replaces the main sidebar. */
+.settings-brand {
+  padding: 0 10px;
+  margin-bottom: 10px;
 }
 .settings-nav > span {
   padding: 0 10px 14px;
@@ -2240,8 +2252,13 @@ a:focus-visible {
 }
 .settings-content {
   overflow: auto;
-  padding: 46px clamp(24px, 6vw, 90px);
-  max-width: 1000px;
+  padding: 46px clamp(24px, 6vw, 64px);
+}
+/* The scroll container fills the column (scrollbar at the far right); each block
+   is capped and centred so the content sits in the middle, not flush left. */
+.settings-content > * {
+  max-width: 880px;
+  margin-inline: auto;
 }
 .settings-title {
   display: flex;
@@ -2328,6 +2345,9 @@ a:focus-visible {
     padding: 10px;
   }
   .settings-nav > span {
+    display: none;
+  }
+  .settings-brand {
     display: none;
   }
   .settings-content {
@@ -2863,4 +2883,614 @@ a:focus-visible {
 
 .terminal-input-row input {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.usage-footer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.usage-footer .usage-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--accent);
+}
+.usage-footer .usage-pill-label {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.usage-footer .usage-pill-value,
+.usage-footer .usage-empty {
+  color: var(--muted-foreground);
+}
+.usage-footer .usage-empty {
+  font-style: italic;
+}
+
+/* Orca-style settings: grouped nav + section cards with label/control rows. */
+.settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 16px;
+}
+.settings-nav-group > span {
+  padding: 0 10px 8px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.settings-nav-item {
+  width: 100%;
+  gap: 9px;
+}
+.settings-nav-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--muted-foreground);
+  flex: 0 0 auto;
+}
+.settings-nav-item[data-variant="secondary"] .settings-nav-icon {
+  color: var(--foreground);
+}
+.settings-nav-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-nav-badge {
+  font-size: 9px;
+  padding: 1px 6px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.settings-section {
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: 10px;
+  padding: 22px 24px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.settings-subsection-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+.settings-subsection-text h2 {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 0;
+}
+.settings-subsection-text p {
+  color: var(--muted-foreground);
+  margin: 6px 0 0;
+  max-width: 62ch;
+}
+.settings-subsection-action {
+  flex: 0 0 auto;
+}
+.settings-section-body {
+  display: flex;
+  flex-direction: column;
+}
+.settings-section-body > p {
+  color: var(--muted-foreground);
+  margin: 12px 0 0;
+}
+.settings-section-body code {
+  color: var(--foreground);
+}
+.settings-field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.settings-subsection-header + .settings-section-body .settings-field-row:first-child,
+.settings-section-body > .settings-field-row:first-child {
+  border-top: 0;
+  padding-top: 8px;
+}
+.settings-field-text {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.settings-field-description {
+  color: var(--muted-foreground);
+  margin: 4px 0 0;
+  font-size: 12px;
+  max-width: 58ch;
+}
+.settings-field-control {
+  flex: 0 0 auto;
+}
+.settings-field-control [data-slot="select-trigger"] {
+  width: min(320px, 46vw);
+}
+.settings-note {
+  font-size: 12px;
+}
+.settings-empty-icon {
+  width: 26px;
+  height: 26px;
+  color: var(--muted-foreground);
+  opacity: 0.5;
+  margin-top: 8px;
+}
+
+/* Settings nav chrome: back link + search, aligned with Orca. */
+.settings-back {
+  justify-content: flex-start;
+  gap: 9px;
+  margin-bottom: 10px;
+  color: var(--muted-foreground);
+}
+.settings-search {
+  position: relative;
+  margin-bottom: 18px;
+}
+.settings-search .settings-search-icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 13px;
+  height: 13px;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+.settings-search input {
+  padding-left: 28px;
+  height: 30px;
+  font-size: 12px;
+}
+.settings-nav-empty {
+  padding: 8px 10px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.settings-nav-badge {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Segmented control. */
+.settings-segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.settings-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.settings-segment:hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+.settings-segment[data-active="true"] {
+  color: var(--foreground);
+  background: var(--accent);
+  border-color: var(--ring);
+}
+.settings-segment-icon {
+  display: inline-flex;
+  color: var(--foreground);
+}
+
+/* Agents pane installed rows. */
+.settings-installed-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.settings-section-body > .settings-agent-row:first-child {
+  border-top: 0;
+}
+.settings-agent-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--foreground);
+}
+.settings-agent-text {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.settings-agent-text strong {
+  display: block;
+  font-weight: 600;
+}
+.settings-agent-text small {
+  display: block;
+  color: var(--muted-foreground);
+  margin-top: 3px;
+}
+.settings-agent-toggle {
+  flex: 0 0 auto;
+}
+.settings-agent-link {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+}
+
+/* Provider accounts pane (Orca-aligned). */
+.settings-lead {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  margin: 0 0 18px;
+  max-width: 68ch;
+}
+.account-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.account-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.account-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  opacity: 0.6;
+}
+.account-dot.is-on {
+  background: var(--primary);
+  opacity: 1;
+}
+.account-command {
+  font-size: 12px;
+  color: var(--foreground);
+  background: var(--muted);
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.account-keys {
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  padding-top: 14px;
+}
+.account-keys-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  margin-bottom: 10px;
+}
+.account-keys-refresh {
+  margin-left: auto;
+}
+.account-key-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.account-key-row strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-empty {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  margin: 4px 0 10px;
+}
+.account-add {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.account-add [data-slot="input"] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Harness swap pills (Orca UniversalChatHarnessSetting). */
+.harness-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+.harness-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--background) 50%, transparent);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.harness-pill:hover {
+  color: var(--foreground);
+  border-color: color-mix(in srgb, var(--muted-foreground) 35%, transparent);
+}
+.harness-pill.is-active {
+  border-color: color-mix(in srgb, var(--muted-foreground) 40%, transparent);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-weight: 500;
+}
+.harness-pill-check {
+  width: 14px;
+  height: 14px;
+}
+
+/* Available models pane (Orca NativeChatModelSettings). */
+.agent-models .settings-subsection-header {
+  margin-bottom: 4px;
+}
+.model-provider-list {
+  display: flex;
+  flex-direction: column;
+}
+.model-provider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.model-provider-list > [data-slot="collapsible"]:first-child .model-provider-row {
+  border-top: 0;
+}
+.model-provider-row.is-off {
+  opacity: 0.55;
+}
+.model-provider-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.model-provider-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--background) 50%, transparent);
+}
+.model-provider-name {
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: capitalize;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-provider-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.model-provider-chevron svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.15s;
+}
+.model-provider-chevron svg.is-open {
+  transform: rotate(180deg);
+}
+.model-list {
+  overflow: hidden;
+  padding-left: 40px;
+}
+.model-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+.model-row-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.model-row-label {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-row-sub {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Agents pane — Orca AgentsPane structure within Omni's section cards. */
+.agents-permissions-block {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.agents-permissions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.agents-permissions > strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+.agents-permissions-trigger {
+  width: min(280px, 60vw);
+}
+.agents-permissions-trigger[data-warning="true"] {
+  color: var(--primary);
+}
+.agents-permission-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.agents-permission-option[data-warning="true"] {
+  color: var(--primary);
+}
+.agents-permissions + .settings-field-description {
+  margin-top: 8px;
+}
+.agents-installed-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+.agent-rows {
+  display: flex;
+  flex-direction: column;
+}
+.agent-row {
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.agent-rows > .agent-row:first-child {
+  border-top: 0;
+}
+.agent-row.is-off {
+  opacity: 0.6;
+}
+.agent-row-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 0;
+}
+.agent-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--background) 50%, transparent);
+}
+.agent-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.agent-row-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.agent-row-desc {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.agent-row-default {
+  min-width: 112px;
+  justify-content: center;
+}
+.agent-row-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.agent-row-chevron svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.15s;
+}
+.agent-row-chevron svg.is-open {
+  transform: rotate(180deg);
+}
+.agent-row-detail {
+  overflow: hidden;
+  padding: 0 0 14px 40px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.agent-row-detail p {
+  margin: 0 0 8px;
+}
+.agent-row-detail code {
+  font-size: 11px;
+  color: var(--foreground);
+  background: var(--muted);
+  padding: 3px 8px;
+  border-radius: 6px;
 }

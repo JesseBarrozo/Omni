@@ -12,7 +12,6 @@ import { OpenRouterAuth, OpenRouterChat } from "../src/openrouter-chat.mjs";
 import { AnthropicApiAuth, AnthropicApiChat } from "../src/anthropic-api.mjs";
 import { GeminiApiAuth, GeminiApiChat } from "../src/gemini-api.mjs";
 import { OpenCodeHarness } from "../src/opencode-harness.mjs";
-import { EveHarness } from "../src/eve-harness.mjs";
 import { McpRegistry } from "../src/mcp-registry.mjs";
 import {
   AntigravityCliChat,
@@ -154,7 +153,7 @@ const help = () =>
   print(`Omni Universal AI Harness
 
 Commands:
-  omni [--harness codex|claude|opencode|eve] [--model MODEL] [--project PATH]
+  omni [--harness codex|claude|opencode] [--model MODEL] [--project PATH]
   agent [--conversation ID] [--harness ID] [--model MODEL]
   gui [--port 4318] [--project PATH] [--no-open]
   logo
@@ -170,7 +169,7 @@ Commands:
   mcp add|list|tools|call|remove ...
   providers list|refresh|enable|disable ...
   harnesses list [--json]
-  harnesses refresh [--harness codex|claude-code|opencode|eve] [--json]
+  harnesses refresh [--harness codex|claude-code|opencode] [--json]
   harnesses enable|disable --harness ID
   tools list --conversation ID|--project ID_OR_PATH [--json]
   permissions list --conversation ID|--project ID_OR_PATH [--json]
@@ -179,10 +178,10 @@ Commands:
   models list [--provider PROVIDER] [--json]
   chat --project ID_OR_PATH --model MODEL [--conversation ID]
   auto plan --project ID_OR_PATH [--json] PROMPT
-  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|eve|--auto] [--conversation ID] [--json] PROMPT
+  run --project ID_OR_PATH [--model MODEL] [--harness claude|codex|opencode|--auto] [--conversation ID] [--json] PROMPT
   cancel --conversation ID
   task list|get|cancel --conversation ID [--task TASK_ID] [--json]
-  swap --conversation ID --harness claude|codex|opencode|eve [--model MODEL]
+  swap --conversation ID --harness claude|codex|opencode [--model MODEL]
   resume CONVERSATION_ID [--model MODEL]
   conversation search|export|import ...`);
 
@@ -713,9 +712,7 @@ function createHarnessRun(harnessId, conversation, modelId) {
               model: modelId,
               requestPermission,
             })
-          : harnessId === "eve"
-            ? new EveHarness({ store, requestPermission })
-            : null;
+          : null;
   if (!adapter) {
     rl.close();
     throw new Error(`Harness Auto non pris en charge: ${harnessId}`);
@@ -911,14 +908,6 @@ async function refreshHarness(harnessId) {
       store,
       executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode",
     });
-  } else if (harnessId === "eve") {
-    providerId = "eve";
-    integration = "Eve durable HTTP channel";
-    authenticated = Boolean(process.env.OMNI_EVE_URL);
-    adapter = new EveHarness({
-      store,
-      baseUrl: process.env.OMNI_EVE_URL ?? "http://127.0.0.1:0",
-    });
   } else throw new Error(`Harness non pris en charge: ${harnessId}`);
   const capabilities = await adapter.capabilities();
   let status = authenticated ? "unavailable" : "disconnected";
@@ -1013,7 +1002,7 @@ async function prepareAutoCandidate(decision, conversation) {
 async function swapHarness(conversationId, harnessId, requestedModel) {
   if (
     !conversationId ||
-    !["claude", "codex", "opencode", "eve"].includes(harnessId)
+    !["claude", "codex", "opencode"].includes(harnessId)
   )
     throw new Error(
       "Usage: omni swap --conversation ID --harness claude|codex|opencode [--model MODEL]",
@@ -1023,9 +1012,7 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
       ? "claude-code"
       : harnessId === "opencode"
         ? "opencode"
-        : harnessId === "eve"
-          ? "eve"
-          : "codex";
+        : "codex";
   assertHarnessEnabled(registryHarnessId);
   const conversation = store.conversation(conversationId);
   const project = store.project(conversation.projectId);
@@ -1066,9 +1053,7 @@ async function swapHarness(conversationId, harnessId, requestedModel) {
             executable: process.env.OMNI_OPENCODE_EXECUTABLE ?? "opencode",
             requestPermission,
           })
-        : harnessId === "eve"
-          ? new EveHarness({ store, requestPermission })
-          : new CodexHarness({
+        : new CodexHarness({
               store,
               env: oauthEnv("codex"),
               cwd: project.rootPath ?? process.cwd(),
@@ -1608,112 +1593,6 @@ async function runOpenCodeHarness(conversation, prompt, preparedRun = null) {
       if (jsonRunOutput)
         emitRunEvent("session.checkpointed", { checkpointId: checkpoint.id });
       else stdout.write(`\nCheckpoint OpenCode: ${checkpoint.id}\n`);
-    }
-    store.setMessage(
-      assistantId,
-      answer,
-      interrupted ? "interrupted" : "completed",
-    );
-    store.setStatus(conversation.id, interrupted ? "interrupted" : "completed");
-    if (!jsonRunOutput)
-      stdout.write(interrupted ? "\n[Exécution interrompue.]\n" : "\n");
-    return interrupted ? "interrupted" : "completed";
-  } catch (error) {
-    const wasInterrupted = controller.signal.aborted;
-    store.setMessage(
-      assistantId,
-      answer,
-      wasInterrupted ? "interrupted" : "failed",
-    );
-    store.setStatus(conversation.id, wasInterrupted ? "interrupted" : "failed");
-    if (wasInterrupted) return "interrupted";
-    throw error;
-  } finally {
-    process.off("SIGINT", interrupt);
-    rl.off("SIGINT", interrupt);
-    rl.close();
-    await adapter.dispose();
-  }
-}
-
-async function runEveHarness(conversation, prompt, preparedRun = null) {
-  const project = store.project(conversation.projectId);
-  const { adapter, rl } =
-    preparedRun ?? createHarnessRun("eve", conversation, conversation.modelId);
-  const controller = new AbortController();
-  const interrupt = () => controller.abort();
-  process.on("SIGINT", interrupt);
-  rl.on("SIGINT", interrupt);
-  store.addMessage(conversation.id, "user", prompt);
-  const assistantId = store.addMessage(
-    conversation.id,
-    "assistant",
-    "",
-    "streaming",
-  );
-  let answer = "";
-  let interrupted = false;
-  let completed = false;
-  try {
-    store.setStatus(conversation.id, "running");
-    await adapter.initialize();
-    const sessionRef = store
-      .listEvents(conversation.id)
-      .filter(
-        (event) =>
-          (event.type === "session.started" &&
-            event.payload.harnessId === "eve") ||
-          (event.type === "harness.changed" &&
-            event.payload.toHarnessId === "eve"),
-      )
-      .at(-1);
-    const sessionId =
-      sessionRef?.payload.sessionId ?? sessionRef?.payload.targetSessionId;
-    const session = sessionId
-      ? await adapter.resumeSession(sessionId, {
-          conversationId: conversation.id,
-        })
-      : await adapter.createSession({
-          conversationId: conversation.id,
-          cwd: project.rootPath ?? process.cwd(),
-        });
-    for await (const event of adapter.run({
-      conversationId: conversation.id,
-      sessionId: session.id,
-      prompt,
-      signal: controller.signal,
-    })) {
-      if (event.type === "message.delta") {
-        answer += event.payload.delta;
-        store.appendMessageDelta(assistantId, event.payload.delta);
-        if (jsonRunOutput)
-          writeRunEvent("message.delta", { delta: event.payload.delta });
-        else stdout.write(event.payload.delta);
-      } else if (event.type === "tool.started") {
-        emitRunEvent("tool.started", { toolName: event.payload.toolName });
-      } else if (event.type === "tool.completed") {
-        emitRunEvent("tool.completed", { toolName: event.payload.toolName });
-      } else if (event.type === "tool.failed") {
-        emitRunEvent("tool.failed", { toolName: event.payload.toolName });
-      } else if (event.type === "permission.requested") {
-        emitRunEvent("permission.requested", {
-          requestId: event.payload.requestId,
-        });
-      } else if (event.type === "session.interrupted") {
-        interrupted = true;
-      } else if (event.type === "session.failed") {
-        throw new Error(event.payload.error ?? "Eve a échoué pendant le tour");
-      } else if (event.type === "session.completed") {
-        completed = true;
-      } else if (event.type === "usage.updated") {
-        emitRunEvent("usage.updated", event.payload);
-      }
-    }
-    if (!interrupted && !completed)
-      throw new Error("Eve a terminé sans confirmer le tour");
-    if (!interrupted) {
-      const checkpoint = await adapter.checkpoint(session.id);
-      emitRunEvent("session.checkpointed", { checkpointId: checkpoint.id });
     }
     store.setMessage(
       assistantId,
@@ -2404,7 +2283,7 @@ try {
     const requested = option("--harness");
     const harnesses = requested
       ? [requested]
-      : ["codex", "claude-code", "opencode", "eve"];
+      : ["codex", "claude-code", "opencode"];
     const results = [];
     for (const harnessId of harnesses)
       results.push(await refreshHarness(harnessId));
@@ -2627,7 +2506,7 @@ try {
       const previous = tasks.get(taskId) ?? {
         id: taskId,
         conversationId,
-        harnessId: payload.harnessId ?? "eve",
+        harnessId: payload.harnessId ?? null,
         sessionId: payload.sessionId ?? null,
       };
       tasks.set(taskId, {
@@ -2653,10 +2532,8 @@ try {
     if (args[0] === "cancel") {
       const task = tasks.get(taskId);
       if (!task) throw new Error(`Tâche inconnue: ${taskId}`);
-      if (task.harnessId !== "eve" || !task.sessionId)
-        throw new Error("Cette tâche ne peut pas être annulée par Eve");
-      const adapter = new EveHarness({ store });
-      await adapter.interrupt(task.sessionId);
+      if (!task.sessionId)
+        throw new Error("Cette tâche n'a pas de session annulable.");
       store.appendEvent(conversationId, "task.cancelled", {
         ...task,
         taskId,
@@ -2682,18 +2559,12 @@ try {
     const conversation = store.conversation(conversationId);
     const session = store
       .listEvents(conversationId)
-      .filter(
-        (event) =>
-          event.type === "session.started" &&
-          event.payload?.harnessId === "eve",
-      )
+      .filter((event) => event.type === "session.started")
       .at(-1);
     if (!session?.payload?.sessionId)
-      throw new Error("Aucune session Eve active pour cette conversation");
-    const adapter = new EveHarness({ store });
-    await adapter.interrupt(session.payload.sessionId);
+      throw new Error("Aucune session active pour cette conversation");
     store.appendEvent(conversationId, "session.interrupted", {
-      harnessId: "eve",
+      harnessId: session.payload.harnessId ?? null,
       sessionId: session.payload.sessionId,
       reason: "user requested",
     });
@@ -2821,7 +2692,7 @@ try {
       )
     )
       throw new Error("Nom de serveur MCP requis invalide.");
-    if (harness && !["claude", "codex", "opencode", "eve"].includes(harness))
+    if (harness && !["claude", "codex", "opencode"].includes(harness))
       throw new Error(`Harness non pris en charge: ${harness}`);
     if (autoMode && (harness || option("--model")))
       throw new Error("--auto choisit seul le modèle et le harness");
@@ -2838,9 +2709,7 @@ try {
           ? (conversation?.modelId ?? "codex")
           : harness === "opencode"
             ? (conversation?.modelId ?? "opencode")
-            : harness === "eve"
-              ? (conversation?.modelId ?? "eve")
-              : (conversation?.modelId ?? null);
+            : (conversation?.modelId ?? null);
     let model = option("--model", defaultModel);
     const projectArg = option("--project");
     const project = conversation
@@ -2898,9 +2767,7 @@ try {
             ? "claude-code"
             : harness === "opencode"
               ? "opencode"
-              : harness === "eve"
-                ? "eve"
-                : "codex",
+              : "codex",
         );
     }
     if (conversation) {
@@ -2999,8 +2866,6 @@ try {
         runStatus = await runCodexHarness(conversation, prompt, preparedRun);
       else if (harness === "opencode")
         runStatus = await runOpenCodeHarness(conversation, prompt, preparedRun);
-      else if (harness === "eve")
-        runStatus = await runEveHarness(conversation, prompt, preparedRun);
       else
         runStatus = await chat(
           conversation,

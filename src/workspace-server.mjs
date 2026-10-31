@@ -21,6 +21,7 @@ import { redactSecrets } from "./core.mjs";
 import { atlasPages, atlasStatus, generateAtlas, readAtlasPage } from "./atlas-service.mjs";
 import { PREVIEW_HEADERS, isPreviewablePath } from "./artifact-preview.mjs";
 import { createEntry, deleteEntry, renameEntry } from "./file-operations.mjs";
+import { collectUsageSnapshot } from "./usage.mjs";
 import { McpRegistry } from "./mcp-registry.mjs";
 import { ApiKeyProfiles } from "./api-key-profiles.mjs";
 import { AwakeController } from "./awake-controller.mjs";
@@ -237,6 +238,16 @@ export async function startWorkspaceServer({
         });
         return;
       }
+      if (path === "/api/models" && request.method === "GET") {
+        // Full available-model registry (enabled and disabled), for the Agents
+        // models pane. State only carries enabled models, so this exposes the
+        // rest so they can be toggled.
+        send(response, 200, {
+          models: store.modelRegistry(null, { availableOnly: true }),
+          providers: store.providerRegistry(),
+        });
+        return;
+      }
       if (path === "/api/settings/awake" && request.method === "GET") {
         send(response, 200, awake.status());
         return;
@@ -307,6 +318,10 @@ export async function startWorkspaceServer({
             error: `Échec du chargement proxy: ${err.message}`,
           });
         }
+        return;
+      }
+      if (path === "/api/usage" && request.method === "GET") {
+        send(response, 200, collectUsageSnapshot({ dataDir }));
         return;
       }
       if (path === "/api/skills" && request.method === "GET") {
@@ -553,7 +568,17 @@ export async function startWorkspaceServer({
           send(response, 200, store.setHarnessEnabled(body.id, body.enabled));
         else if (body.type === "provider")
           send(response, 200, store.setProviderEnabled(body.id, body.enabled));
-        else throw new Error("Registre inconnu.");
+        else if (body.type === "model") {
+          if (typeof body.providerId !== "string")
+            throw new Error("Fournisseur de modèle requis.");
+          send(
+            response,
+            200,
+            store.setModelEnabled(body.providerId, body.id, body.enabled, {
+              autoOnly: body.autoOnly === true,
+            }),
+          );
+        } else throw new Error("Registre inconnu.");
         return;
       }
       if (path === "/api/settings/accounts" && request.method === "GET") {

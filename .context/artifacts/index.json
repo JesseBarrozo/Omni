@@ -13,6 +13,19 @@
       "sourceUrl": "https://claude.ai/artifact/MMrrShZRjPxZV9cRyjekpV",
       "createdAt": "2026-10-30T18:31:59.514Z",
       "updatedAt": "2026-10-30T18:31:59.514Z"
+    },
+    {
+      "id": "orca-accounts-port-plan",
+      "title": "Orca accounts port plan",
+      "kind": "plan",
+      "description": "Phased plan to port Orca's account management and usage/rate-limit system into Omni, with the Electron-to-HTTP mapping and the decisions to make.",
+      "file": "orca-accounts-port-plan.md",
+      "sha256": "7a50a22cca0cda838dc9f1d4b37395a2d63455e6f7c9ee2ac40622bfb912ccf2",
+      "bytes": 4320,
+      "author": "claude-code",
+      "sourceUrl": null,
+      "createdAt": "2026-10-30T20:55:34.998Z",
+      "updatedAt": "2026-10-30T20:55:34.998Z"
     }
   ]
 }
