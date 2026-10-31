@@ -27,6 +27,10 @@ import { collectAccounts } from "./account-detection.mjs";
 import { McpRegistry } from "./mcp-registry.mjs";
 import { ApiKeyProfiles } from "./api-key-profiles.mjs";
 import { AwakeController } from "./awake-controller.mjs";
+import {
+  deriveGeneratedTabTitle,
+  isDefaultConversationTitle,
+} from "./agent-tab-title.mjs";
 
 const exec = promisify(execFile);
 const shellExec = promisify(execShell);
@@ -1547,19 +1551,26 @@ export async function startWorkspaceServer({
         const body = await jsonBody(request);
         const project = store.project(body.projectId);
         const model = typeof body.model === "string" ? body.model : "codex";
+        const rawTitle = typeof body.title === "string" ? body.title.trim() : "";
+        const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+        const generated = deriveGeneratedTabTitle(prompt || rawTitle);
+        const title =
+          (isDefaultConversationTitle(rawTitle) ? generated : null) ||
+          generated ||
+          (rawTitle ? rawTitle.slice(0, 120) : "Nouvelle conversation");
         send(
           response,
           201,
           store.createConversation(
             project.id,
-            String(body.title || "Nouvelle conversation").slice(0, 120),
+            title,
             model,
           ),
         );
         return;
       }
       const conversationMatch = path.match(
-        /^\/api\/conversations\/([^/]+)(?:\/(events|cancel|recover|rename|archive|restore|delete))?$/,
+        /^\/api\/conversations\/([^/]+)(?:\/(events|cancel|recover|rename|generate-title|archive|restore|delete))?$/,
       );
       if (conversationMatch) {
         const id = conversationMatch[1];
@@ -1579,9 +1590,13 @@ export async function startWorkspaceServer({
         }
         if (
           request.method === "POST" &&
-          ["rename", "archive", "restore", "delete"].includes(
-            conversationMatch[2],
-          )
+          [
+            "rename",
+            "generate-title",
+            "archive",
+            "restore",
+            "delete",
+          ].includes(conversationMatch[2])
         ) {
           const action = conversationMatch[2];
           const body = await jsonBody(request);
@@ -1594,14 +1609,33 @@ export async function startWorkspaceServer({
             });
             return;
           }
-          const result =
-            action === "rename"
-              ? store.renameConversation(id, body.title)
-              : action === "archive"
-                ? store.archiveConversation(id)
-                : action === "restore"
-                  ? store.restoreConversation(id)
-                  : store.deleteConversation(id);
+          let result;
+          if (action === "generate-title") {
+            const conv = store.conversation(id);
+            const firstUser = conv.messages.find((m) => m.role === "user");
+            const prompt = firstUser ? firstUser.content : "";
+            const generated =
+              deriveGeneratedTabTitle(prompt) || "Nouvelle conversation";
+            result = store.renameConversation(id, generated);
+            workspace.publish(
+              "conversation.renamed",
+              { id, conversationId: id, title: generated },
+              id,
+            );
+          } else if (action === "rename") {
+            result = store.renameConversation(id, body.title);
+            workspace.publish(
+              "conversation.renamed",
+              { id, conversationId: id, title: result.title },
+              id,
+            );
+          } else if (action === "archive") {
+            result = store.archiveConversation(id);
+          } else if (action === "restore") {
+            result = store.restoreConversation(id);
+          } else {
+            result = store.deleteConversation(id);
+          }
           send(response, 200, result);
           return;
         }

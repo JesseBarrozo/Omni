@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 
 export const EVENT_TYPES = Object.freeze([
   "conversation.created",
+  "conversation.renamed",
   "conversation.imported",
   "message.created",
   "message.delta",

@@ -720,6 +720,7 @@ export class ChatStore {
         "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
       )
       .run(title.trim(), new Date().toISOString(), id);
+    this.appendEvent(id, "conversation.renamed", { title: title.trim() });
     return this.conversation(id);
   }
   archiveConversation(id) {

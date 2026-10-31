@@ -167,6 +167,10 @@ import {
   type Approval,
   type Run,
 } from "@/lib/api";
+import {
+  deriveGeneratedTabTitle,
+  isDefaultConversationTitle,
+} from "@/lib/agent-tab-title";
 import { cn } from "@/lib/utils";
 
 type Context = { root: string; files: { path: string; characters: number }[] };
@@ -798,6 +802,24 @@ export function App() {
         setState((current) => current ? { ...current, awake: p as WorkspaceState["awake"] } : current);
         return;
       }
+      if (event.type === "conversation.renamed") {
+        const renamedId = (p.id || p.conversationId || event.conversationId) as string;
+        const newTitle = (p.title || "") as string;
+        if (renamedId && newTitle) {
+          setSessions((prev) =>
+            prev.map((s) => (s.id === renamedId ? { ...s, title: newTitle } : s)),
+          );
+          setConversation((prev) =>
+            prev && prev.id === renamedId ? { ...prev, title: newTitle } : prev,
+          );
+          setOpenChatTabs((prev) =>
+            prev.map((t) =>
+              t.conversationId === renamedId ? { ...t, title: newTitle } : t,
+            ),
+          );
+        }
+        return;
+      }
       if (event.type === "approval.requested")
         setApprovals((prev) => [
           ...prev.filter((a) => a.id !== p.id),
@@ -1007,11 +1029,18 @@ export function App() {
     setAttachments([]);
     try {
       let current = conversation;
+      const isAutoTitleEnabled =
+        localStorage.getItem("omni.tabAutoGenerateTitle") !== "false";
       if (!current) {
+        const autoTitle = isAutoTitleEnabled
+          ? deriveGeneratedTabTitle(prompt)
+          : null;
+        const initialTitle =
+          autoTitle || prompt.slice(0, 75).trim() || "Nouvelle conversation";
         current = await api<Conversation>("/conversations", {
           projectId,
           model,
-          title: prompt.slice(0, 75),
+          title: initialTitle,
         });
         selected.current = current.id;
         setConversation(current);
@@ -1023,11 +1052,33 @@ export function App() {
               ? {
                   ...t,
                   conversationId: current!.id,
-                  title: current!.title || prompt.slice(0, 75),
+                  title: initialTitle,
                 }
               : t,
           ),
         );
+      } else if (
+        isAutoTitleEnabled &&
+        isDefaultConversationTitle(current.title)
+      ) {
+        const autoTitle = deriveGeneratedTabTitle(prompt);
+        if (autoTitle && autoTitle !== current.title) {
+          setConversation((prev) =>
+            prev ? { ...prev, title: autoTitle } : prev,
+          );
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === current!.id ? { ...s, title: autoTitle } : s,
+            ),
+          );
+          setOpenChatTabs((prev) =>
+            prev.map((t) =>
+              t.conversationId === current!.id
+                ? { ...t, title: autoTitle }
+                : t,
+            ),
+          );
+        }
       }
       const backendPermissionMode =
         permissionMode === "full-access"
@@ -1174,6 +1225,11 @@ export function App() {
     try {
       const updated = await api<Conversation>(`/conversations/${renamingSession.id}/rename`, { title: sessionTitle });
       if (selected.current === updated.id) setConversation(updated);
+      setOpenChatTabs((prev) =>
+        prev.map((t) =>
+          t.conversationId === updated.id ? { ...t, title: updated.title } : t,
+        ),
+      );
       await loadSessions(updated.projectId);
       setRenamingSession(null);
     } catch (e) { setSessionError(e instanceof Error ? e.message : String(e)); }

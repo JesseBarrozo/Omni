@@ -7,6 +7,10 @@ import { McpRegistry } from "./mcp-registry.mjs";
 import { OAuthProfiles } from "./oauth-profiles.mjs";
 import { AutoRouter, ModelRegistry, redactSecrets } from "./core.mjs";
 import { readProjectContext } from "./project-context.mjs";
+import {
+  deriveGeneratedTabTitle,
+  isDefaultConversationTitle,
+} from "./agent-tab-title.mjs";
 
 export const harnessChoices = [
   {
@@ -507,6 +511,17 @@ export class AgentWorkspace extends EventEmitter {
       store.setModel(conversationId, selectedModel);
       store.setStatus(conversationId, "running");
       store.addMessage(conversationId, "user", prompt);
+      if (isDefaultConversationTitle(conversation.title)) {
+        const generated = deriveGeneratedTabTitle(prompt);
+        if (generated && generated !== conversation.title) {
+          store.renameConversation(conversationId, generated);
+          this.publish(
+            "conversation.renamed",
+            { id: conversationId, conversationId, title: generated },
+            conversationId,
+          );
+        }
+      }
       assistantId = store.addMessage(
         conversationId,
         "assistant",

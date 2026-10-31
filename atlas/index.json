@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generator": "tools/atlas/generate.mjs",
-  "digest": "074f24f8a333e86b",
+  "digest": "fc884be66899be5a",
   "stack": [
     "node"
   ],
-  "sourceFiles": 99,
+  "sourceFiles": 101,
   "manifests": [
     {
       "path": "package.json",
@@ -238,7 +238,7 @@
     {
       "host": "github.com",
       "file": "src/workspace-server.mjs",
-      "line": 1485
+      "line": 1489
     },
     {
       "host": "www.w3.org",
@@ -309,7 +309,7 @@
     },
     {
       "file": "src/workspace-server.mjs",
-      "line": 285
+      "line": 289
     },
     {
       "file": "web/src/components/terminal-pane.tsx",
@@ -321,8 +321,9 @@
     }
   ],
   "tests": {
-    "count": 33,
+    "count": 34,
     "sample": [
+      "test/agent-tab-title.test.mjs",
       "test/agent-workspace.test.mjs",
       "test/anthropic-api.test.mjs",
       "test/antigravity-cli.test.mjs",
@@ -341,8 +342,7 @@
       "test/codex.test.mjs",
       "test/core.test.mjs",
       "test/file-operations.test.mjs",
-      "test/file-tree-model.test.mjs",
-      "test/gemini-api.test.mjs"
+      "test/file-tree-model.test.mjs"
     ]
   },
   "capabilities": [],

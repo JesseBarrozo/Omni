@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -109,6 +110,9 @@ export function SettingsPanel({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
+  const [tabAutoGenerateTitle, setTabAutoGenerateTitle] = useState(() =>
+    localStorage.getItem("omni.tabAutoGenerateTitle") !== "false",
+  );
   const translate = t as Translate;
 
   const filteredNav = useMemo(() => {
@@ -315,6 +319,29 @@ export function SettingsPanel({
                 </div>
                 <p className="settings-field-description">{t("settings.agents.permissionsHint")}</p>
               </div>
+            </SettingsSection>
+
+            <SettingsSection
+              title={t("settings.agents.namingTitle")}
+              description={t("settings.agents.namingHint")}
+            >
+              <SettingsRow
+                label={t("settings.agents.tabAutoGenerateTitle")}
+                description={t("settings.agents.tabAutoGenerateTitleHint")}
+                control={
+                  <Switch
+                    checked={tabAutoGenerateTitle}
+                    onCheckedChange={(checked) => {
+                      setTabAutoGenerateTitle(checked);
+                      localStorage.setItem(
+                        "omni.tabAutoGenerateTitle",
+                        String(checked),
+                      );
+                    }}
+                    aria-label={t("settings.agents.tabAutoGenerateTitle")}
+                  />
+                }
+              />
             </SettingsSection>
 
             <SettingsSection
