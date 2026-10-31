@@ -270,3 +270,4 @@ export function ChatComposerModelPicker({
     </Popover>
   );
 }
+

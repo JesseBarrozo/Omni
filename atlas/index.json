@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generator": "tools/atlas/generate.mjs",
-  "digest": "11450eb336087219",
+  "digest": "0e9ccfc134a382a7",
   "stack": [
     "node"
   ],
