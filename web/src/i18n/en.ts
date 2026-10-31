@@ -88,6 +88,16 @@ export const en: Catalog = {
   "settings.accounts.plan": "{plan} plan",
   "settings.accounts.loginLaunched": "Sign-in is opening in your browser. Click Refresh once connected.",
 
+  "queue.title": "Queued Messages",
+  "queue.sendsAfter": "Sends after agent finishes working",
+  "queue.sendNow": "Send now",
+  "queue.edit": "Edit",
+  "queue.delete": "Delete",
+  "queue.moveUp": "Move up",
+  "queue.moveDown": "Move down",
+  "queue.collapse": "Collapse",
+  "queue.expand": "Expand",
+
   "lang.fr": "Français",
   "lang.en": "English",
   "lang.es": "Español",

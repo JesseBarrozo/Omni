@@ -47,6 +47,8 @@ import {
   Archive,
   ArchiveRestore,
   ChevronDown,
+  ChevronUp,
+  ArrowRight,
   MoreHorizontal,
   Pencil,
   Trash2,
@@ -217,7 +219,14 @@ type Git = {
   changes?: { code: string; path: string; oldPath?: string }[];
   github?: { connected: boolean; url: string | null };
 };
-type PendingAttachment = { id: string; name: string; text: string };
+type PendingAttachment = { id: string; name: string; text: string; dataUrl?: string };
+type QueuedMessage = {
+  id: string;
+  conversationId: string;
+  prompt: string;
+  attachments?: PendingAttachment[];
+  createdAt: number;
+};
 type SpeechRecognitionEventLike = {
   resultIndex: number;
   results: ArrayLike<ArrayLike<{ transcript: string }>>;
@@ -333,6 +342,8 @@ export function App() {
   const [mcpArgs, setMcpArgs] = useState("[]");
   const [copyDone, setCopyDone] = useState(false);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
+  const [queueCollapsed, setQueueCollapsed] = useState(false);
   const [dictating, setDictating] = useState(false);
   const selected = useRef<string | null>(null);
   const projectRef = useRef("");
@@ -374,6 +385,25 @@ export function App() {
   useEffect(() => setPullRequests(null), [projectId]);
   const busy =
     sending || runs.some((r) => r.conversationId === conversation?.id);
+  const activeQueuedMessages = conversation
+    ? queuedMessages.filter((m) => m.conversationId === conversation.id)
+    : [];
+
+  const prevBusyRef = useRef(busy);
+  useEffect(() => {
+    if (prevBusyRef.current && !busy && conversation) {
+      const convQueue = queuedMessages.filter((m) => m.conversationId === conversation.id);
+      if (convQueue.length > 0) {
+        const next = convQueue[0];
+        setQueuedMessages((prev) => prev.filter((m) => m.id !== next.id));
+        const timer = setTimeout(() => {
+          void send(next.prompt, next.attachments);
+        }, 150);
+        return () => clearTimeout(timer);
+      }
+    }
+    prevBusyRef.current = busy;
+  }, [busy, conversation?.id, queuedMessages]);
   const pending = approvals.filter(
     (a) => a.conversationId === conversation?.id,
   );
@@ -908,10 +938,64 @@ export function App() {
     runs,
   ]);
 
-  async function send(prompt = draft) {
-    if (!prompt.trim() || busy || !projectId || !connected) return;
-    const fullPrompt = attachments.length
-      ? `${prompt.trim()}\n\n${attachments.map((file) => `--- Fichier joint : ${file.name} ---\n${file.text}`).join("\n\n")}`
+  function queueMessage(prompt: string, attached: PendingAttachment[] = attachments) {
+    if (!prompt.trim() || !conversation) return;
+    const newQueued: QueuedMessage = {
+      id: crypto.randomUUID(),
+      conversationId: conversation.id,
+      prompt: prompt.trim(),
+      attachments: [...attached],
+      createdAt: Date.now(),
+    };
+    setQueuedMessages((prev) => [...prev, newQueued]);
+    setDraft("");
+    setAttachments([]);
+  }
+
+  function moveQueuedMessage(index: number, delta: number) {
+    if (!conversation) return;
+    const convId = conversation.id;
+    const currentItems = queuedMessages.filter((m) => m.conversationId === convId);
+    const otherItems = queuedMessages.filter((m) => m.conversationId !== convId);
+    const targetIndex = index + delta;
+    if (targetIndex < 0 || targetIndex >= currentItems.length) return;
+    const reordered = [...currentItems];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+    setQueuedMessages([...otherItems, ...reordered]);
+  }
+
+  function deleteQueuedMessage(id: string) {
+    setQueuedMessages((prev) => prev.filter((m) => m.id !== id));
+  }
+
+  function editQueuedMessage(item: QueuedMessage) {
+    deleteQueuedMessage(item.id);
+    setDraft(item.prompt);
+    if (item.attachments?.length) {
+      setAttachments(item.attachments);
+    }
+    textarea.current?.focus();
+  }
+
+  async function sendNow(item: QueuedMessage) {
+    deleteQueuedMessage(item.id);
+    if (busy && conversation) {
+      try {
+        await api(`/conversations/${conversation.id}/cancel`, {});
+      } catch {}
+    }
+    await send(item.prompt, item.attachments);
+  }
+
+  async function send(prompt = draft, attached: PendingAttachment[] = attachments) {
+    if (!prompt.trim() || !projectId || !connected) return;
+    if (busy) {
+      queueMessage(prompt, attached);
+      return;
+    }
+    const fullPrompt = attached.length
+      ? `${prompt.trim()}\n\n${attached.map((file) => `--- Fichier joint : ${file.name} ---\n${file.text}`).join("\n\n")}`
       : prompt;
     if (fullPrompt.length > 128000) {
       setError("Les fichiers joints dépassent la limite de 128 000 caractères.");
@@ -962,18 +1046,31 @@ export function App() {
       report(e);
       setSending(false);
       setDraft(prompt);
-      setAttachments((current) => current.length ? current : attachments);
+      setAttachments((current) => (current.length ? current : attached));
     }
   }
   async function addAttachments(files: FileList | null) {
     if (!files?.length) return;
     try {
       const additions = await Promise.all(
-        Array.from(files).map(async (file) => ({
-          id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
-          name: file.name,
-          text: (await file.text()).slice(0, 64000),
-        })),
+        Array.from(files).map(async (file) => {
+          let dataUrl: string | undefined;
+          if (file.type.startsWith("image/")) {
+            dataUrl = await new Promise<string>((res) => {
+              const reader = new FileReader();
+              reader.onload = () => res(reader.result as string);
+              reader.readAsDataURL(file);
+            });
+          }
+          return {
+            id: `${file.name}-${file.lastModified}-${crypto.randomUUID()}`,
+            name: file.name,
+            text: file.type.startsWith("image/")
+              ? `[Image jointe : ${file.name}]`
+              : (await file.text()).slice(0, 64000),
+            dataUrl,
+          };
+        }),
       );
       setAttachments((current) => [...current, ...additions]);
     } catch (e) {
@@ -2376,6 +2473,113 @@ export function App() {
                   </AlertDescription>
                 </Alert>
               ))}
+              {activeQueuedMessages.length > 0 && (
+                <div className="queued-messages-container" aria-label={t("queue.title")}>
+                  <div
+                    className="queued-messages-header"
+                    onClick={() => setQueueCollapsed((prev) => !prev)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setQueueCollapsed((prev) => !prev);
+                      }
+                    }}
+                  >
+                    <div className="queued-messages-title-group">
+                      <span className="queued-messages-title">{t("queue.title")}</span>
+                      <span className="queued-messages-badge">{activeQueuedMessages.length}</span>
+                      <span className="queued-messages-subtitle">{t("queue.sendsAfter")}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="queued-messages-toggle"
+                      aria-label={queueCollapsed ? t("queue.expand") : t("queue.collapse")}
+                      title={queueCollapsed ? t("queue.expand") : t("queue.collapse")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setQueueCollapsed((prev) => !prev);
+                      }}
+                    >
+                      <ChevronDown className={queueCollapsed ? "is-collapsed" : undefined} />
+                    </button>
+                  </div>
+                  {!queueCollapsed && (
+                    <div className="queued-messages-list">
+                      {activeQueuedMessages.map((item, index) => (
+                        <div key={item.id} className="queued-message-row">
+                          {item.attachments?.[0]?.dataUrl ? (
+                            <img
+                              src={item.attachments[0].dataUrl}
+                              alt={item.attachments[0].name}
+                              className="queued-message-thumbnail"
+                            />
+                          ) : item.attachments?.length ? (
+                            <div className="queued-message-thumbnail is-icon">
+                              <Paperclip size={14} />
+                            </div>
+                          ) : null}
+                          <span className="queued-message-text" title={item.prompt}>
+                            {item.prompt}
+                          </span>
+                          <div className="queued-message-actions">
+                            <div className="queued-reorder-group">
+                              <button
+                                type="button"
+                                className="queued-action-btn"
+                                title={t("queue.moveUp")}
+                                aria-label={t("queue.moveUp")}
+                                disabled={index === 0}
+                                onClick={() => moveQueuedMessage(index, -1)}
+                              >
+                                <ChevronUp size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                className="queued-action-btn"
+                                title={t("queue.moveDown")}
+                                aria-label={t("queue.moveDown")}
+                                disabled={index === activeQueuedMessages.length - 1}
+                                onClick={() => moveQueuedMessage(index, 1)}
+                              >
+                                <ChevronDown size={14} />
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              className="queued-action-btn"
+                              title={t("queue.sendNow")}
+                              aria-label={t("queue.sendNow")}
+                              onClick={() => void sendNow(item)}
+                            >
+                              <ArrowRight size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              className="queued-action-btn"
+                              title={t("queue.edit")}
+                              aria-label={t("queue.edit")}
+                              onClick={() => editQueuedMessage(item)}
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="queued-action-btn is-delete"
+                              title={t("queue.delete")}
+                              aria-label={t("queue.delete")}
+                              onClick={() => deleteQueuedMessage(item.id)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -2387,7 +2591,7 @@ export function App() {
                   className="sr-only"
                   type="file"
                   multiple
-                  accept="text/*,.md,.mdx,.json,.yaml,.yml,.toml,.xml,.csv,.log,.ts,.tsx,.js,.jsx,.py,.rs,.go,.java,.sql,.sh,.css,.html"
+                  accept="text/*,.md,.mdx,.json,.yaml,.yml,.toml,.xml,.csv,.log,.ts,.tsx,.js,.jsx,.py,.rs,.go,.java,.sql,.sh,.css,.html,image/*"
                   onChange={(event) => {
                     void addAttachments(event.currentTarget.files);
                     event.currentTarget.value = "";
@@ -2397,7 +2601,7 @@ export function App() {
                   <InputGroupTextarea
                     ref={textarea}
                     aria-label="Votre demande"
-                    placeholder="Que souhaitez-vous construire aujourd’hui ?"
+                    placeholder={busy ? (t("queue.title") + "…") : "Que souhaitez-vous construire aujourd’hui ?"}
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={(e) => {
@@ -2410,7 +2614,11 @@ export function App() {
                         void send();
                       }
                     }}
-                    disabled={busy}
+                    onPaste={(e) => {
+                      if (e.clipboardData?.files?.length) {
+                        void addAttachments(e.clipboardData.files);
+                      }
+                    }}
                   />
                   <InputGroupAddon align="block-end">
                     <div className="composer-action-row">
@@ -2421,7 +2629,6 @@ export function App() {
                           size="icon-xs"
                           aria-label="Ajouter des fichiers"
                           title="Ajouter des fichiers texte au contexte"
-                          disabled={busy}
                           onClick={() => attachmentInput.current?.click()}
                         >
                           <Plus />
@@ -2493,7 +2700,6 @@ export function App() {
                           aria-label={dictating ? "Arrêter la dictée" : "Dicter un message"}
                           title={dictating ? "Arrêter la dictée" : "Dicter un message"}
                           onClick={toggleDictation}
-                          disabled={busy}
                         >
                           {dictating ? <MicOff /> : <Mic />}
                         </Button>
@@ -2501,21 +2707,34 @@ export function App() {
                     </div>
                     <div className="composer-submit">
                       {busy ? (
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="icon-sm"
-                          aria-label="Arrêter"
-                          onClick={() =>
-                            conversation &&
-                            void api(
-                              `/conversations/${conversation.id}/cancel`,
-                              {},
-                            ).catch(report)
-                          }
-                        >
-                          <Square />
-                        </Button>
+                        <>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="icon-sm"
+                            aria-label="Arrêter"
+                            title="Arrêter l'agent"
+                            onClick={() =>
+                              conversation &&
+                              void api(
+                                `/conversations/${conversation.id}/cancel`,
+                                {},
+                              ).catch(report)
+                            }
+                          >
+                            <Square />
+                          </Button>
+                          {draft.trim() && (
+                            <Button
+                              type="submit"
+                              size="icon-sm"
+                              aria-label={t("queue.title")}
+                              title={t("queue.sendsAfter")}
+                            >
+                              <ArrowUp />
+                            </Button>
+                          )}
+                        </>
                       ) : (
                         <Button
                           type="submit"

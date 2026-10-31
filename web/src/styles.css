@@ -732,6 +732,9 @@ a:focus-visible,
 .composer-submit {
   margin-left: auto;
   align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .composer-submit button {
   border-radius: 8px;
@@ -3581,4 +3584,185 @@ a:focus-visible,
   background: var(--muted);
   padding: 3px 8px;
   border-radius: 6px;
+}
+
+/* ==========================================================================
+   Queued Messages (Chat Queue)
+   ========================================================================== */
+
+.queued-messages-container {
+  margin: 0 0 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+}
+
+.queued-messages-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+  transition: background 0.15s ease;
+}
+
+.queued-messages-header:hover {
+  background: var(--muted);
+}
+
+.queued-messages-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.queued-messages-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.queued-messages-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9999px;
+  background: var(--accent);
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.queued-messages-subtitle {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queued-messages-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.queued-messages-toggle:hover {
+  color: var(--foreground);
+}
+
+.queued-messages-toggle svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+.queued-messages-toggle svg.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.queued-messages-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  gap: 5px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.queued-message-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: background 0.15s ease;
+}
+
+.queued-message-row:hover {
+  background: var(--accent);
+}
+
+.queued-message-thumbnail {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.queued-message-thumbnail.is-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.queued-message-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queued-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.queued-reorder-group {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.queued-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.queued-action-btn:hover:not(:disabled) {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--muted) 80%, transparent);
+}
+
+.queued-action-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.queued-action-btn.is-delete:hover:not(:disabled) {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
 }

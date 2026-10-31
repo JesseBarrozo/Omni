@@ -89,6 +89,16 @@ export const fr = {
   "settings.accounts.plan": "Forfait {plan}",
   "settings.accounts.loginLaunched": "La connexion s'ouvre dans votre navigateur. Cliquez sur Actualiser une fois connecté.",
 
+  "queue.title": "Messages en attente",
+  "queue.sendsAfter": "S’envoie dès que l’agent termine",
+  "queue.sendNow": "Envoyer maintenant",
+  "queue.edit": "Modifier",
+  "queue.delete": "Supprimer",
+  "queue.moveUp": "Monter",
+  "queue.moveDown": "Descendre",
+  "queue.collapse": "Réduire",
+  "queue.expand": "Développer",
+
   "lang.fr": "Français",
   "lang.en": "English",
   "lang.es": "Español",

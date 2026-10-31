@@ -88,6 +88,16 @@ export const es: Catalog = {
   "settings.accounts.plan": "Plan {plan}",
   "settings.accounts.loginLaunched": "El inicio de sesión se abre en tu navegador. Pulsa Actualizar cuando te conectes.",
 
+  "queue.title": "Mensajes en cola",
+  "queue.sendsAfter": "Se envía cuando el agente termina",
+  "queue.sendNow": "Enviar ahora",
+  "queue.edit": "Editar",
+  "queue.delete": "Eliminar",
+  "queue.moveUp": "Subir",
+  "queue.moveDown": "Bajar",
+  "queue.collapse": "Plegar",
+  "queue.expand": "Desplegar",
+
   "lang.fr": "Français",
   "lang.en": "English",
   "lang.es": "Español",
