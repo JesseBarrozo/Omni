@@ -3,7 +3,7 @@ import { readFile, stat, readdir, open, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, extname, relative, resolve, isAbsolute, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFile, exec as execShell } from "node:child_process";
+import { execFile, exec as execShell, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
 import {
@@ -22,6 +22,7 @@ import { atlasPages, atlasStatus, generateAtlas, readAtlasPage } from "./atlas-s
 import { PREVIEW_HEADERS, isPreviewablePath } from "./artifact-preview.mjs";
 import { createEntry, deleteEntry, renameEntry } from "./file-operations.mjs";
 import { collectUsageSnapshot } from "./usage.mjs";
+import { collectAccounts } from "./account-detection.mjs";
 import { McpRegistry } from "./mcp-registry.mjs";
 import { ApiKeyProfiles } from "./api-key-profiles.mjs";
 import { AwakeController } from "./awake-controller.mjs";
@@ -318,6 +319,27 @@ export async function startWorkspaceServer({
             error: `Échec du chargement proxy: ${err.message}`,
           });
         }
+        return;
+      }
+      if (path === "/api/accounts" && request.method === "GET") {
+        send(response, 200, collectAccounts());
+        return;
+      }
+      if (path === "/api/accounts/login" && request.method === "POST") {
+        // Launch the real OAuth login in the background; it opens the system
+        // browser. The GUI re-detects once the user completes it. Only the
+        // browser-based OAuth providers are allowed here.
+        const body = await jsonBody(request);
+        if (!["codex", "claude"].includes(body.provider))
+          throw new Error("Fournisseur OAuth inconnu.");
+        const cli = fileURLToPath(new URL("../bin/omni.mjs", import.meta.url));
+        const child = spawn(
+          process.execPath,
+          [cli, "auth", "login", body.provider],
+          { detached: true, stdio: "ignore" },
+        );
+        child.unref();
+        send(response, 200, { started: true, provider: body.provider });
         return;
       }
       if (path === "/api/usage" && request.method === "GET") {

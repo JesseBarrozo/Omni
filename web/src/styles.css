@@ -3228,6 +3228,80 @@ a:focus-visible {
   min-width: 0;
 }
 
+/* Detected accounts (Orca "Comptes"). */
+.account-section {
+  padding-bottom: 14px;
+}
+.account-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.account-section-head > span:first-child {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+.account-section-hint {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-add-btn {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.account-detected-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: color-mix(in srgb, var(--background) 50%, transparent);
+}
+.account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 50%;
+}
+.account-detected-text {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.account-detected-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.account-detected-text small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.settings-notice {
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border));
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--foreground);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
 /* Harness swap pills (Orca UniversalChatHarnessSetting). */
 .harness-pills {
   display: flex;

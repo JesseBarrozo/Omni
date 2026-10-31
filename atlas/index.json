@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generator": "tools/atlas/generate.mjs",
-  "digest": "454a5eb355c13b57",
+  "digest": "2ba018263e3d3c27",
   "stack": [
     "node"
   ],
-  "sourceFiles": 98,
+  "sourceFiles": 99,
   "manifests": [
     {
       "path": "package.json",
@@ -211,6 +211,11 @@
       "line": 67
     },
     {
+      "host": "api.openai.com",
+      "file": "src/account-detection.mjs",
+      "line": 36
+    },
+    {
       "host": "auth.openai.com",
       "file": "src/openai-auth.mjs",
       "line": 24
@@ -233,7 +238,7 @@
     {
       "host": "github.com",
       "file": "src/workspace-server.mjs",
-      "line": 1458
+      "line": 1480
     },
     {
       "host": "www.w3.org",
@@ -304,7 +309,7 @@
     },
     {
       "file": "src/workspace-server.mjs",
-      "line": 279
+      "line": 280
     },
     {
       "file": "web/src/components/terminal-pane.tsx",
